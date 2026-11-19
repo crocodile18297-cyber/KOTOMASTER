@@ -112,6 +112,12 @@ function leaveRoom(socket, reason = 'left') {
   if (!roomId) return;
   const room = rooms.get(roomId);
   if (room) {
+    const member = room.members.get(socket.id);
+    if (member && member.inCall) {
+      socket.to(roomId).emit('media:peer-state', {
+        ...member, inCall: false, audio: false, video: false, sharing: false
+      });
+    }
     room.members.delete(socket.id);
     socket.to(roomId).emit('room:peer-left', { id: socket.id, reason });
     if (room.members.size === 0) rooms.delete(roomId);
