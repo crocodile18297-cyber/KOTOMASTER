@@ -148,3 +148,156 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cyan); outl
 }
 @media (max-width: 390px) { .call-control { min-width: 54px; }.call-control span { font-size: 6px; }.call-controls { gap: 4px; }.topbar-actions { gap: 5px; }.invite-button { padding: 0 8px; }.call-room-chip { display: none; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+
+
+/* KOTOMASTER call layout fix: keep media controls reachable on short screens. */
+.app-screen {
+  min-height: 0;
+}
+
+.workspace {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.call-panel {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}
+
+.call-stage {
+  flex: 0 0 auto;
+  height: clamp(260px, 42dvh, 390px);
+  min-height: 220px;
+}
+
+.video-grid {
+  min-height: 0;
+  align-content: start;
+  grid-auto-rows: minmax(170px, min(38dvh, 300px));
+}
+
+.video-tile,
+.video-tile video {
+  min-height: 0;
+  height: 100%;
+}
+
+.call-bottom {
+  position: sticky;
+  z-index: 5;
+  bottom: 0;
+  flex: 0 0 auto;
+  background: linear-gradient(180deg, rgba(14,13,27,.86), rgba(14,13,27,.98) 35%);
+  border-top: 1px solid rgba(191,177,255,.10);
+  backdrop-filter: blur(14px);
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+}
+
+.call-panel::-webkit-scrollbar {
+  width: 7px;
+}
+
+.call-panel::-webkit-scrollbar-thumb {
+  border-radius: 8px;
+  background: rgba(165,139,255,.28);
+}
+
+@media (max-width: 740px) {
+  html,
+  body {
+    min-height: 100%;
+    height: auto;
+    overflow-y: auto;
+  }
+
+  .app-screen {
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .workspace {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .call-panel {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: 8px;
+  }
+
+  .call-stage {
+    flex: 0 0 auto;
+    height: clamp(210px, 38dvh, 330px);
+    min-height: 190px;
+  }
+
+  .video-grid {
+    grid-auto-rows: minmax(150px, min(34dvh, 250px));
+    gap: 7px;
+    padding: 7px;
+  }
+
+  .video-tile,
+  .video-tile video {
+    min-height: 0;
+    height: 100%;
+  }
+
+  .call-bottom {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 7px;
+    margin-top: 8px;
+    padding: 10px 4px max(12px, env(safe-area-inset-bottom));
+    background: rgba(14,13,27,.97);
+    border: 1px solid rgba(191,177,255,.13);
+    border-radius: 14px;
+  }
+
+  .call-status {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .call-controls {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .call-control {
+    min-width: 64px;
+    min-height: 49px;
+  }
+
+  .call-tip {
+    padding-bottom: 10px;
+    line-height: 1.6;
+  }
+}
+
+@media (max-height: 520px) {
+  .call-panel {
+    overflow-y: auto;
+  }
+
+  .call-stage {
+    height: 210px;
+    min-height: 180px;
+  }
+
+  .call-heading {
+    margin-bottom: 8px;
+  }
+}
