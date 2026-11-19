@@ -155,6 +155,21 @@
     </section>
   </main>
 
+  <div id="videoViewerModal" class="video-viewer-modal" hidden>
+    <div class="video-viewer-shell" role="dialog" aria-modal="true" aria-label="Увеличенный просмотр видео">
+      <header class="video-viewer-header">
+        <strong id="videoViewerTitle">Демонстрация экрана</strong>
+        <div class="video-viewer-actions">
+          <button id="videoViewerZoom" type="button">Увеличить</button>
+          <button id="videoViewerClose" type="button" aria-label="Закрыть просмотр">×</button>
+        </div>
+      </header>
+      <div class="video-viewer-stage">
+        <video id="videoViewerVideo" autoplay playsinline muted></video>
+      </div>
+      <p class="video-viewer-hint">Нажми «Увеличить», чтобы приблизить экран; прокручивай изображение пальцем.</p>
+    </div>
+  </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <div id="inviteModal" class="modal-backdrop" hidden>
     <div class="invite-modal" role="dialog" aria-modal="true" aria-labelledby="inviteTitle"><button id="closeInviteBtn" class="modal-close" aria-label="Закрыть">×</button><div class="modal-cat">✧</div><div class="card-kicker">ПОЗОВИ СВОИХ</div><h3 id="inviteTitle">Время собирать котиков</h3><p>Отправь этот код друзьям. Они смогут присоединиться к комнате.</p><div class="invite-code"><strong id="modalRoomCode">------</strong><button id="modalCopyBtn">Копировать</button></div><small>Не публикуй код в открытом доступе.</small></div>
