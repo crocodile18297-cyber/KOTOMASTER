@@ -40,7 +40,7 @@ button:disabled{opacity:.38;cursor:not-allowed}
 .controls button b{font-size:20px;font-weight:500}.controls button span{font-size:9px;font-weight:800}
 .controls button.active{border-color:rgba(112,221,235,.45);color:var(--cyan);background:rgba(112,221,235,.09)}
 .controls .danger{color:#ff9dbb;background:rgba(211,83,125,.11);border-color:rgba(255,139,169,.25)}
-#audioTracks{display:none}.device-note{margin-top:12px;text-align:center;color:#78718f;font-size:10px;line-height:1.6}
+#audioTracks{position:fixed;left:-10px;bottom:0;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}.media-audio{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.audio-allow{display:block;margin:12px auto 0;padding:10px 14px;border:1px solid rgba(112,221,235,.35);border-radius:10px;background:rgba(112,221,235,.09);color:var(--cyan);font-size:11px;font-weight:800;cursor:pointer}.audio-allow[hidden]{display:none}.device-note{margin-top:12px;text-align:center;color:#78718f;font-size:10px;line-height:1.6}
 footer{display:flex;justify-content:space-between;gap:14px;padding:14px 3px;color:#716b84;font-size:10px}
 footer a{color:#b8a9f5;text-decoration:none}
 [hidden]{display:none!important}
