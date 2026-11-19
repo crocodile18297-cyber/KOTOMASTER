@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0c0a19">
+  <title>KOTOMASTER — тест LiveKit</title>
+  <link rel="stylesheet" href="/livekit-test.css">
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.23.0/dist/livekit-client.umd.min.js" defer></script>
+  <script src="/livekit-test.js" defer></script>
+</head>
+<body>
+  <main class="test-shell">
+    <header class="test-header">
+      <a class="brand" href="/"><span class="brand-icon">ฅ</span><span>KOTO<span>MASTER</span></span></a>
+      <span class="test-tag">LIVEKIT LAB · ТЕСТОВАЯ СВЯЗЬ</span>
+    </header>
+
+    <section class="intro">
+      <div class="eyebrow"><i></i> ОТДЕЛЬНЫЙ ТЕСТОВЫЙ РЕЖИМ</div>
+      <h1>Проверка видеосвязи</h1>
+      <p>Эта комната работает отдельно от обычного звонка KOTOMASTER. Можно сравнить звук, задержку и демонстрацию экрана.</p>
+    </section>
+
+    <section class="connect-card">
+      <div class="fields">
+        <label>Твоё имя<input id="testName" maxlength="24" autocomplete="nickname" placeholder="Например, Степан"></label>
+        <label>Код комнаты<input id="testRoom" maxlength="6" autocomplete="off" placeholder="ABC123"></label>
+      </div>
+      <div class="connect-row">
+        <button id="connectBtn" class="primary">Подключиться к тесту</button>
+        <span id="testStatus" role="status">Проверяем настройки LiveKit…</span>
+      </div>
+      <p id="testError" class="error" hidden></p>
+    </section>
+
+    <section class="call-card">
+      <div class="call-card-head">
+        <div><span class="eyebrow">ТЕСТОВАЯ КОМНАТА</span><h2 id="roomLabel">Ожидание подключения</h2></div>
+        <label class="quality">Качество видео
+          <select id="qualitySelect">
+            <option value="360">360p · экономно</option>
+            <option value="480">480p · баланс</option>
+            <option value="720" selected>720p · чётко</option>
+            <option value="1080">1080p · высокое</option>
+          </select>
+        </label>
+      </div>
+      <div id="participantGrid" class="participant-grid">
+        <div class="empty-state"><span>ฅ</span><strong>Здесь пока никого нет</strong><small>Подключись и отправь друзьям код комнаты</small></div>
+      </div>
+      <div class="controls">
+        <button id="micBtn" disabled><b>♬</b><span>Микрофон</span></button>
+        <button id="cameraBtn" disabled><b>◉</b><span>Камера</span></button>
+        <button id="screenBtn" disabled><b>▣</b><span>Экран</span></button>
+        <button id="leaveBtn" class="danger" disabled><b>×</b><span>Выйти</span></button>
+      </div>
+      <div id="deviceNote" class="device-note">Проверка видеопотока и адаптивного качества LiveKit.</div>
+    </section>
+    <footer><a href="/">← Вернуться в обычный KOTOMASTER</a><span>Тестовый режим · LiveKit SFU</span></footer>
+  </main>
+  <div id="audioTracks"></div>
+</body>
+</html>
