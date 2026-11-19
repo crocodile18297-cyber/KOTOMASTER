@@ -34,6 +34,7 @@ let isCameraOn = false;
 let isSharing = false;
 let appConfig = { iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }], maxRoomSize: 6 };
 let toastTimer = null;
+let viewerStream = null;
 
 function showToast(message) {
   toastNode.textContent = message;
@@ -347,7 +348,20 @@ function makeVideoTile(id, name, local = false) {
   mic.className = 'tile-mic';
   mic.textContent = '●';
   label.append(labelName, mic);
-  tile.append(video, avatar, label);
+
+  const expand = document.createElement('button');
+  expand.type = 'button';
+  expand.className = 'tile-expand';
+  expand.title = 'Увеличить видео';
+  expand.setAttribute('aria-label', 'Увеличить видео');
+  expand.textContent = '⛶';
+  expand.addEventListener('click', (event) => {
+    event.stopPropagation();
+    openVideoViewer(tile);
+  });
+  video.addEventListener('dblclick', () => openVideoViewer(tile));
+
+  tile.append(video, avatar, label, expand);
   videoGrid.append(tile);
   return tile;
 }
@@ -361,6 +375,7 @@ function updateTileState(id, member) {
     mic.title = member.audio ? 'Микрофон включён' : 'Микрофон выключен';
   }
   tile.classList.toggle('has-video', Boolean(member.video) || (id === (socket && socket.id) && isSharing));
+  tile.classList.toggle('sharing', Boolean(member.sharing) || (id === (socket && socket.id) && isSharing));
 }
 
 async function startCall() {
@@ -423,7 +438,13 @@ async function createPeerConnection(peerId, shouldOffer) {
     bundlePolicy: 'max-bundle'
   });
   peerConnections.set(peerId, pc);
-  localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+  localStream.getAudioTracks().forEach((track) => pc.addTrack(track, localStream));
+  const outgoingVideoTrack = isSharing && screenStream
+    ? screenStream.getVideoTracks()[0]
+    : localStream.getVideoTracks()[0];
+  if (outgoingVideoTrack) {
+    pc.addTrack(outgoingVideoTrack, isSharing && screenStream ? screenStream : localStream);
+  }
   pc.onicecandidate = (event) => {
     if (event.candidate && socket && socket.connected) {
       socket.emit('rtc:signal', { to: peerId, signal: { candidate: event.candidate } });
@@ -446,6 +467,7 @@ async function createPeerConnection(peerId, shouldOffer) {
     };
     video.play().catch(() => showToast('Нажми на видео участника, чтобы включить звук.'));
     tile.classList.toggle('has-video', remoteStream.getVideoTracks().some((track) => track.readyState === 'live' && track.enabled));
+    tile.classList.toggle('sharing', Boolean(currentMember.sharing));
     updateTileState(peerId, currentMember);
   };
   pc.onconnectionstatechange = () => {
@@ -549,47 +571,96 @@ function toggleCamera() {
   publishMediaState();
 }
 
+async function tuneVideoSender(sender, bitrate, frameRate, keepTextSharp = false) {
+  if (!sender || typeof sender.getParameters !== 'function') return;
+  try {
+    const params = sender.getParameters();
+    if (!params.encodings || !params.encodings.length) return;
+    params.encodings[0].maxBitrate = bitrate;
+    params.encodings[0].maxFramerate = frameRate;
+    if ('degradationPreference' in params || keepTextSharp) {
+      params.degradationPreference = keepTextSharp ? 'maintain-resolution' : 'maintain-framerate';
+    }
+    await sender.setParameters(params);
+  } catch (error) {
+    // Some mobile browsers expose only part of RTCRtpSendParameters.
+    console.warn('Could not tune outgoing video:', error);
+  }
+}
+
 async function startScreenShare() {
   if (!isInCall) return;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-    showToast('Демонстрация экрана доступна в поддерживаемом браузере по HTTPS.');
+    showToast('Этот браузер не умеет передавать экран из веб-страницы. Это ограничение браузера телефона, а не KOTOMASTER.');
     return;
   }
+
+  const profile = VIDEO_PROFILES[$('#videoResolutionSelect').value] || VIDEO_PROFILES.auto;
+  const frameRate = profile.shareFrameRate || 12;
   try {
-    screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 15, max: 30 } }, audio: false });
+    // Share text and UI details at a modest frame rate to reduce upload delay.
+    screenStream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        width: { ideal: profile.width },
+        height: { ideal: profile.height },
+        frameRate: { ideal: frameRate }
+      },
+      audio: false
+    });
     const screenTrack = screenStream.getVideoTracks()[0];
-    if (!screenTrack) throw new Error('Не удалось получить изображение экрана.');
+    if (!screenTrack) throw new Error('Браузер не вернул видеопоток экрана.');
+    try { screenTrack.contentHint = 'detail'; } catch (_error) {}
+
     isSharing = true;
     screenTrack.onended = () => stopScreenShare();
+
     for (const pc of peerConnections.values()) {
-      const sender = pc.getSenders().find((item) => item.track && item.track.kind === 'video');
-      if (sender) await sender.replaceTrack(screenTrack);
-      else pc.addTrack(screenTrack, screenStream);
+      let sender = pc.getSenders().find((item) => item.track && item.track.kind === 'video');
+      if (sender) {
+        await sender.replaceTrack(screenTrack);
+      } else {
+        sender = pc.addTrack(screenTrack, screenStream);
+      }
+      await tuneVideoSender(sender, profile.shareBitrate || 850000, frameRate, true);
     }
+
     const localTile = makeVideoTile(socket.id, myName, true);
     const localVideo = localTile.querySelector('video');
     localVideo.srcObject = new MediaStream([screenTrack, ...localStream.getAudioTracks()]);
+    localVideo.muted = true;
     localTile.classList.remove('local');
-    localTile.classList.add('has-video');
-    updateTileState(socket.id, { audio: isMicOn, video: true });
+    localTile.classList.add('has-video', 'sharing');
+    updateTileState(socket.id, { audio: isMicOn, video: true, sharing: true });
     updateCallButtons();
     publishMediaState();
-    showToast('Демонстрация экрана началась.');
+    showToast('Демонстрация экрана началась. Нажми ⛶ на видео, чтобы увеличить.');
   } catch (error) {
     console.error('Screen share error:', error);
-    if (error && error.name === 'NotAllowedError') showToast('Демонстрация экрана отменена.');
+    if (screenStream) {
+      screenStream.getTracks().forEach((track) => track.stop());
+      screenStream = null;
+    }
+    isSharing = false;
+    if (error && error.name === 'NotAllowedError') showToast('Доступ к экрану отменён или запрещён браузером.');
+    else if (error && error.name === 'NotFoundError') showToast('Браузер не нашёл источник экрана для передачи.');
+    else if (error && error.name === 'NotSupportedError') showToast('Передача экрана не поддерживается этим браузером.');
     else showToast(error.message || 'Не удалось показать экран.');
   }
 }
+
 
 async function stopScreenShare() {
   if (!isSharing) return;
   isSharing = false;
   const cameraTrack = localStream && localStream.getVideoTracks()[0];
+  const profile = VIDEO_PROFILES[$('#videoResolutionSelect').value] || VIDEO_PROFILES.auto;
   for (const pc of peerConnections.values()) {
     const sender = pc.getSenders().find((item) => item.track && item.track.kind === 'video');
     if (sender) {
-      try { await sender.replaceTrack(cameraTrack || null); } catch (error) { console.warn('Could not restore camera track:', error); }
+      try {
+        await sender.replaceTrack(cameraTrack || null);
+        await tuneVideoSender(sender, profile.bitrate, profile.frameRate, false);
+      } catch (error) { console.warn('Could not restore camera track:', error); }
     }
   }
   if (screenStream) {
@@ -601,6 +672,7 @@ async function stopScreenShare() {
     const video = localTile.querySelector('video');
     video.srcObject = localStream;
     localTile.classList.add('local');
+    localTile.classList.remove('sharing');
     localTile.classList.toggle('has-video', isCameraOn);
   }
   updateCallButtons();
@@ -641,6 +713,36 @@ function stopCall() {
 }
 
 
+function openVideoViewer(tile) {
+  const sourceVideo = tile && tile.querySelector('video');
+  if (!sourceVideo || !sourceVideo.srcObject) {
+    showToast('Видеопоток пока не появился.');
+    return;
+  }
+  const modal = $('#videoViewerModal');
+  const viewerVideo = $('#videoViewerVideo');
+  const title = $('#videoViewerTitle');
+  const label = tile.querySelector('.tile-label span');
+  viewerStream = sourceVideo.srcObject;
+  viewerVideo.srcObject = viewerStream;
+  viewerVideo.muted = true;
+  title.textContent = label ? label.textContent : 'Видео участника';
+  modal.hidden = false;
+  modal.classList.remove('zoomed');
+  $('#videoViewerZoom').textContent = 'Увеличить';
+  viewerVideo.play().catch(() => {});
+}
+
+function closeVideoViewer() {
+  const modal = $('#videoViewerModal');
+  const viewerVideo = $('#videoViewerVideo');
+  viewerVideo.pause();
+  viewerVideo.srcObject = null;
+  viewerStream = null;
+  modal.hidden = true;
+  modal.classList.remove('zoomed');
+}
+
 const VIDEO_PROFILES = {
   auto: { width: 1280, height: 720, frameRate: 24, bitrate: 1200000 },
   '360': { width: 640, height: 360, frameRate: 24, bitrate: 450000 },
@@ -649,35 +751,45 @@ const VIDEO_PROFILES = {
   '1080': { width: 1920, height: 1080, frameRate: 30, bitrate: 2500000 }
 };
 
+const VIDEO_PROFILES = {
+  auto: { width: 1280, height: 720, frameRate: 24, bitrate: 1200000, shareFrameRate: 12, shareBitrate: 850000 },
+  '360': { width: 640, height: 360, frameRate: 24, bitrate: 450000, shareFrameRate: 10, shareBitrate: 350000 },
+  '480': { width: 854, height: 480, frameRate: 24, bitrate: 750000, shareFrameRate: 12, shareBitrate: 550000 },
+  '720': { width: 1280, height: 720, frameRate: 30, bitrate: 1500000, shareFrameRate: 15, shareBitrate: 1000000 },
+  '1080': { width: 1920, height: 1080, frameRate: 30, bitrate: 2500000, shareFrameRate: 15, shareBitrate: 1600000 }
+};
+
 async function changeVideoResolution() {
   const select = $('#videoResolutionSelect');
   const profile = VIDEO_PROFILES[select.value] || VIDEO_PROFILES.auto;
-  const track = localStream && localStream.getVideoTracks()[0];
-  if (!track || !isInCall || !isCameraOn) {
-    showToast('Сначала включи камеру.');
+  const sharingTrack = isSharing && screenStream ? screenStream.getVideoTracks()[0] : null;
+  const cameraTrack = localStream && localStream.getVideoTracks()[0];
+  const track = sharingTrack || cameraTrack;
+  if (!track || !isInCall) {
+    showToast('Сначала включи камеру или демонстрацию экрана.');
     return;
   }
+
+  const frameRate = sharingTrack ? profile.shareFrameRate : profile.frameRate;
+  const bitrate = sharingTrack ? profile.shareBitrate : profile.bitrate;
   try {
     await track.applyConstraints({
       width: { ideal: profile.width },
       height: { ideal: profile.height },
-      frameRate: { ideal: profile.frameRate, max: profile.frameRate }
+      frameRate: { ideal: frameRate }
     });
     for (const pc of peerConnections.values()) {
       const sender = pc.getSenders().find((item) => item.track && item.track.kind === 'video');
-      if (!sender) continue;
-      const params = sender.getParameters();
-      if (!params.encodings || !params.encodings.length) params.encodings = [{}];
-      params.encodings[0].maxBitrate = profile.bitrate;
-      params.encodings[0].maxFramerate = profile.frameRate;
-      await sender.setParameters(params).catch((error) => console.warn('Could not tune video bitrate:', error));
+      if (sender) await tuneVideoSender(sender, bitrate, frameRate, Boolean(sharingTrack));
     }
-    showToast(select.value === 'auto' ? 'Автоматическое качество выбрано.' : `Разрешение до ${select.value}p применено.`);
+    const mode = select.value === 'auto' ? 'Автоматическое качество' : `Качество до ${select.value}p`;
+    showToast(sharingTrack ? `${mode} демонстрации применено.` : `${mode} камеры применено.`);
   } catch (error) {
     console.warn('Resolution change failed:', error);
-    showToast('Это разрешение не поддерживается камерой. Выбери ниже.');
+    showToast('Это разрешение не поддерживается текущим источником. Выбери ниже.');
   }
 }
+
 
 async function copyText(value) {
   try {
@@ -783,6 +895,15 @@ $('#micBtn').addEventListener('click', toggleMic);
 $('#cameraBtn').addEventListener('click', toggleCamera);
 $('#shareBtn').addEventListener('click', () => isSharing ? stopScreenShare() : startScreenShare());
 $('#leaveCallBtn').addEventListener('click', stopCall);
+$('#videoViewerClose').addEventListener('click', closeVideoViewer);
+$('#videoViewerZoom').addEventListener('click', () => {
+  const modal = $('#videoViewerModal');
+  const zoomed = modal.classList.toggle('zoomed');
+  $('#videoViewerZoom').textContent = zoomed ? 'Уместить' : 'Увеличить';
+});
+$('#videoViewerModal').addEventListener('click', (event) => {
+  if (event.target === $('#videoViewerModal')) closeVideoViewer();
+});
 $('#videoResolutionSelect').addEventListener('change', changeVideoResolution);
 $('#copyRoomBtn').addEventListener('click', () => roomId && copyText(roomId));
 $('#welcomeCopyBtn').addEventListener('click', () => roomId && copyText(roomId));
@@ -791,7 +912,7 @@ $('#closeInviteBtn').addEventListener('click', () => { inviteModal.hidden = true
 $('#modalCopyBtn').addEventListener('click', () => roomId && copyText(roomId));
 $('#leaveRoomBtn').addEventListener('click', leaveRoom);
 inviteModal.addEventListener('click', (event) => { if (event.target === inviteModal) inviteModal.hidden = true; });
-document.addEventListener('keydown', (event) => { if (event.key === 'Escape') inviteModal.hidden = true; });
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { inviteModal.hidden = true; if (!$('#videoViewerModal').hidden) closeVideoViewer(); } });
 
 (async function loadConfig() {
   try {
