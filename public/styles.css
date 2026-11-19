@@ -301,3 +301,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cyan); outl
     margin-bottom: 8px;
   }
 }
+
+
+.resolution-control { display: inline-flex; align-items: center; gap: 5px; color: #79738c; font-size: 7px; letter-spacing: .7px; }
+.resolution-control select { max-width: 74px; border: 1px solid rgba(179,166,235,.18); border-radius: 7px; padding: 5px 6px; color: #c9c1df; background: rgba(37,33,58,.92); font: inherit; letter-spacing: 0; outline: none; }
+@media (max-width: 740px) { .resolution-control { font-size: 6px; } .resolution-control select { max-width: 65px; padding: 4px; } }
