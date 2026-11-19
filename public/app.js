@@ -102,7 +102,9 @@ function bindSocketEvents() {
   socket.on('room:peer-left', ({ id }) => {
     const member = participants.get(id);
     closePeer(id);
+    removeVideoTile(id);
     participants.delete(id);
+    updateCallStage();
     renderParticipants();
     updateCallDescription();
     if (member) showToast(`${member.name} вышел из комнаты`);
@@ -321,7 +323,11 @@ function updateCallStage() {
 
 function makeVideoTile(id, name, local = false) {
   let tile = videoGrid.querySelector(`[data-peer-id="${CSS.escape(id)}"]`);
-  if (tile) return tile;
+  if (tile) {
+    const label = tile.querySelector('.tile-label span');
+    if (label) label.textContent = local ? `${name} · ты` : name;
+    return tile;
+  }
   tile = document.createElement('div');
   tile.className = `video-tile${local ? ' local' : ''}`;
   tile.dataset.peerId = id;
@@ -329,6 +335,7 @@ function makeVideoTile(id, name, local = false) {
   video.autoplay = true;
   video.playsInline = true;
   video.muted = local;
+  video.volume = 1;
   const avatar = document.createElement('div');
   avatar.className = 'tile-avatar';
   avatar.textContent = firstLetter(name);
@@ -368,7 +375,7 @@ async function startCall() {
   try {
     localStream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24, max: 30 } }
+      video: (() => { const p = VIDEO_PROFILES[$('#videoResolutionSelect').value] || VIDEO_PROFILES.auto; return { width: { ideal: p.width }, height: { ideal: p.height }, frameRate: { ideal: p.frameRate, max: p.frameRate } }; })()
     });
     isInCall = true;
     isMicOn = localStream.getAudioTracks().length > 0;
@@ -410,7 +417,11 @@ async function createPeerConnection(peerId, shouldOffer) {
   if (pc) return pc;
 
   const member = participants.get(peerId) || { name: 'Участник' };
-  pc = new RTCPeerConnection({ iceServers: appConfig.iceServers || [] });
+  pc = new RTCPeerConnection({
+    iceServers: appConfig.iceServers || [],
+    iceCandidatePoolSize: 4,
+    bundlePolicy: 'max-bundle'
+  });
   peerConnections.set(peerId, pc);
   localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
   pc.onicecandidate = (event) => {
@@ -419,15 +430,33 @@ async function createPeerConnection(peerId, shouldOffer) {
     }
   };
   pc.ontrack = (event) => {
-    const tile = makeVideoTile(peerId, member.name || 'Участник');
+    const currentMember = participants.get(peerId) || member;
+    const tile = makeVideoTile(peerId, currentMember.name || 'Участник');
     const video = tile.querySelector('video');
-    if (event.streams && event.streams[0]) video.srcObject = event.streams[0];
-    tile.classList.toggle('has-video', event.track.kind === 'video');
-    video.play().catch(() => {});
-    updateTileState(peerId, participants.get(peerId) || member);
+    let remoteStream = event.streams && event.streams[0];
+    if (!remoteStream) {
+      remoteStream = video.srcObject instanceof MediaStream ? video.srcObject : new MediaStream();
+      if (!remoteStream.getTracks().some((track) => track.id === event.track.id)) remoteStream.addTrack(event.track);
+    }
+    video.srcObject = remoteStream;
+    video.muted = false;
+    video.volume = 1;
+    event.track.onunmute = () => {
+      video.play().catch(() => showToast('Нажми на видео участника, чтобы разрешить воспроизведение звука.'));
+    };
+    video.play().catch(() => showToast('Нажми на видео участника, чтобы включить звук.'));
+    tile.classList.toggle('has-video', remoteStream.getVideoTracks().some((track) => track.readyState === 'live' && track.enabled));
+    updateTileState(peerId, currentMember);
   };
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'failed') showToast(`Не удалось соединиться с ${member.name || 'участником'}. Возможно, нужна TURN-настройка.`);
+    if (pc.connectionState === 'failed') {
+      showToast(`Не удалось соединиться с ${member.name || 'участником'}. Для некоторых мобильных сетей нужен TURN-сервер.`);
+    }
+  };
+  pc.oniceconnectionstatechange = () => {
+    if (pc.iceConnectionState === 'failed' && typeof pc.restartIce === 'function') {
+      try { pc.restartIce(); } catch (error) { console.warn('ICE restart failed:', error); }
+    }
   };
 
   if (shouldOffer) {
@@ -451,6 +480,9 @@ function closePeer(peerId) {
   if (pc) {
     pc.ontrack = null;
     pc.onicecandidate = null;
+    pc.onconnectionstatechange = null;
+    pc.oniceconnectionstatechange = null;
+    pc.getReceivers().forEach((receiver) => { if (receiver.track) receiver.track.stop(); });
     pc.close();
     peerConnections.delete(peerId);
   }
@@ -577,7 +609,13 @@ async function stopScreenShare() {
 }
 
 function stopCall() {
-  if (!isInCall) return;
+  if (!isInCall) {
+    for (const peerId of Array.from(peerConnections.keys())) {
+      closePeer(peerId);
+      removeVideoTile(peerId);
+    }
+    return;
+  }
   if (screenStream) {
     screenStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
     screenStream = null;
@@ -595,10 +633,50 @@ function stopCall() {
   isMicOn = false;
   isCameraOn = false;
   removeVideoTile(socket && socket.id);
+  videoGrid.replaceChildren();
   publishMediaState();
   updateCallButtons();
   updateCallStage();
   showToast('Ты вышел из видеозвонка.');
+}
+
+
+const VIDEO_PROFILES = {
+  auto: { width: 1280, height: 720, frameRate: 24, bitrate: 1200000 },
+  '360': { width: 640, height: 360, frameRate: 24, bitrate: 450000 },
+  '480': { width: 854, height: 480, frameRate: 24, bitrate: 750000 },
+  '720': { width: 1280, height: 720, frameRate: 30, bitrate: 1500000 },
+  '1080': { width: 1920, height: 1080, frameRate: 30, bitrate: 2500000 }
+};
+
+async function changeVideoResolution() {
+  const select = $('#videoResolutionSelect');
+  const profile = VIDEO_PROFILES[select.value] || VIDEO_PROFILES.auto;
+  const track = localStream && localStream.getVideoTracks()[0];
+  if (!track || !isInCall || !isCameraOn) {
+    showToast('Сначала включи камеру.');
+    return;
+  }
+  try {
+    await track.applyConstraints({
+      width: { ideal: profile.width },
+      height: { ideal: profile.height },
+      frameRate: { ideal: profile.frameRate, max: profile.frameRate }
+    });
+    for (const pc of peerConnections.values()) {
+      const sender = pc.getSenders().find((item) => item.track && item.track.kind === 'video');
+      if (!sender) continue;
+      const params = sender.getParameters();
+      if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+      params.encodings[0].maxBitrate = profile.bitrate;
+      params.encodings[0].maxFramerate = profile.frameRate;
+      await sender.setParameters(params).catch((error) => console.warn('Could not tune video bitrate:', error));
+    }
+    showToast(select.value === 'auto' ? 'Автоматическое качество выбрано.' : `Разрешение до ${select.value}p применено.`);
+  } catch (error) {
+    console.warn('Resolution change failed:', error);
+    showToast('Это разрешение не поддерживается камерой. Выбери ниже.');
+  }
 }
 
 async function copyText(value) {
@@ -705,6 +783,7 @@ $('#micBtn').addEventListener('click', toggleMic);
 $('#cameraBtn').addEventListener('click', toggleCamera);
 $('#shareBtn').addEventListener('click', () => isSharing ? stopScreenShare() : startScreenShare());
 $('#leaveCallBtn').addEventListener('click', stopCall);
+$('#videoResolutionSelect').addEventListener('change', changeVideoResolution);
 $('#copyRoomBtn').addEventListener('click', () => roomId && copyText(roomId));
 $('#welcomeCopyBtn').addEventListener('click', () => roomId && copyText(roomId));
 $('#inviteBtn').addEventListener('click', () => { $('#modalRoomCode').textContent = roomId; inviteModal.hidden = false; });
