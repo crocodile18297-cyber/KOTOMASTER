@@ -41,8 +41,24 @@ app.get('/api/livekit/status', (_req, res) => {
   res.json({ configured });
 });
 
+const livekitTokenRequests = new Map();
+
 app.post('/api/livekit/token', async (req, res) => {
-  const livekitUrl = String(process.env.LIVEKIT_URL || '').trim().replace(/\\/$/, '');
+  const now = Date.now();
+  const clientIp = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
+  const previous = livekitTokenRequests.get(clientIp) || [];
+  const recent = previous.filter((time) => now - time < 60_000);
+  if (recent.length >= 8) {
+    return res.status(429).json({ error: 'Слишком много попыток. Подожди минуту и попробуй снова.' });
+  }
+  recent.push(now);
+  livekitTokenRequests.set(clientIp, recent);
+  if (livekitTokenRequests.size > 2000) {
+    for (const [ip, times] of livekitTokenRequests) {
+      if (!times.some((time) => now - time < 60_000)) livekitTokenRequests.delete(ip);
+    }
+  }
+  const livekitUrl = String(process.env.LIVEKIT_URL || '').trim().replace(/\/$/, '');
   const apiKey = process.env.LIVEKIT_API_KEY;
   const apiSecret = process.env.LIVEKIT_API_SECRET;
 
@@ -57,7 +73,7 @@ app.post('/api/livekit/token', async (req, res) => {
 
   const roomCode = String(req.body && req.body.room || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
   const displayName = String(req.body && req.body.name || 'Котик')
-    .replace(/[\\u0000-\\u001f\\u007f]/g, '')
+    .replace(/[\x00-\x1F\x7F]/g, '')
     .trim()
     .slice(0, 24) || 'Котик';
 
@@ -71,7 +87,7 @@ app.post('/api/livekit/token', async (req, res) => {
     const accessToken = new AccessToken(apiKey, apiSecret, {
       identity,
       name: displayName,
-      ttl: '1h'
+      ttl: '15m'
     });
     accessToken.addGrant({
       roomJoin: true,
