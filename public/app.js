@@ -744,14 +744,6 @@ function closeVideoViewer() {
 }
 
 const VIDEO_PROFILES = {
-  auto: { width: 1280, height: 720, frameRate: 24, bitrate: 1200000 },
-  '360': { width: 640, height: 360, frameRate: 24, bitrate: 450000 },
-  '480': { width: 854, height: 480, frameRate: 24, bitrate: 750000 },
-  '720': { width: 1280, height: 720, frameRate: 30, bitrate: 1500000 },
-  '1080': { width: 1920, height: 1080, frameRate: 30, bitrate: 2500000 }
-};
-
-const VIDEO_PROFILES = {
   auto: { width: 1280, height: 720, frameRate: 24, bitrate: 1200000, shareFrameRate: 12, shareBitrate: 850000 },
   '360': { width: 640, height: 360, frameRate: 24, bitrate: 450000, shareFrameRate: 10, shareBitrate: 350000 },
   '480': { width: 854, height: 480, frameRate: 24, bitrate: 750000, shareFrameRate: 12, shareBitrate: 550000 },
