@@ -5,6 +5,7 @@ const http = require('http');
 const path = require('path');
 const crypto = require('crypto');
 const { Server } = require('socket.io');
+const { AccessToken } = require('livekit-server-sdk');
 
 const app = express();
 const server = http.createServer(app);
@@ -21,6 +22,7 @@ const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const rooms = new Map();
 
 app.disable('x-powered-by');
+app.use(express.json({ limit: '8kb' }));
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -28,6 +30,64 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
+
+
+app.get('/api/livekit/status', (_req, res) => {
+  const configured = Boolean(
+    process.env.LIVEKIT_URL &&
+    process.env.LIVEKIT_API_KEY &&
+    process.env.LIVEKIT_API_SECRET
+  );
+  res.json({ configured });
+});
+
+app.post('/api/livekit/token', async (req, res) => {
+  const livekitUrl = String(process.env.LIVEKIT_URL || '').trim().replace(/\\/$/, '');
+  const apiKey = process.env.LIVEKIT_API_KEY;
+  const apiSecret = process.env.LIVEKIT_API_SECRET;
+
+  if (!livekitUrl || !apiKey || !apiSecret) {
+    return res.status(503).json({
+      error: 'Тест LiveKit ещё не настроен. Добавь LIVEKIT_URL, LIVEKIT_API_KEY и LIVEKIT_API_SECRET в Render Environment.'
+    });
+  }
+  if (!/^wss:\/\/[^/]+$/i.test(livekitUrl)) {
+    return res.status(503).json({ error: 'LIVEKIT_URL должен начинаться с wss:// и содержать только адрес проекта.' });
+  }
+
+  const roomCode = String(req.body && req.body.room || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  const displayName = String(req.body && req.body.name || 'Котик')
+    .replace(/[\\u0000-\\u001f\\u007f]/g, '')
+    .trim()
+    .slice(0, 24) || 'Котик';
+
+  if (roomCode.length !== 6) {
+    return res.status(400).json({ error: 'Код тестовой комнаты должен состоять из 6 символов.' });
+  }
+
+  try {
+    const identity = crypto.randomUUID();
+    const roomName = `kotomaster-test-${roomCode}`;
+    const accessToken = new AccessToken(apiKey, apiSecret, {
+      identity,
+      name: displayName,
+      ttl: '1h'
+    });
+    accessToken.addGrant({
+      roomJoin: true,
+      room: roomName,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true
+    });
+
+    const token = await accessToken.toJwt();
+    return res.json({ url: livekitUrl, token, roomName, identity, name: displayName });
+  } catch (error) {
+    console.error('LiveKit token error:', error);
+    return res.status(500).json({ error: 'Не удалось создать токен тестовой видеокомнаты.' });
+  }
+});
 
 app.get('/api/config', (_req, res) => {
   const iceServers = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
