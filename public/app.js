@@ -203,6 +203,8 @@ function enterWorkspace(data) {
   $('#sidebarRoomCode').textContent = roomId;
   $('#welcomeRoomCode').textContent = roomId;
   $('#callRoomCode').textContent = roomId;
+  const livekitTestLink = $('#livekitTestLink');
+  if (livekitTestLink) livekitTestLink.href = `/livekit-test.html?room=${encodeURIComponent(roomId)}&name=${encodeURIComponent(myName)}`;
   $('#myName').textContent = myName;
   $('#myAvatar').textContent = firstLetter(myName);
   $('#callNavBadge').hidden = true;
