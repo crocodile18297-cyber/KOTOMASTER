@@ -5,7 +5,7 @@ const http = require('http');
 const path = require('path');
 const crypto = require('crypto');
 const { Server } = require('socket.io');
-const { AccessToken } = require('livekit-server-sdk');
+const { AccessToken, RoomServiceClient } = require('livekit-server-sdk');
 
 const app = express();
 const server = http.createServer(app);
@@ -43,6 +43,57 @@ app.get('/api/livekit/status', (_req, res) => {
 
 const livekitTokenRequests = new Map();
 
+app.get('/api/livekit/diagnostics', async (_req, res) => {
+  const livekitUrl = String(process.env.LIVEKIT_URL || '').trim().replace(/\/$/, '');
+  const apiKey = String(process.env.LIVEKIT_API_KEY || '').trim();
+  const apiSecret = String(process.env.LIVEKIT_API_SECRET || '').trim();
+
+  const configured = Boolean(livekitUrl && apiKey && apiSecret);
+  if (!configured) {
+    return res.status(200).json({
+      configured: false,
+      accepted: false,
+      message: 'Не все три переменные LiveKit добавлены в Render Environment.'
+    });
+  }
+
+  if (!/^wss:\/\/[^/]+$/i.test(livekitUrl)) {
+    return res.status(200).json({
+      configured: true,
+      accepted: false,
+      message: 'LIVEKIT_URL должен быть адресом wss:// вашего проекта LiveKit Cloud.'
+    });
+  }
+
+  try {
+    const host = livekitUrl.replace(/^wss:/i, 'https:');
+    const rooms = new RoomServiceClient(host, apiKey, apiSecret);
+    await rooms.listRooms();
+    return res.json({
+      configured: true,
+      accepted: true,
+      host: new URL(livekitUrl).host,
+      message: 'LiveKit принял API Key и API Secret. Сервер подключается к правильному проекту.'
+    });
+  } catch (error) {
+    const status = Number(error && (error.status || error.statusCode || error.code)) || 0;
+    const rejected = status === 401 || status === 403 || /unauthorized|permission|invalid.*(key|token|auth)/i.test(String(error && error.message || ''));
+    console.error('LiveKit credential diagnostic failed:', {
+      status,
+      message: String(error && error.message || 'Unknown error').slice(0, 180)
+    });
+    return res.status(200).json({
+      configured: true,
+      accepted: false,
+      host: new URL(livekitUrl).host,
+      reason: rejected ? 'credentials_rejected' : 'connection_failed',
+      message: rejected
+        ? 'LiveKit отверг эту пару API Key и API Secret. Проверь, что оба значения взяты из одного проекта и одного API key.'
+        : 'Не удалось проверить API-доступ к LiveKit. Проверь адрес проекта и доступность сервиса.'
+    });
+  }
+});
+
 app.post('/api/livekit/token', async (req, res) => {
   const now = Date.now();
   const clientIp = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
@@ -59,8 +110,8 @@ app.post('/api/livekit/token', async (req, res) => {
     }
   }
   const livekitUrl = String(process.env.LIVEKIT_URL || '').trim().replace(/\/$/, '');
-  const apiKey = process.env.LIVEKIT_API_KEY;
-  const apiSecret = process.env.LIVEKIT_API_SECRET;
+  const apiKey = String(process.env.LIVEKIT_API_KEY || '').trim();
+  const apiSecret = String(process.env.LIVEKIT_API_SECRET || '').trim();
 
   if (!livekitUrl || !apiKey || !apiSecret) {
     return res.status(503).json({
