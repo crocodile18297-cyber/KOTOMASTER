@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "KOTOMASTER.zip"
+      - "KOTOMASTER.zip.b64"
   workflow_dispatch:
 
 permissions:
@@ -21,12 +21,13 @@ jobs:
 
       - name: Unpack project files
         run: |
-          test -f KOTOMASTER.zip
+          test -f KOTOMASTER.zip.b64
+          base64 -d KOTOMASTER.zip.b64 > KOTOMASTER.zip
           mkdir -p /tmp/kotomaster-project
           unzip -o KOTOMASTER.zip -d /tmp/kotomaster-project
           test -f /tmp/kotomaster-project/kotomaster/package.json
           cp -a /tmp/kotomaster-project/kotomaster/. .
-          rm -rf /tmp/kotomaster-project KOTOMASTER.zip
+          rm -rf /tmp/kotomaster-project KOTOMASTER.zip KOTOMASTER.zip.b64
 
       - name: Commit project source
         run: |
