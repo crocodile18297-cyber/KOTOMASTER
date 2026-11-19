@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0c0a19">
+  <meta name="description" content="KOTOMASTER — мессенджер с видеозвонками и демонстрацией экрана.">
+  <title>KOTOMASTER — на связи по-кошачьи</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/socket.io/socket.io.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+
+  <main id="joinScreen" class="join-screen">
+    <section class="welcome-side">
+      <div class="brand brand-large">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 64 64" role="img">
+            <path d="M12 27 10 9l16 10a28 28 0 0 1 12 0L54 9l-2 18a23 23 0 1 1-40 0Z" fill="currentColor"/>
+            <path d="M23 33h.2M41 33h.2" stroke="#171126" stroke-width="6" stroke-linecap="round"/>
+            <path d="M29 41q3 3 6 0M32 40v4" fill="none" stroke="#171126" stroke-width="2.6" stroke-linecap="round"/>
+            <path d="m17 39-8-2m8 7-8 1m38-6 8-2m-8 7 8 1" stroke="#171126" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <span>KOTO<span class="brand-accent">MASTER</span></span>
+      </div>
+
+      <div class="welcome-copy">
+        <div class="eyebrow"><span class="eyebrow-dot"></span> ТВОЯ КОШАЧЬЯ СВЯЗЬ</div>
+        <h1>Будь ближе.<br><span>Даже на расстоянии.</span></h1>
+        <p>Общайся, включай камеру и показывай экран. Твоя компания — в одном уютном месте.</p>
+      </div>
+
+      <div class="feature-stack">
+        <div class="feature-card feature-video">
+          <div class="feature-icon"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3z"/></svg></div>
+          <div><strong>Видеозвонки</strong><small>Смотри в глаза, а не в текст</small></div>
+          <span class="feature-spark">✦</span>
+        </div>
+        <div class="feature-card feature-screen">
+          <div class="feature-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2.5"/><path d="M8 21h8m-4-4v4m-3-9 2-2 2 2m-2-2v5"/></svg></div>
+          <div><strong>Показ экрана</strong><small>Делись играми, проектами и идеями</small></div>
+          <span class="feature-spark">✦</span>
+        </div>
+        <div class="feature-card feature-chat">
+          <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6a7.5 7.5 0 1 1 17-3.5Z"/><path d="M8 11h8m-8 4h5"/></svg></div>
+          <div><strong>Чат комнаты</strong><small>Все сообщения рядом</small></div>
+          <span class="feature-spark">✦</span>
+        </div>
+      </div>
+
+      <div class="welcome-cat" aria-hidden="true">
+        <div class="cat-orbit orbit-a"></div><div class="cat-orbit orbit-b"></div>
+        <svg viewBox="0 0 260 250">
+          <defs><linearGradient id="catGrad" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#b7a1ff"/><stop offset="1" stop-color="#67d9ee"/></linearGradient></defs>
+          <path d="M54 96 43 27l65 37q22-7 44 0l65-37-11 69q22 25 18 61-8 70-94 70T36 157q-4-36 18-61Z" fill="url(#catGrad)"/>
+          <path d="m60 82-7-41 42 25m104 16 7-41-42 25" fill="#8a7be1" opacity=".5"/>
+          <path d="M91 125q9-10 18 0m43 0q9-10 18 0" stroke="#171126" stroke-width="8" stroke-linecap="round" fill="none"/>
+          <path d="m125 142 10 0-5 7Z" fill="#171126"/><path d="M120 154q10 10 20 0" stroke="#171126" stroke-width="3" fill="none" stroke-linecap="round"/>
+          <path d="m83 151-37-7m37 19-39 5m133-17 37-7m-37 19 39 5" stroke="#171126" stroke-width="2.6" stroke-linecap="round"/>
+          <path d="M99 190q31 18 62 0" stroke="#fff" stroke-width="5" opacity=".28" stroke-linecap="round" fill="none"/>
+        </svg>
+        <span class="cat-star star-a">✦</span><span class="cat-star star-b">✧</span><span class="cat-star star-c">✦</span>
+      </div>
+      <div class="welcome-footer"><span>КОМНАТА ДЛЯ СВОИХ</span><span>●</span><span>ПРОСТО ПОДКЛЮЧИСЬ</span></div>
+    </section>
+
+    <section class="join-side">
+      <div class="join-card">
+        <div class="mobile-brand brand">
+          <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M12 27 10 9l16 10a28 28 0 0 1 12 0L54 9l-2 18a23 23 0 1 1-40 0Z" fill="currentColor"/><path d="M23 33h.2M41 33h.2" stroke="#171126" stroke-width="6" stroke-linecap="round"/><path d="M29 41q3 3 6 0M32 40v4" fill="none" stroke="#171126" stroke-width="2.6" stroke-linecap="round"/></svg></div>
+          <span>KOTO<span class="brand-accent">MASTER</span></span>
+        </div>
+        <div class="card-kicker">НАЧНИ ОБЩЕНИЕ</div>
+        <h2>Привет, котик!</h2>
+        <p class="card-subtitle">Как тебя будут видеть друзья?</p>
+
+        <form id="joinForm" autocomplete="off">
+          <label class="field-label" for="nameInput">ТВОЁ ИМЯ</label>
+          <div class="input-wrap"><span class="input-icon">✦</span><input id="nameInput" maxlength="24" placeholder="Например, Барсик" required></div>
+
+          <button id="createRoomBtn" class="primary-button" type="submit"><span class="button-cat">✦</span><span>Создать комнату</span><span class="button-arrow">↗</span></button>
+        </form>
+
+        <div class="join-divider"><span></span><small>ИЛИ ПРИСОЕДИНИСЬ</small><span></span></div>
+        <form id="joinRoomForm" autocomplete="off">
+          <label class="field-label" for="roomInput">КОД КОМНАТЫ</label>
+          <div class="input-wrap code-wrap"><span class="input-icon">⌘</span><input id="roomInput" maxlength="6" placeholder="ВВЕДИ 6 СИМВОЛОВ" autocapitalize="characters" spellcheck="false"><button id="joinRoomBtn" type="submit" class="join-code-button">Войти <span>→</span></button></div>
+        </form>
+        <p id="joinError" class="form-error" role="status"></p>
+        <div class="privacy-note"><span class="privacy-lock">♢</span> Комната доступна только тем, у кого есть код</div>
+      </div>
+      <div class="join-bottom"><span>© 2026 KOTOMASTER</span><span>СОЗДАНО ДЛЯ ОБЩЕНИЯ <b>♥</b></span></div>
+    </section>
+  </main>
+
+  <main id="appScreen" class="app-screen" hidden>
+    <aside class="sidebar">
+      <div class="sidebar-brand brand">
+        <div class="brand-mark"><svg viewBox="0 0 64 64"><path d="M12 27 10 9l16 10a28 28 0 0 1 12 0L54 9l-2 18a23 23 0 1 1-40 0Z" fill="currentColor"/><path d="M23 33h.2M41 33h.2" stroke="#171126" stroke-width="6" stroke-linecap="round"/><path d="M29 41q3 3 6 0M32 40v4" fill="none" stroke="#171126" stroke-width="2.6" stroke-linecap="round"/></svg></div>
+        <span>KOTO<span class="brand-accent">MASTER</span></span>
+      </div>
+
+      <div class="sidebar-section-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
+      <button class="nav-item active" data-panel="chat"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6a7.5 7.5 0 1 1 17-3.5Z"/><path d="M8 11h8m-8 4h5"/></svg></span>Чат<span class="nav-indicator"></span></button>
+      <button class="nav-item" data-panel="call"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3z"/></svg></span>Видеокомната<span id="callNavBadge" class="nav-badge" hidden>LIVE</span></button>
+
+      <div class="sidebar-room-block">
+        <div class="sidebar-section-label">ТВОЯ КОМНАТА</div>
+        <div class="room-mini-card"><div class="room-mini-icon">⌂</div><div class="room-mini-info"><strong id="sidebarRoomCode">------</strong><small>Приватная комната</small></div><button id="copyRoomBtn" class="icon-button copy-mini" title="Скопировать код" aria-label="Скопировать код">▢</button></div>
+      </div>
+
+      <div class="members-heading"><span>УЧАСТНИКИ</span><span id="memberCount" class="member-count">1/6</span></div>
+      <div id="memberList" class="member-list"></div>
+
+      <div class="sidebar-bottom">
+        <div class="profile-card"><div id="myAvatar" class="avatar avatar-me">К</div><div class="profile-info"><strong id="myName">Котик</strong><small><span class="online-dot"></span> В сети</small></div><button id="leaveRoomBtn" class="icon-button leave-icon" title="Выйти из комнаты" aria-label="Выйти из комнаты">↪</button></div>
+        <div class="sidebar-caption">KOTOMASTER <span>v1.0</span></div>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <div class="topbar-title"><div class="topbar-room-icon">✦</div><div><h2 id="topbarTitle">Общий чат</h2><p id="topbarSubtitle">Твоя комната · 1 участник</p></div></div>
+        <div class="topbar-actions"><div class="secure-pill"><span>●</span> Комната по коду</div><button id="inviteBtn" class="invite-button"><span>＋</span> Пригласить</button></div>
+      </header>
+
+      <section id="chatPanel" class="chat-panel">
+        <div class="chat-scroll" id="chatScroll">
+          <div class="chat-welcome"><div class="welcome-icon">✧</div><h3>Мяу! Комната открыта</h3><p>Здесь появятся сообщения. Пригласи друзей, чтобы начать общение.</p><div class="welcome-code"><span>КОД КОМНАТЫ</span><strong id="welcomeRoomCode">------</strong><button id="welcomeCopyBtn" title="Скопировать код" aria-label="Скопировать код">▢</button></div></div>
+          <div id="messagesList" class="messages-list"></div>
+        </div>
+        <form id="messageForm" class="composer">
+          <div class="composer-attach">✧</div><input id="messageInput" maxlength="1200" placeholder="Напиши что-нибудь приятное..." autocomplete="off"><span class="composer-hint">Enter ↵</span><button class="send-button" type="submit" aria-label="Отправить сообщение"><svg viewBox="0 0 24 24"><path d="m4 4 16 8-16 8 3-8-3-8Z"/><path d="M7 12h13"/></svg></button>
+        </form>
+      </section>
+
+      <section id="callPanel" class="call-panel" hidden>
+        <div class="call-heading"><div><div class="call-kicker"><span class="live-dot"></span> KOTO LIVE ROOM</div><h3>Видеокомната</h3><p id="callDescription">Подключись, чтобы увидеть друзей и начать разговор.</p></div><div class="call-room-chip"><span>ROOM</span><strong id="callRoomCode">------</strong></div></div>
+        <div id="callStage" class="call-stage">
+          <div id="videoGrid" class="video-grid"></div>
+          <div id="callEmptyState" class="call-empty-state"><div class="empty-cat">ฅ^•ﻌ•^ฅ</div><h4>Здесь пока тихо</h4><p>Включи камеру и микрофон, чтобы войти в звонок.</p><button id="startCallBtn" class="primary-button start-call-button"><span>▶</span> Войти в видеозвонок</button></div>
+        </div>
+        <div class="call-bottom"><div class="call-status"><span id="callStatusDot" class="status-dot"></span><span id="callStatusText">Ты не в звонке</span></div><div class="call-controls">
+          <button id="micBtn" class="call-control" title="Включить микрофон" aria-label="Включить микрофон" disabled><svg viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0m-7 7v3m-4 0h8"/></svg><span>Микрофон</span></button>
+          <button id="cameraBtn" class="call-control" title="Включить камеру" aria-label="Включить камеру" disabled><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3z"/></svg><span>Камера</span></button>
+          <button id="shareBtn" class="call-control share-control" title="Показать экран" aria-label="Показать экран" disabled><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2.5"/><path d="M8 21h8m-4-4v4m-3-9 2-2 2 2m-2-2v5"/></svg><span>Экран</span></button>
+          <button id="leaveCallBtn" class="call-control hangup-control" title="Выйти из звонка" aria-label="Выйти из звонка" disabled><svg viewBox="0 0 24 24"><path d="M4 15q8-7 16 0l-2 4q-1 1-3 0l-2-2h-2l-2 2q-2 1-3 0l-2-4Z"/></svg><span>Завершить</span></button>
+        </div><div class="call-quality"><span class="quality-bars"><i></i><i></i><i></i></span> WEBRTC</div></div>
+        <p class="call-tip">Подсказка: демонстрация экрана доступна в браузере по защищённому HTTPS-соединению или на localhost.</p>
+      </section>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="inviteModal" class="modal-backdrop" hidden>
+    <div class="invite-modal" role="dialog" aria-modal="true" aria-labelledby="inviteTitle"><button id="closeInviteBtn" class="modal-close" aria-label="Закрыть">×</button><div class="modal-cat">✧</div><div class="card-kicker">ПОЗОВИ СВОИХ</div><h3 id="inviteTitle">Время собирать котиков</h3><p>Отправь этот код друзьям. Они смогут присоединиться к комнате.</p><div class="invite-code"><strong id="modalRoomCode">------</strong><button id="modalCopyBtn">Копировать</button></div><small>Не публикуй код в открытом доступе.</small></div>
+  </div>
+</body>
+</html>
