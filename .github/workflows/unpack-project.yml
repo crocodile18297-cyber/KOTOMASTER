@@ -1,0 +1,39 @@
+name: Install KOTOMASTER source
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "KOTOMASTER.zip"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Unpack project files
+        run: |
+          test -f KOTOMASTER.zip
+          mkdir -p /tmp/kotomaster-project
+          unzip -o KOTOMASTER.zip -d /tmp/kotomaster-project
+          test -f /tmp/kotomaster-project/kotomaster/package.json
+          cp -a /tmp/kotomaster-project/kotomaster/. .
+          rm -rf /tmp/kotomaster-project KOTOMASTER.zip
+
+      - name: Commit project source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Add KOTOMASTER messenger source"
+            git push
+          fi
