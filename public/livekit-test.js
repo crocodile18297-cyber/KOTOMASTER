@@ -126,16 +126,21 @@
       room.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
         if (participant && participant.isLocal) setStatus(`LiveKit · качество соединения: ${String(quality)}`);
       });
+      room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        $('#startAudioBtn').hidden = Boolean(room && room.canPlaybackAudio);
+      });
       room.on(RoomEvent.Disconnected, () => {
         setStatus('Соединение завершено.');
         room = null;
         cameraOn = false; micOn = false; screenOn = false;
+        $('#startAudioBtn').hidden = true;
         updateButtons();
       });
 
       room.prepareConnection(credentials.url, credentials.token);
       await room.connect(credentials.url, credentials.token);
       $('#roomLabel').textContent = `Комната ${roomCode}`;
+      $('#startAudioBtn').hidden = Boolean(room.canPlaybackAudio);
       setStatus('Подключено к LiveKit. Включи микрофон и камеру.');
       updateButtons();
     } catch (error) {
@@ -215,13 +220,40 @@
   $('#cameraBtn').addEventListener('click', toggleCamera);
   $('#screenBtn').addEventListener('click', toggleScreen);
   $('#leaveBtn').addEventListener('click', leave);
-  $('#qualitySelect').addEventListener('change', () => {
-    if (cameraOn) {
-      const previous = cameraOn;
+  $('#qualitySelect').addEventListener('change', async () => {
+    if (!room || !cameraOn) return;
+    const profiles = {
+      '360': LivekitClient.VideoPresets.h360,
+      '480': LivekitClient.VideoPresets.h480,
+      '720': LivekitClient.VideoPresets.h720,
+      '1080': LivekitClient.VideoPresets.h1080
+    };
+    const profile = profiles[$('#qualitySelect').value] || LivekitClient.VideoPresets.h720;
+    try {
+      await room.localParticipant.setCameraEnabled(false);
       cameraOn = false;
-      toggleCamera().then(() => {
-        if (previous) setStatus('Настройки разрешения обновлены. При необходимости снова включи камеру.');
-      });
+      updateButtons();
+      await room.localParticipant.setCameraEnabled(true, { resolution: profile.resolution });
+      cameraOn = true;
+      setStatus(`Качество камеры изменено: ${$('#qualitySelect').value}p`);
+    } catch (error) {
+      try {
+        await room.localParticipant.setCameraEnabled(true);
+        cameraOn = true;
+      } catch (_restoreError) {}
+      showError(`Не удалось применить разрешение: ${error.message}`);
+    }
+    updateButtons();
+  });
+
+  $('#startAudioBtn').addEventListener('click', async () => {
+    if (!room) return;
+    try {
+      await room.startAudio();
+      $('#startAudioBtn').hidden = true;
+      setStatus('Звук участников включён.');
+    } catch (error) {
+      showError(`Не удалось включить звук: ${error.message}`);
     }
   });
 
