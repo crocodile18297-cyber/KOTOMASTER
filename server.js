@@ -123,7 +123,7 @@ function joinRoom(socket, payload, ack, createNew = false) {
   let room = rooms.get(roomId);
   if (!room && !createNew) return callback({ ok: false, error: 'Комната не найдена. Проверьте код.' });
   if (!room) {
-    room = { id: roomId, members: new Map(), messages: [], createdAt: Date.now() };
+    room = { id: roomId, members: new Map(), messages: [], pinnedMessageId: null, createdAt: Date.now() };
     rooms.set(roomId, room);
   }
 
@@ -175,6 +175,7 @@ function joinRoom(socket, payload, ack, createNew = false) {
     self: toPublicMember(member),
     participants: previousMembers,
     messages: room.messages.slice(-MAX_MESSAGES),
+    pinnedMessage: room.messages.find((item) => item.id === room.pinnedMessageId) || null,
     maxRoomSize: MAX_ROOM_SIZE
   });
 }
@@ -216,6 +217,7 @@ io.on('connection', (socket) => {
       self: toPublicMember(member),
       participants: getPublicMembers(room).filter((item) => item.id !== socket.id),
       messages: room.messages.slice(-MAX_MESSAGES),
+      pinnedMessage: room.messages.find((item) => item.id === room.pinnedMessageId) || null,
       maxRoomSize: MAX_ROOM_SIZE
     });
   });
@@ -229,17 +231,137 @@ io.on('connection', (socket) => {
     const text = cleanMessage(payload && payload.text);
     if (!room || !text) return callback({ ok: false });
 
+    const replyTarget = payload && typeof payload.replyTo === 'string'
+      ? room.messages.find((item) => item.id === payload.replyTo && !item.deleted)
+      : null;
     const message = {
       id: crypto.randomUUID(),
       from: socket.id,
       name: socket.data.name,
       text,
-      time: Date.now()
+      time: Date.now(),
+      editedAt: null,
+      deleted: false,
+      reactions: {},
+      readBy: [],
+      replyTo: replyTarget ? {
+        id: replyTarget.id,
+        from: replyTarget.from,
+        name: replyTarget.name,
+        text: replyTarget.text.slice(0, 180)
+      } : null
     };
     room.messages.push(message);
-    if (room.messages.length > MAX_MESSAGES) room.messages.splice(0, room.messages.length - MAX_MESSAGES);
+    if (room.messages.length > MAX_MESSAGES) {
+      const removed = room.messages.splice(0, room.messages.length - MAX_MESSAGES);
+      if (removed.some((item) => item.id === room.pinnedMessageId)) room.pinnedMessageId = null;
+    }
     io.to(roomId).emit('chat:message', message);
     callback({ ok: true, id: message.id });
+  });
+
+  socket.on('chat:typing', (payload) => {
+    const roomId = socket.data.roomId;
+    const room = roomId && rooms.get(roomId);
+    if (!room || !room.members.has(socket.id)) return;
+    const now = Date.now();
+    const last = Number(socket.data.lastTypingAt || 0);
+    if (now - last < 250) return;
+    socket.data.lastTypingAt = now;
+    socket.to(roomId).emit('chat:typing', {
+      id: socket.id,
+      name: socket.data.name,
+      typing: Boolean(payload && payload.typing)
+    });
+  });
+
+  socket.on('chat:edit', (payload, ack) => {
+    const callback = typeof ack === 'function' ? ack : () => {};
+    const roomId = socket.data.roomId;
+    const room = roomId && rooms.get(roomId);
+    const messageId = String(payload && payload.messageId || '');
+    const text = cleanMessage(payload && payload.text);
+    const message = room && room.messages.find((item) => item.id === messageId);
+    if (!message || message.from !== socket.id || message.deleted || !text) {
+      return callback({ ok: false, error: 'Это сообщение нельзя изменить.' });
+    }
+    message.text = text;
+    message.editedAt = Date.now();
+    io.to(roomId).emit('chat:edited', message);
+    callback({ ok: true });
+  });
+
+  socket.on('chat:delete', (payload, ack) => {
+    const callback = typeof ack === 'function' ? ack : () => {};
+    const roomId = socket.data.roomId;
+    const room = roomId && rooms.get(roomId);
+    const messageId = String(payload && payload.messageId || '');
+    const message = room && room.messages.find((item) => item.id === messageId);
+    if (!message || message.from !== socket.id || message.deleted) {
+      return callback({ ok: false, error: 'Это сообщение нельзя удалить.' });
+    }
+    message.deleted = true;
+    message.text = '';
+    message.deletedAt = Date.now();
+    message.reactions = {};
+    if (room.pinnedMessageId === message.id) {
+      room.pinnedMessageId = null;
+      io.to(roomId).emit('chat:pinned', null);
+    }
+    io.to(roomId).emit('chat:deleted', { messageId });
+    callback({ ok: true });
+  });
+
+  socket.on('chat:react', (payload, ack) => {
+    const callback = typeof ack === 'function' ? ack : () => {};
+    const roomId = socket.data.roomId;
+    const room = roomId && rooms.get(roomId);
+    const messageId = String(payload && payload.messageId || '');
+    const emoji = String(payload && payload.emoji || '');
+    const allowed = new Set(['❤️', '👍', '😂', '🔥', '🐱', '🎉']);
+    const message = room && room.messages.find((item) => item.id === messageId && !item.deleted);
+    if (!message || !allowed.has(emoji)) return callback({ ok: false });
+    if (!message.reactions || typeof message.reactions !== 'object') message.reactions = {};
+    const users = Array.isArray(message.reactions[emoji]) ? message.reactions[emoji] : [];
+    const index = users.indexOf(socket.id);
+    if (index >= 0) users.splice(index, 1);
+    else users.push(socket.id);
+    if (users.length) message.reactions[emoji] = users;
+    else delete message.reactions[emoji];
+    io.to(roomId).emit('chat:reaction', { messageId, reactions: message.reactions });
+    callback({ ok: true });
+  });
+
+  socket.on('chat:pin', (payload, ack) => {
+    const callback = typeof ack === 'function' ? ack : () => {};
+    const roomId = socket.data.roomId;
+    const room = roomId && rooms.get(roomId);
+    if (!room || !room.members.has(socket.id)) return callback({ ok: false });
+    const messageId = String(payload && payload.messageId || '');
+    const message = messageId
+      ? room.messages.find((item) => item.id === messageId && !item.deleted)
+      : null;
+    if (messageId && !message) return callback({ ok: false, error: 'Сообщение не найдено.' });
+    room.pinnedMessageId = message ? message.id : null;
+    io.to(roomId).emit('chat:pinned', message);
+    callback({ ok: true });
+  });
+
+  socket.on('chat:read', (payload) => {
+    const roomId = socket.data.roomId;
+    const room = roomId && rooms.get(roomId);
+    if (!room || !Array.isArray(payload && payload.messageIds)) return;
+    const ids = new Set(payload.messageIds.filter((id) => typeof id === 'string').slice(0, 50));
+    room.messages.forEach((message) => {
+      if (!ids.has(message.id) || message.from === socket.id || message.deleted) return;
+      if (!Array.isArray(message.readBy)) message.readBy = [];
+      if (!message.readBy.includes(socket.id)) message.readBy.push(socket.id);
+      socket.to(roomId).emit('chat:read-receipt', {
+        messageId: message.id,
+        readerId: socket.id,
+        readerName: socket.data.name
+      });
+    });
   });
 
   socket.on('media:state', (payload) => {
