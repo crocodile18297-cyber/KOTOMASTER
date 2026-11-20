@@ -107,6 +107,9 @@ async function initializeSupabase() {
   supabaseClient.auth.onAuthStateChange((event, session) => {
     const previousToken = authSession?.access_token;
     authSession = session;
+    if (session?.user && (!previousToken || previousToken !== session.access_token)) {
+      loadRemoteCallHistory().catch((error)=>console.warn('Could not refresh remote call history:',error));
+    }
     if (event === 'PASSWORD_RECOVERY') {
       passwordRecoveryPending = true;
       authMode = 'recovery';
@@ -558,6 +561,7 @@ function resetAfterRoomRecoveryFailure(message) {
     previewAudioStream = null;
   }
   roomId = '';
+  roomConversationId = null;
   try { localStorage.removeItem(ROOM_SESSION_KEY); } catch (_error) {}
   participants.clear();
   seenMessages.clear();
@@ -665,7 +669,7 @@ async function joinRoom(name, code) {
 
 function enterWorkspace(data, preservePanel = false) {
   roomId = data.roomId;
-  roomConversationId = data.conversationId || roomConversationId || null;
+  roomConversationId = data.conversationId || null;
   myName = data.self.name;
   try {
     localStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({ roomId, name: myName, savedAt: Date.now(), wasInCall: isInCall || resumeCallAfterRestore }));
