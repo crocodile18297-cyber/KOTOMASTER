@@ -1618,13 +1618,24 @@ async function uploadCommunityFile(file) {
   if(!conversationId||!userId||!file) throw new Error('Сначала открой переписку.');
   const maxBytes=50*1024*1024;
   if(file.size>maxBytes) throw new Error('Файл больше 50 МБ. Выбери файл поменьше.');
-  const safeName=String(file.name||'file').replace(/[^\\p{L}\\p{N}._-]/gu,'_').slice(-90)||'file';
+  const safeName=String(file.name||'file').replace(/[^\p{L}\p{N}._-]/gu,'_').slice(-90)||'file';
   const unique=(window.crypto?.randomUUID?.()||String(Date.now()));
   const objectPath=`${conversationId}/${userId}/${unique}-${safeName}`;
   let uploaded=false;
   let messageId=null;
   try {
-    const contentType=file.type||'application/octet-stream';
+    const contentType=String(file.type||'application/octet-stream').split(';')[0];
+    const allowedTypes=new Set([
+      'image/jpeg','image/png','image/webp','image/gif',
+      'video/mp4','video/webm',
+      'audio/webm','audio/ogg','audio/mpeg','audio/mp4',
+      'application/pdf','text/plain',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ]);
+    if(!allowedTypes.has(contentType)) throw new Error('Этот тип файла не поддерживается. Отправь изображение, видео, аудио, PDF, TXT, DOCX или XLSX.');
     const {error:uploadError}=await supabaseClient.storage.from('chat-files').upload(objectPath,file,{
       cacheControl:'3600',contentType,upsert:false
     });
