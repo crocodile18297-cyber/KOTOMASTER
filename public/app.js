@@ -134,8 +134,6 @@ function updateAuthInterface() {
     nameInput.value = String(displayName).slice(0, 24);
     myName = nameInput.value;
   }
-  const accountName = $('#accountEmailLabel');
-  if (accountName) accountName.textContent = user?.email || '';
 }
 
 function setAuthMode(mode) {
