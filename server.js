@@ -30,6 +30,11 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 
 
+
+const SUPABASE_URL = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
+const SUPABASE_PUBLISHABLE_KEY = String(process.env.SUPABASE_PUBLISHABLE_KEY || '');
+const AUTH_REQUIRED = Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY);
+
 app.get('/api/config', (_req, res) => {
   const iceServers = [{
     urls: [
@@ -39,38 +44,55 @@ app.get('/api/config', (_req, res) => {
       'stun:stun3.l.google.com:19302'
     ]
   }];
-
   const turnUrls = String(process.env.TURN_URLS || process.env.TURN_URL || '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-
+    .split(',').map((value) => value.trim()).filter(Boolean);
   if (turnUrls.length) {
     let username = String(process.env.TURN_USERNAME || '').trim();
     let credential = String(process.env.TURN_CREDENTIAL || '').trim();
-
-    // Optional coturn TURN REST API: issue short-lived credentials without exposing the shared secret.
     if (process.env.TURN_SHARED_SECRET) {
       username = `${Math.floor(Date.now() / 1000) + 3600}:${username || 'kotomaster'}`;
-      credential = crypto.createHmac('sha1', process.env.TURN_SHARED_SECRET)
-        .update(username)
-        .digest('base64');
+      credential = crypto.createHmac('sha1', process.env.TURN_SHARED_SECRET).update(username).digest('base64');
     }
-
-    if (username && credential) {
-      iceServers.push({ urls: turnUrls, username, credential });
-    }
+    if (username && credential) iceServers.push({ urls: turnUrls, username, credential });
   }
-
   res.setHeader('Cache-Control', 'no-store, private');
   res.json({
     iceServers,
     iceTransportPolicy: process.env.ICE_TRANSPORT_POLICY === 'relay' ? 'relay' : 'all',
-    maxRoomSize: MAX_ROOM_SIZE
+    maxRoomSize: MAX_ROOM_SIZE,
+    supabaseUrl: SUPABASE_URL || null,
+    supabasePublishableKey: SUPABASE_PUBLISHABLE_KEY || null,
+    authRequired: AUTH_REQUIRED
   });
 });
 
-function cleanName(value) {
+async function verifyAccessToken(token) {
+  if (!AUTH_REQUIRED || !token || typeof token !== 'string' || token.length > 8192) return null;
+  try {
+    const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(7000)
+    });
+    if (!response.ok) return null;
+    const user = await response.json();
+    return user && user.id && user.email ? user : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+io.use(async (socket, next) => {
+  if (!AUTH_REQUIRED) return next(new Error('Авторизация временно недоступна.'));
+  const token = socket.handshake.auth && socket.handshake.auth.accessToken;
+  const user = await verifyAccessToken(token);
+  if (!user) return next(new Error('Сессия недействительна. Войди в аккаунт заново.'));
+  socket.data.userId = user.id;
+  socket.data.email = user.email;
+  socket.data.authUser = user;
+  next();
+});
+
+function cleanNamefunction cleanName(value) {
   const name = String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 24);
   return name || 'Котик';
 }
@@ -112,6 +134,8 @@ function cleanClientId(value, fallback) {
 }
 
 function joinRoom(socket, payload, ack, createNew = false) {
+  if (!socket.data.userId) return (typeof ack === 'function' ? ack : () => {})({ ok: false, error: 'Сначала войди в аккаунт.' });
+
   const callback = typeof ack === 'function' ? ack : () => {};
   const name = cleanName(payload && payload.name);
   const roomId = createNew ? makeRoomId() : cleanRoomId(payload && payload.roomId);
