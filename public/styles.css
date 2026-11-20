@@ -446,3 +446,49 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cyan); outl
 
 .quality-bars.quality-medium i { background: var(--cyan); }
 .quality-bars.quality-poor i { background: var(--pink); }
+
+
+.mic-input-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #79738c;
+  font-size: 7px;
+  letter-spacing: .7px;
+  white-space: nowrap;
+}
+.mic-input-control select {
+  width: min(132px, 24vw);
+  max-width: 132px;
+  min-width: 72px;
+  border: 1px solid rgba(179,166,235,.18);
+  border-radius: 7px;
+  padding: 5px 6px;
+  color: #c9c1df;
+  background: rgba(37,33,58,.92);
+  font: inherit;
+  letter-spacing: 0;
+  outline: none;
+}
+.mic-input-meter {
+  display: inline-block;
+  width: 30px;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: rgba(179,166,235,.15);
+}
+.mic-input-meter i {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--cyan), var(--green));
+  transition: width .08s linear;
+}
+@media (max-width: 740px) {
+  .call-quality { gap: 5px; flex-wrap: wrap; justify-content: center; }
+  .mic-input-control { font-size: 6px; }
+  .mic-input-control select { width: min(118px, 30vw); min-width: 66px; padding: 4px; }
+  .mic-input-meter { width: 22px; }
+}
