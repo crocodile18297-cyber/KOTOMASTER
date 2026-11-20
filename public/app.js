@@ -152,6 +152,7 @@ function setAuthMode(mode) {
   authMode = mode === 'signup' ? 'signup' : 'signin';
   const signup = authMode === 'signup';
   $('#authDisplayNameWrap').hidden = !signup;
+  $('#authUsernameWrap').hidden = !signup;
   $('#authPassword').autocomplete = signup ? 'new-password' : 'current-password';
   $('#authSubmitBtn').querySelector('span:nth-child(2)').textContent = signup ? 'Создать аккаунт' : 'Войти';
   $('#authModeToggle').textContent = signup ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Зарегистрироваться';
@@ -174,9 +175,11 @@ async function handleAuthSubmit(event) {
   const email = $('#authEmail').value.trim().toLowerCase();
   const password = $('#authPassword').value;
   const displayName = $('#authDisplayName').value.trim().slice(0, 24);
+  const username = $('#authUsername').value.trim().toLowerCase();
   const errorNode = $('#authError');
   errorNode.textContent = '';
   if (authMode === 'signup' && !displayName) { errorNode.textContent = 'Укажи имя для профиля.'; return; }
+  if (authMode === 'signup' && !/^[a-z0-9_]{3,24}$/.test(username)) { errorNode.textContent = 'Username: 3–24 символа, только латинские буквы, цифры и _. '; return; }
   if (authMode === 'recovery' && password.length < 8) { errorNode.textContent = 'Новый пароль должен содержать не менее 8 символов.'; return; }
   setBusy(button, true, authMode === 'signup' ? 'Создаём аккаунт…' : authMode === 'recovery' ? 'Сохраняем…' : 'Входим…');
   try {
@@ -195,7 +198,7 @@ async function handleAuthSubmit(event) {
     } else if (authMode === 'signup') {
       const { data, error } = await supabaseClient.auth.signUp({
         email, password,
-        options: { data: { display_name: displayName } }
+        options: { data: { display_name: displayName, username } }
       });
       if (error) throw error;
       if (!data.session) {
