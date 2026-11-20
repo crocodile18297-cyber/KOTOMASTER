@@ -37,6 +37,11 @@ let rtcConfigPromise = null;
 let peerConnectionPromises = new Map();
 let remoteAudioElements = new Map();
 const senderParameterQueues = new WeakMap();
+let micMeterContext = null;
+let micMeterSource = null;
+let micMeterAnalyser = null;
+let micMeterTimer = null;
+let isSwitchingAudioInput = false;
 let toastTimer = null;
 let viewerStream = null;
 
@@ -441,7 +446,7 @@ function updateTileState(id, member) {
   tile.classList.toggle('sharing', Boolean(member.sharing) || (id === (socket && socket.id) && isSharing));
 }
 
-function getSpeechAudioConstraints() {
+function getSpeechAudioConstraints(deviceId = '') {
   const supported = navigator.mediaDevices.getSupportedConstraints
     ? navigator.mediaDevices.getSupportedConstraints()
     : {};
@@ -450,9 +455,189 @@ function getSpeechAudioConstraints() {
     noiseSuppression: true,
     autoGainControl: true
   };
+  if (deviceId) constraints.deviceId = { exact: deviceId };
   if (supported.channelCount) constraints.channelCount = { ideal: 1 };
   if (supported.sampleRate) constraints.sampleRate = { ideal: 48000 };
+  if (supported.latency) constraints.latency = { ideal: 0.02 };
   return constraints;
+}
+
+async function refreshAudioInputDevices(preferredDeviceId = '') {
+  const select = $('#audioInputSelect');
+  if (!select || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const microphones = devices.filter((device) => device.kind === 'audioinput');
+    const activeTrack = localStream && localStream.getAudioTracks()[0];
+    const activeDeviceId = preferredDeviceId ||
+      (activeTrack && activeTrack.getSettings ? activeTrack.getSettings().deviceId : '') ||
+      select.value || '';
+
+    select.replaceChildren();
+    const automatic = document.createElement('option');
+    automatic.value = '';
+    automatic.textContent = 'Системный микрофон';
+    select.append(automatic);
+
+    microphones.forEach((device, index) => {
+      const option = document.createElement('option');
+      option.value = device.deviceId;
+      option.textContent = device.label || `Микрофон ${index + 1}`;
+      select.append(option);
+    });
+
+    select.value = microphones.some((device) => device.deviceId === activeDeviceId) ? activeDeviceId : '';
+    select.disabled = !isInCall || microphones.length === 0;
+    select.title = microphones.length
+      ? 'Выбери микрофон, с которого собеседник будет слышать тебя'
+      : 'Браузер пока не обнаружил доступные микрофоны';
+  } catch (error) {
+    console.warn('Could not enumerate microphones:', error);
+  }
+}
+
+function stopMicInputMeter() {
+  if (micMeterTimer) clearInterval(micMeterTimer);
+  micMeterTimer = null;
+  if (micMeterSource) {
+    try { micMeterSource.disconnect(); } catch (_error) {}
+  }
+  micMeterSource = null;
+  micMeterAnalyser = null;
+  if (micMeterContext) micMeterContext.close().catch(() => {});
+  micMeterContext = null;
+  const meter = $('#micInputLevel');
+  if (meter) meter.style.width = '0%';
+}
+
+function startMicInputMeter(track) {
+  stopMicInputMeter();
+  if (!track || track.readyState !== 'live') return;
+
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+
+  try {
+    micMeterContext = new AudioContextClass();
+    micMeterAnalyser = micMeterContext.createAnalyser();
+    micMeterAnalyser.fftSize = 512;
+    micMeterAnalyser.smoothingTimeConstant = 0.72;
+    micMeterSource = micMeterContext.createMediaStreamSource(new MediaStream([track]));
+    micMeterSource.connect(micMeterAnalyser);
+
+    const samples = new Uint8Array(micMeterAnalyser.fftSize);
+    micMeterTimer = setInterval(() => {
+      if (!micMeterAnalyser) return;
+      micMeterAnalyser.getByteTimeDomainData(samples);
+      let sum = 0;
+      for (let i = 0; i < samples.length; i += 1) {
+        const sample = (samples[i] - 128) / 128;
+        sum += sample * sample;
+      }
+      const rms = Math.sqrt(sum / samples.length);
+      const level = Math.max(0, Math.min(100, Math.round(rms * 260)));
+      const meter = $('#micInputLevel');
+      if (meter) meter.style.width = `${level}%`;
+      if (micMeterContext && micMeterContext.state === 'suspended') {
+        micMeterContext.resume().catch(() => {});
+      }
+    }, 100);
+  } catch (error) {
+    console.warn('Microphone meter unavailable:', error);
+    stopMicInputMeter();
+  }
+}
+
+function attachLocalAudioTrackLifecycle(track) {
+  if (!track) return;
+  markSpeechTrack(track);
+  track.onended = () => {
+    if (!isInCall || !localStream || !localStream.getAudioTracks().includes(track)) return;
+    isMicOn = false;
+    updateCallButtons();
+    publishMediaState();
+    showToast('Микрофон отключился. Выбери другое устройство в списке «Микрофон».');
+  };
+}
+
+async function selectAudioInput() {
+  if (!isInCall || !localStream || isSwitchingAudioInput) return;
+  const select = $('#audioInputSelect');
+  if (!select) return;
+
+  isSwitchingAudioInput = true;
+  select.disabled = true;
+  const requestedDeviceId = select.value;
+  let captured = null;
+  const changedSenders = [];
+
+  try {
+    captured = await navigator.mediaDevices.getUserMedia({
+      audio: getSpeechAudioConstraints(requestedDeviceId),
+      video: false
+    });
+    const nextTrack = captured.getAudioTracks()[0];
+    if (!nextTrack) throw new Error('Браузер не вернул аудиодорожку микрофона.');
+
+    nextTrack.enabled = true;
+    attachLocalAudioTrackLifecycle(nextTrack);
+
+    for (const pc of peerConnections.values()) {
+      if (pc.signalingState === 'closed') continue;
+      let sender = findAudioSender(pc);
+      if (sender) {
+        const previousTrack = sender.track;
+        await sender.replaceTrack(nextTrack);
+        changedSenders.push({ pc, sender, previousTrack });
+        await tuneAudioSender(sender);
+      } else {
+        sender = pc.addTrack(nextTrack, localStream);
+        changedSenders.push({ pc, sender, previousTrack: null, added: true });
+        await tuneAudioSender(sender);
+        preferOpusAudioCodec(pc, sender);
+      }
+    }
+
+    const previousTracks = localStream.getAudioTracks();
+    previousTracks.forEach((track) => localStream.removeTrack(track));
+    localStream.addTrack(nextTrack);
+    previousTracks.forEach((track) => {
+      track.onended = null;
+      track.stop();
+    });
+
+    isMicOn = true;
+    startMicInputMeter(nextTrack);
+    await refreshAudioInputDevices(nextTrack.getSettings ? nextTrack.getSettings().deviceId : requestedDeviceId);
+    updateTileState(socket.id, { audio: true, video: isCameraOn });
+    updateCallButtons();
+    publishMediaState();
+
+    const settings = nextTrack.getSettings ? nextTrack.getSettings() : {};
+    const deviceName = settings.deviceId
+      ? (select.selectedOptions[0] && select.selectedOptions[0].textContent) || 'выбранный микрофон'
+      : 'системный микрофон';
+    showToast(`Микрофон переключён: ${deviceName}. Проверь индикатор уровня.`);
+  } catch (error) {
+    console.error('Microphone switch failed:', error);
+    for (const entry of changedSenders.reverse()) {
+      try {
+        if (entry.added) entry.pc.removeTrack(entry.sender);
+        else await entry.sender.replaceTrack(entry.previousTrack || null);
+      } catch (rollbackError) {
+        console.warn('Microphone rollback failed:', rollbackError);
+      }
+    }
+    if (captured) captured.getTracks().forEach((track) => track.stop());
+    await refreshAudioInputDevices();
+    showToast(error && error.name === 'NotAllowedError'
+      ? 'Нет разрешения на выбранный микрофон. Разреши доступ в браузере.'
+      : 'Не удалось переключить микрофон. Попробуй другое устройство.');
+  } finally {
+    isSwitchingAudioInput = false;
+    select.disabled = false;
+  }
 }
 
 function markSpeechTrack(track) {
@@ -513,7 +698,7 @@ async function startCall() {
     }
 
     localStream = new MediaStream(tracks);
-    localStream.getAudioTracks().forEach(markSpeechTrack);
+    localStream.getAudioTracks().forEach(attachLocalAudioTrackLifecycle);
     localStream.getVideoTracks().forEach((track) => { try { track.contentHint = 'motion'; } catch (_error) {} });
     isInCall = true;
     isMicOn = localStream.getAudioTracks().length > 0;
@@ -530,6 +715,15 @@ async function startCall() {
     renderParticipants();
     updateCallDescription();
     updateCallStage();
+
+    const initialAudioTrack = localStream.getAudioTracks()[0];
+    if (initialAudioTrack) {
+      startMicInputMeter(initialAudioTrack);
+      await refreshAudioInputDevices(initialAudioTrack.getSettings ? initialAudioTrack.getSettings().deviceId : '');
+    } else {
+      await refreshAudioInputDevices();
+      showToast('Микрофон не выбран. Выбери гарнитуру в списке «Микрофон».');
+    }
 
     for (const member of participants.values()) {
       if (member.id !== socket.id && member.inCall) {
@@ -596,31 +790,65 @@ function startPeerQualityMonitor(peerId, pc) {
   pc._lastAdaptiveBitrate = 0;
   pc._lastScaleDown = 1;
   pc._lastAdaptiveFrameRate = 0;
+  pc._outboundSamples = new Map();
 
   pc._qualityTimer = setInterval(async () => {
     if (pc._qualityBusy || pc.signalingState === 'closed' || !isInCall) return;
     pc._qualityBusy = true;
     try {
       const stats = await pc.getStats();
+      const now = performance.now();
       let selectedPairId = null;
       let selectedPair = null;
       let videoPacketLoss = 0;
       let audioPacketLoss = 0;
       let audioJitterMs = NaN;
       let encoderLimit = 'none';
+      let measuredVideoBps = NaN;
+      let encodedFps = NaN;
+      let droppedFrameRatio = 0;
+      let encodeLoad = 0;
 
       stats.forEach((report) => {
-        if (report.type === 'transport' && report.selectedCandidatePairId) selectedPairId = report.selectedCandidatePairId;
+        if (report.type === 'transport' && report.selectedCandidatePairId) {
+          selectedPairId = report.selectedCandidatePairId;
+        }
+
         if (report.type === 'remote-inbound-rtp') {
           const loss = Math.max(0, Number(report.fractionLost) || 0);
           if (report.kind === 'audio' || report.mediaType === 'audio') audioPacketLoss = Math.max(audioPacketLoss, loss);
           else if (report.kind === 'video' || report.mediaType === 'video') videoPacketLoss = Math.max(videoPacketLoss, loss);
         }
-        if (report.type === 'inbound-rtp' && (report.kind === 'audio' || report.mediaType === 'audio') && Number.isFinite(report.jitter)) {
+
+        if (report.type === 'inbound-rtp' && (report.kind === 'audio' || report.mediaType === 'audio') &&
+            Number.isFinite(report.jitter)) {
           audioJitterMs = Math.max(Number.isFinite(audioJitterMs) ? audioJitterMs : 0, report.jitter * 1000);
         }
-        if (report.type === 'outbound-rtp' && (report.kind === 'video' || report.mediaType === 'video') && report.qualityLimitationReason) {
-          if (report.qualityLimitationReason === 'cpu' || report.qualityLimitationReason === 'bandwidth') {
+
+        if (report.type === 'outbound-rtp' && (report.kind === 'video' || report.mediaType === 'video') && !report.isRemote) {
+          const previous = pc._outboundSamples.get(report.id);
+          if (previous) {
+            const elapsedMs = now - previous.time;
+            if (elapsedMs > 500) {
+              const bytesDelta = Math.max(0, (Number(report.bytesSent) || 0) - previous.bytes);
+              const encodedDelta = Math.max(0, (Number(report.framesEncoded) || 0) - previous.encoded);
+              const droppedDelta = Math.max(0, (Number(report.framesDropped) || 0) - previous.dropped);
+              const encodeTimeDelta = Math.max(0, (Number(report.totalEncodeTime) || 0) - previous.encodeTime);
+
+              measuredVideoBps = (bytesDelta * 8 * 1000) / elapsedMs;
+              encodedFps = encodedDelta * 1000 / elapsedMs;
+              droppedFrameRatio = droppedDelta / Math.max(1, droppedDelta + encodedDelta);
+              encodeLoad = encodeTimeDelta * 1000 / elapsedMs;
+            }
+          }
+          pc._outboundSamples.set(report.id, {
+            time: now,
+            bytes: Number(report.bytesSent) || 0,
+            encoded: Number(report.framesEncoded) || 0,
+            dropped: Number(report.framesDropped) || 0,
+            encodeTime: Number(report.totalEncodeTime) || 0
+          });
+          if (report.qualityLimitationReason && report.qualityLimitationReason !== 'none') {
             encoderLimit = report.qualityLimitationReason;
           }
         }
@@ -628,7 +856,9 @@ function startPeerQualityMonitor(peerId, pc) {
 
       stats.forEach((report) => {
         if (report.type !== 'candidate-pair' || report.state !== 'succeeded') return;
-        if ((selectedPairId && report.id === selectedPairId) || (!selectedPairId && (report.selected || report.nominated))) selectedPair = report;
+        if ((selectedPairId && report.id === selectedPairId) || (!selectedPairId && (report.selected || report.nominated))) {
+          selectedPair = report;
+        }
       });
 
       const rttMs = selectedPair && Number.isFinite(selectedPair.currentRoundTripTime)
@@ -644,60 +874,53 @@ function startPeerQualityMonitor(peerId, pc) {
       const sender = findVideoSender(pc);
       const current = currentOutgoingVideoSettings();
       let desiredBitrate = current.bitrate;
+
       if (selectedPair && Number.isFinite(selectedPair.availableOutgoingBitrate) && selectedPair.availableOutgoingBitrate > 0) {
-        desiredBitrate = Math.min(desiredBitrate, selectedPair.availableOutgoingBitrate * 0.74);
+        desiredBitrate = Math.min(desiredBitrate, selectedPair.availableOutgoingBitrate * 0.68);
       }
 
-      if (videoPacketLoss > 0.18) desiredBitrate *= 0.55;
-      else if (videoPacketLoss > 0.10) desiredBitrate *= 0.72;
-      else if (videoPacketLoss > 0.06) desiredBitrate *= 0.86;
-      if (encoderLimit === 'cpu') desiredBitrate *= 0.82;
-      desiredBitrate = Math.max(160000, Math.round(desiredBitrate));
+      if (videoPacketLoss > 0.18) desiredBitrate *= 0.48;
+      else if (videoPacketLoss > 0.10) desiredBitrate *= 0.68;
+      else if (videoPacketLoss > 0.06) desiredBitrate *= 0.84;
+      if (encoderLimit === 'bandwidth') desiredBitrate *= 0.68;
+      if (encoderLimit === 'cpu' || encodeLoad > 0.78) desiredBitrate *= 0.76;
+      if (droppedFrameRatio > 0.10) desiredBitrate *= 0.76;
+      if (Number.isFinite(measuredVideoBps) && measuredVideoBps < desiredBitrate * 0.45 &&
+          (encoderLimit === 'bandwidth' || droppedFrameRatio > 0.08)) {
+        desiredBitrate = Math.min(desiredBitrate, measuredVideoBps * 1.15);
+      }
 
+      desiredBitrate = Math.max(100000, Math.round(desiredBitrate));
       const previousBitrate = pc._lastAdaptiveBitrate || 0;
-      // Cut quickly when a link degrades; recover slowly to avoid bitrate oscillation.
       const targetBitrate = previousBitrate
         ? Math.round(desiredBitrate < previousBitrate
-          ? previousBitrate * 0.52 + desiredBitrate * 0.48
-          : previousBitrate * 0.84 + desiredBitrate * 0.16)
+          ? previousBitrate * 0.48 + desiredBitrate * 0.52
+          : previousBitrate * 0.86 + desiredBitrate * 0.14)
         : desiredBitrate;
 
       const ratio = targetBitrate / Math.max(current.bitrate, 1);
-      const congested = videoPacketLoss > 0.10 || ratio < 0.58 || encoderLimit === 'cpu';
-
       let scale = 1;
       let fpsFactor = 1;
-      if (current.keepTextSharp) {
-        // Preserve screen detail while possible; under severe congestion trade some resolution for smoothness.
-        if (ratio < 0.22 || videoPacketLoss > 0.22) {
-          scale = 1.45;
-          fpsFactor = 0.62;
-        } else if (ratio < 0.42 || videoPacketLoss > 0.15) {
-          scale = 1.2;
-          fpsFactor = 0.78;
-        } else if (ratio < 0.62 || videoPacketLoss > 0.09) {
-          fpsFactor = 0.88;
-        }
-      } else {
-        if (ratio < 0.30 || videoPacketLoss > 0.18) {
-          scale = 1.75;
-          fpsFactor = 0.55;
-        } else if (ratio < 0.48 || videoPacketLoss > 0.12) {
-          scale = 1.4;
-          fpsFactor = 0.72;
-        } else if (ratio < 0.68 || videoPacketLoss > 0.07) {
-          scale = 1.15;
-          fpsFactor = 0.86;
-        }
-        if (encoderLimit === 'cpu') fpsFactor *= 0.82;
+
+      if (ratio < 0.22 || droppedFrameRatio > 0.22 || encoderLimit === 'cpu' && encodeLoad > 0.85) {
+        scale = current.keepTextSharp ? 1.5 : 1.85;
+        fpsFactor = 0.56;
+      } else if (ratio < 0.40 || videoPacketLoss > 0.14 || droppedFrameRatio > 0.12 || encoderLimit === 'bandwidth') {
+        scale = current.keepTextSharp ? 1.3 : 1.5;
+        fpsFactor = 0.72;
+      } else if (ratio < 0.66 || videoPacketLoss > 0.07 || droppedFrameRatio > 0.06 || encodeLoad > 0.68) {
+        scale = current.keepTextSharp ? 1.1 : 1.2;
+        fpsFactor = 0.86;
       }
 
-      const minimumFps = current.keepTextSharp ? 8 : 10;
-      const targetFrameRate = Math.max(minimumFps, Math.round(current.frameRate * fpsFactor));
+      const targetFrameRate = Math.max(
+        current.keepTextSharp ? 8 : 10,
+        Math.round(current.frameRate * fpsFactor)
+      );
 
       if (sender) {
         const previousScale = pc._lastScaleDown || 1;
-        const bitrateChanged = !previousBitrate || Math.abs(targetBitrate - previousBitrate) > Math.max(60000, previousBitrate * 0.10);
+        const bitrateChanged = !previousBitrate || Math.abs(targetBitrate - previousBitrate) > Math.max(50000, previousBitrate * 0.09);
         const scaleChanged = scale !== previousScale;
         const frameRateChanged = targetFrameRate !== pc._lastAdaptiveFrameRate;
         if (bitrateChanged || scaleChanged || frameRateChanged) {
@@ -713,13 +936,15 @@ function startPeerQualityMonitor(peerId, pc) {
         audioPacketLoss > 0.12 ||
         (Number.isFinite(audioJitterMs) && audioJitterMs > 80) ||
         videoPacketLoss > 0.18 ||
+        droppedFrameRatio > 0.22 ||
         (Number.isFinite(rttMs) && rttMs > 550) ||
-        (encoderLimit === 'cpu' && ratio < 0.42)
+        (encoderLimit === 'cpu' && encodeLoad > 0.85)
       ) level = 'poor';
       else if (
         audioPacketLoss > 0.05 ||
         (Number.isFinite(audioJitterMs) && audioJitterMs > 35) ||
         videoPacketLoss > 0.07 ||
+        droppedFrameRatio > 0.08 ||
         (Number.isFinite(rttMs) && rttMs > 280) ||
         ratio < 0.72 ||
         encoderLimit !== 'none'
@@ -730,12 +955,22 @@ function startPeerQualityMonitor(peerId, pc) {
         (participants.get(peerId) || {}).name,
         audioJitterMs, audioPacketLoss
       );
+      const bars = $('#rtcQualityBars');
+      if (bars) {
+        const extra = [
+          Number.isFinite(measuredVideoBps) ? `Фактическая отправка видео: ${Math.round(measuredVideoBps / 1000)} Кбит/с` : '',
+          Number.isFinite(encodedFps) ? `Кодирование: ${encodedFps.toFixed(1)} FPS` : '',
+          Number.isFinite(droppedFrameRatio) ? `Пропущено кадров: ${Math.round(droppedFrameRatio * 100)}%` : '',
+          encoderLimit !== 'none' ? `Ограничение: ${encoderLimit}` : ''
+        ].filter(Boolean);
+        if (extra.length) bars.title += ` · ${extra.join(' · ')}`;
+      }
     } catch (error) {
       console.warn('WebRTC quality monitor skipped:', error);
     } finally {
       pc._qualityBusy = false;
     }
-  }, 3000);
+  }, 2000);
 }
 
 async function createPeerConnection(peerId) {
@@ -783,7 +1018,7 @@ async function createPeerConnection(peerId) {
     };
 
     localStream.getAudioTracks().forEach((track) => {
-      markSpeechTrack(track);
+      attachLocalAudioTrackLifecycle(track);
       const audioSender = pc.addTrack(track, localStream);
       tuneAudioSender(audioSender);
       preferOpusAudioCodec(pc, audioSender);
@@ -813,15 +1048,30 @@ async function createPeerConnection(peerId) {
           audioElements = [];
           remoteAudioElements.set(peerId, audioElements);
         }
+        const existing = audioElements.find((item) => item.dataset.trackId === event.track.id);
+        if (existing) {
+          existing.srcObject = new MediaStream([event.track]);
+          existing.play().catch(() => {});
+          return;
+        }
+
         const audio = document.createElement('audio');
         audio.autoplay = true;
         audio.playsInline = true;
+        audio.muted = false;
+        audio.volume = 1;
         audio.className = 'remote-audio-only';
         audio.dataset.peerId = peerId;
+        audio.dataset.trackId = event.track.id;
+        audio.setAttribute('autoplay', '');
         audio.srcObject = new MediaStream([event.track]);
         document.body.append(audio);
         audioElements.push(audio);
-        audio.play().catch(() => showToast('Нажми в любом месте видеокомнаты, чтобы включить звук участников.'));
+
+        const tryPlayback = () => {
+          audio.play().catch(() => showToast('Нажми в видеокомнате, чтобы разрешить звук собеседника.'));
+        };
+        event.track.onunmute = tryPlayback;
         event.track.onended = () => {
           audio.pause();
           audio.srcObject = null;
@@ -829,6 +1079,7 @@ async function createPeerConnection(peerId) {
           const current = remoteAudioElements.get(peerId) || [];
           remoteAudioElements.set(peerId, current.filter((item) => item !== audio));
         };
+        tryPlayback();
         return;
       }
 
@@ -947,6 +1198,16 @@ function publishMediaState() {
   updateCallDescription();
 }
 
+function findAudioSender(pc) {
+  if (!pc) return null;
+  const active = pc.getSenders().find((sender) => sender.track && sender.track.kind === 'audio');
+  if (active) return active;
+  const transceiver = pc.getTransceivers().find((item) =>
+    item.receiver && item.receiver.track && item.receiver.track.kind === 'audio'
+  );
+  return transceiver ? transceiver.sender : null;
+}
+
 function findVideoSender(pc) {
   if (!pc) return null;
   const active = pc.getSenders().find((sender) => sender.track && sender.track.kind === 'video');
@@ -961,9 +1222,7 @@ async function addLocalTrackToPeers(track, kind) {
   for (const pc of peerConnections.values()) {
     if (pc.signalingState === 'closed') continue;
 
-    const sender = kind === 'video'
-      ? findVideoSender(pc)
-      : pc.getSenders().find((item) => item.track && item.track.kind === 'audio');
+    const sender = kind === 'video' ? findVideoSender(pc) : findAudioSender(pc);
     try {
       if (sender) {
         // While sharing the screen, keep the screen track published until sharing ends.
@@ -1006,10 +1265,14 @@ async function toggleMic() {
       tracks = stream.getAudioTracks();
       tracks.forEach((track) => {
         track.enabled = true;
-        markSpeechTrack(track);
+        attachLocalAudioTrackLifecycle(track);
         localStream.addTrack(track);
       });
-      if (tracks[0]) await addLocalTrackToPeers(tracks[0], 'audio');
+      if (tracks[0]) {
+        await addLocalTrackToPeers(tracks[0], 'audio');
+        startMicInputMeter(tracks[0]);
+        await refreshAudioInputDevices(tracks[0].getSettings ? tracks[0].getSettings().deviceId : '');
+      }
     } catch (error) {
       console.warn('Could not enable microphone:', error);
       showToast(error && error.name === 'NotAllowedError'
@@ -1232,6 +1495,8 @@ async function startScreenShare() {
     try { screenTrack.contentHint = 'detail'; } catch (_error) {}
     try {
       await screenTrack.applyConstraints({
+        width: { ideal: profile.width, max: 1920 },
+        height: { ideal: profile.height, max: 1080 },
         frameRate: { ideal: frameRate, max: frameRate }
       });
     } catch (_error) {
@@ -1349,8 +1614,9 @@ function stopCall() {
     closePeer(peerId);
     removeVideoTile(peerId);
   }
+  stopMicInputMeter();
   if (localStream) {
-    localStream.getTracks().forEach((track) => track.stop());
+    localStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
     localStream = null;
   }
   isInCall = false;
@@ -1361,6 +1627,10 @@ function stopCall() {
   publishMediaState();
   updateCallButtons();
   updateCallStage();
+  const audioSelect = $('#audioInputSelect');
+  if (audioSelect) audioSelect.disabled = true;
+  const meter = $('#micInputLevel');
+  if (meter) meter.style.width = '0%';
   showToast('Ты вышел из видеозвонка.');
 }
 
@@ -1423,7 +1693,7 @@ async function changeVideoResolution() {
       frameRate: { ideal: frameRate }
     });
     for (const pc of peerConnections.values()) {
-      const sender = pc.getSenders().find((item) => item.track && item.track.kind === 'video');
+      const sender = findVideoSender(pc);
       if (sender) await tuneVideoSender(sender, bitrate, frameRate, Boolean(sharingTrack));
     }
     const mode = select.value === 'auto' ? 'Автоматическое качество' : `Качество до ${select.value}p`;
@@ -1549,6 +1819,12 @@ $('#videoViewerModal').addEventListener('click', (event) => {
   if (event.target === $('#videoViewerModal')) closeVideoViewer();
 });
 $('#videoResolutionSelect').addEventListener('change', changeVideoResolution);
+$('#audioInputSelect').addEventListener('change', selectAudioInput);
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+  navigator.mediaDevices.addEventListener('devicechange', () => {
+    refreshAudioInputDevices();
+  });
+}
 callPanel.addEventListener('click', unlockRemoteAudioPlayback);
 $('#copyRoomBtn').addEventListener('click', () => roomId && copyText(roomId));
 $('#welcomeCopyBtn').addEventListener('click', () => roomId && copyText(roomId));
