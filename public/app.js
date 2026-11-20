@@ -1748,8 +1748,11 @@ async function uploadCommunityFile(file) {
     });
     if(uploadError) throw uploadError;
     uploaded=true;
+    const messageType=contentType.startsWith('image/')?'image':
+      contentType.startsWith('video/')?'video':
+      contentType.startsWith('audio/')?(String(file.name||'').startsWith('voice-')?'voice':'audio'):'file';
     const {data:message,error:messageError}=await supabaseClient.from('messages')
-      .insert({conversation_id:conversationId,sender_id:userId,body:`Файл: ${file.name||safeName}`})
+      .insert({conversation_id:conversationId,sender_id:userId,body:`Файл: ${file.name||safeName}`,message_type:messageType})
       .select('id').single();
     if(messageError) throw messageError;
     messageId=message.id;
