@@ -36,6 +36,7 @@ let appConfig = { iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }], iceT
 let rtcConfigPromise = null;
 let peerConnectionPromises = new Map();
 let remoteAudioElements = new Map();
+const senderParameterQueues = new WeakMap();
 let toastTimer = null;
 let viewerStream = null;
 
@@ -440,6 +441,25 @@ function updateTileState(id, member) {
   tile.classList.toggle('sharing', Boolean(member.sharing) || (id === (socket && socket.id) && isSharing));
 }
 
+function getSpeechAudioConstraints() {
+  const supported = navigator.mediaDevices.getSupportedConstraints
+    ? navigator.mediaDevices.getSupportedConstraints()
+    : {};
+  const constraints = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true
+  };
+  if (supported.channelCount) constraints.channelCount = { ideal: 1 };
+  if (supported.sampleRate) constraints.sampleRate = { ideal: 48000 };
+  return constraints;
+}
+
+function markSpeechTrack(track) {
+  if (!track) return;
+  try { track.contentHint = 'speech'; } catch (_error) {}
+}
+
 async function startCall() {
   if (isInCall) return;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -460,11 +480,7 @@ async function startCall() {
 
     try {
       audioStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        },
+        audio: getSpeechAudioConstraints(),
         video: false
       });
     } catch (error) {
@@ -497,6 +513,8 @@ async function startCall() {
     }
 
     localStream = new MediaStream(tracks);
+    localStream.getAudioTracks().forEach(markSpeechTrack);
+    localStream.getVideoTracks().forEach((track) => { try { track.contentHint = 'motion'; } catch (_error) {} });
     isInCall = true;
     isMicOn = localStream.getAudioTracks().length > 0;
     isCameraOn = localStream.getVideoTracks().length > 0;
@@ -585,15 +603,35 @@ function startPeerQualityMonitor(peerId, pc) {
       const stats = await pc.getStats();
       let selectedPairId = null;
       let selectedPair = null;
-      let packetLoss = 0;
-      let rttMs = NaN;
+      let videoPacketLoss = 0;
+      let audioPacketLoss = 0;
+      let audioJitterMs = NaN;
+      let encoderLimit = 'none';
 
       stats.forEach((report) => {
         if (report.type === 'transport' && report.selectedCandidatePairId) {
           selectedPairId = report.selectedCandidatePairId;
         }
-        if (report.type === 'remote-inbound-rtp' && (report.kind === 'video' || report.mediaType === 'video')) {
-          packetLoss = Math.max(packetLoss, Number(report.fractionLost) || 0);
+
+        if (report.type === 'remote-inbound-rtp') {
+          const loss = Math.max(0, Number(report.fractionLost) || 0);
+          if (report.kind === 'audio' || report.mediaType === 'audio') {
+            audioPacketLoss = Math.max(audioPacketLoss, loss);
+          } else if (report.kind === 'video' || report.mediaType === 'video') {
+            videoPacketLoss = Math.max(videoPacketLoss, loss);
+          }
+        }
+
+        if (report.type === 'inbound-rtp' && (report.kind === 'audio' || report.mediaType === 'audio') &&
+            Number.isFinite(report.jitter)) {
+          audioJitterMs = Math.max(Number.isFinite(audioJitterMs) ? audioJitterMs : 0, report.jitter * 1000);
+        }
+
+        if (report.type === 'outbound-rtp' && (report.kind === 'video' || report.mediaType === 'video') &&
+            report.qualityLimitationReason) {
+          if (report.qualityLimitationReason === 'cpu' || report.qualityLimitationReason === 'bandwidth') {
+            encoderLimit = report.qualityLimitationReason;
+          }
         }
       });
 
@@ -604,9 +642,9 @@ function startPeerQualityMonitor(peerId, pc) {
         }
       });
 
-      if (selectedPair && Number.isFinite(selectedPair.currentRoundTripTime)) {
-        rttMs = Math.round(selectedPair.currentRoundTripTime * 1000);
-      }
+      const rttMs = selectedPair && Number.isFinite(selectedPair.currentRoundTripTime)
+        ? Math.round(selectedPair.currentRoundTripTime * 1000)
+        : NaN;
 
       let path = '';
       if (selectedPair && typeof stats.get === 'function') {
@@ -614,43 +652,79 @@ function startPeerQualityMonitor(peerId, pc) {
         path = localCandidate && localCandidate.candidateType === 'relay' ? 'TURN' : 'P2P';
       }
 
-      const sender = pc.getSenders().find((item) => item.track && item.track.kind === 'video');
+      const sender = findVideoSender(pc);
       const current = currentOutgoingVideoSettings();
-      let target = current.bitrate;
+      let desiredBitrate = current.bitrate;
 
       if (selectedPair && Number.isFinite(selectedPair.availableOutgoingBitrate) && selectedPair.availableOutgoingBitrate > 0) {
-        target = Math.min(target, selectedPair.availableOutgoingBitrate * 0.78);
+        desiredBitrate = Math.min(desiredBitrate, selectedPair.availableOutgoingBitrate * 0.74);
       }
-      if (packetLoss > 0.18) target *= 0.58;
-      else if (packetLoss > 0.09) target *= 0.78;
-      target = Math.max(120000, Math.round(target));
+      if (videoPacketLoss > 0.18) desiredBitrate *= 0.55;
+      else if (videoPacketLoss > 0.10) desiredBitrate *= 0.72;
+      else if (videoPacketLoss > 0.06) desiredBitrate *= 0.86;
+      if (encoderLimit === 'cpu') desiredBitrate *= 0.82;
 
-      const ratio = target / Math.max(current.bitrate, 1);
-      const scale = current.keepTextSharp ? 1 : ratio < 0.34 ? 1.75 : ratio < 0.55 ? 1.35 : ratio < 0.72 ? 1.15 : 1;
+      desiredBitrate = Math.max(160000, Math.round(desiredBitrate));
+
+      const previousBitrate = pc._lastAdaptiveBitrate || 0;
+      // React quickly to congestion, but recover quality slowly to avoid bitrate oscillation.
+      const targetBitrate = previousBitrate
+        ? Math.round(desiredBitrate < previousBitrate
+          ? previousBitrate * 0.55 + desiredBitrate * 0.45
+          : previousBitrate * 0.82 + desiredBitrate * 0.18)
+        : desiredBitrate;
+
+      const ratio = targetBitrate / Math.max(current.bitrate, 1);
+      const scale = current.keepTextSharp
+        ? 1
+        : (encoderLimit === 'cpu' ? 1.25 : ratio < 0.30 ? 1.75 : ratio < 0.48 ? 1.4 : ratio < 0.68 ? 1.15 : 1);
+      const targetFrameRate = !current.keepTextSharp && encoderLimit === 'cpu'
+        ? Math.max(12, Math.round(current.frameRate * 0.82))
+        : current.frameRate;
 
       if (sender) {
-        const previous = pc._lastAdaptiveBitrate || 0;
         const previousScale = pc._lastScaleDown || 1;
-        const bitrateChanged = !previous || Math.abs(target - previous) > Math.max(70000, previous * 0.14);
+        const bitrateChanged = !previousBitrate || Math.abs(targetBitrate - previousBitrate) > Math.max(60000, previousBitrate * 0.10);
         const scaleChanged = scale !== previousScale;
-
-        if (bitrateChanged || scaleChanged) {
-          await tuneVideoSender(sender, target, current.frameRate, current.keepTextSharp, scale);
-          pc._lastAdaptiveBitrate = target;
+        if (bitrateChanged || scaleChanged || pc._lastAdaptiveFrameRate !== targetFrameRate) {
+          await tuneVideoSender(sender, targetBitrate, targetFrameRate, current.keepTextSharp, scale);
+          pc._lastAdaptiveBitrate = targetBitrate;
           pc._lastScaleDown = scale;
+          pc._lastAdaptiveFrameRate = targetFrameRate;
         }
       }
 
       let level = 'good';
-      if (packetLoss > 0.15 || (Number.isFinite(rttMs) && rttMs > 450) || ratio < 0.4) level = 'poor';
-      else if (packetLoss > 0.06 || (Number.isFinite(rttMs) && rttMs > 250) || ratio < 0.72) level = 'medium';
-      updateRtcQualityIndicator(level, path, rttMs, packetLoss, (participants.get(peerId) || {}).name);
+      if (
+        audioPacketLoss > 0.12 ||
+        (Number.isFinite(audioJitterMs) && audioJitterMs > 80) ||
+        videoPacketLoss > 0.18 ||
+        (Number.isFinite(rttMs) && rttMs > 550) ||
+        (encoderLimit === 'cpu' && ratio < 0.42)
+      ) {
+        level = 'poor';
+      } else if (
+        audioPacketLoss > 0.05 ||
+        (Number.isFinite(audioJitterMs) && audioJitterMs > 35) ||
+        videoPacketLoss > 0.07 ||
+        (Number.isFinite(rttMs) && rttMs > 280) ||
+        ratio < 0.72 ||
+        encoderLimit !== 'none'
+      ) {
+        level = 'medium';
+      }
+
+      updateRtcQualityIndicator(
+        level, path, rttMs, videoPacketLoss,
+        (participants.get(peerId) || {}).name,
+        audioJitterMs, audioPacketLoss
+      );
     } catch (error) {
       console.warn('WebRTC quality monitor skipped:', error);
     } finally {
       pc._qualityBusy = false;
     }
-  }, 5000);
+  }, 3000);
 }
 
 async function createPeerConnection(peerId) {
@@ -697,7 +771,12 @@ async function createPeerConnection(peerId) {
       }
     };
 
-    localStream.getAudioTracks().forEach((track) => pc.addTrack(track, localStream));
+    localStream.getAudioTracks().forEach((track) => {
+      markSpeechTrack(track);
+      const audioSender = pc.addTrack(track, localStream);
+      tuneAudioSender(audioSender);
+      preferOpusAudioCodec(pc, audioSender);
+    });
     const outgoingVideoTrack = isSharing && screenStream
       ? screenStream.getVideoTracks()[0]
       : localStream.getVideoTracks()[0];
@@ -857,18 +936,42 @@ function publishMediaState() {
   updateCallDescription();
 }
 
+function findVideoSender(pc) {
+  if (!pc) return null;
+  const active = pc.getSenders().find((sender) => sender.track && sender.track.kind === 'video');
+  if (active) return active;
+  const transceiver = pc.getTransceivers().find((item) =>
+    item.receiver && item.receiver.track && item.receiver.track.kind === 'video'
+  );
+  return transceiver ? transceiver.sender : null;
+}
+
 async function addLocalTrackToPeers(track, kind) {
   for (const pc of peerConnections.values()) {
     if (pc.signalingState === 'closed') continue;
 
-    const sender = pc.getSenders().find((item) => item.track && item.track.kind === kind);
+    const sender = kind === 'video'
+      ? findVideoSender(pc)
+      : pc.getSenders().find((item) => item.track && item.track.kind === 'audio');
     try {
       if (sender) {
         // While sharing the screen, keep the screen track published until sharing ends.
         if (kind === 'video' && isSharing) continue;
         await sender.replaceTrack(track);
+        if (kind === 'audio') await tuneAudioSender(sender);
+        else {
+          const settings = currentOutgoingVideoSettings();
+          await tuneVideoSender(sender, settings.bitrate, settings.frameRate, settings.keepTextSharp);
+        }
       } else {
-        pc.addTrack(track, localStream);
+        const addedSender = pc.addTrack(track, localStream);
+        if (kind === 'audio') {
+          await tuneAudioSender(addedSender);
+          preferOpusAudioCodec(pc, addedSender);
+        } else {
+          const settings = currentOutgoingVideoSettings();
+          await tuneVideoSender(addedSender, settings.bitrate, settings.frameRate, settings.keepTextSharp);
+        }
       }
     } catch (error) {
       console.warn(`Could not add local ${kind} track:`, error);
@@ -886,12 +989,13 @@ async function toggleMic() {
   if (!tracks.length) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        audio: getSpeechAudioConstraints(),
         video: false
       });
       tracks = stream.getAudioTracks();
       tracks.forEach((track) => {
         track.enabled = true;
+        markSpeechTrack(track);
         localStream.addTrack(track);
       });
       if (tracks[0]) await addLocalTrackToPeers(tracks[0], 'audio');
@@ -930,6 +1034,7 @@ async function toggleCamera() {
       });
       tracks = stream.getVideoTracks();
       tracks.forEach((track) => {
+        try { track.contentHint = 'motion'; } catch (_error) {}
         track.enabled = true;
         localStream.addTrack(track);
       });
@@ -937,7 +1042,7 @@ async function toggleCamera() {
         await addLocalTrackToPeers(tracks[0], 'video');
         const senderSettings = currentOutgoingVideoSettings();
         for (const pc of peerConnections.values()) {
-          const sender = pc.getSenders().find((item) => item.track && item.track.kind === 'video');
+          const sender = findVideoSender(pc);
           if (sender && sender.track === tracks[0]) {
             await tuneVideoSender(sender, senderSettings.bitrate, senderSettings.frameRate, senderSettings.keepTextSharp);
           }
@@ -979,27 +1084,94 @@ function unlockRemoteAudioPlayback() {
   if (attempted) showToast('Пробуем включить звук участников.');
 }
 
-async function tuneVideoSender(sender, bitrate, frameRate, keepTextSharp = false, scaleResolutionDownBy = 1) {
-  if (!sender || typeof sender.getParameters !== 'function') return;
+function preferOpusAudioCodec(pc, sender) {
   try {
-    const params = sender.getParameters();
-    if (!params.encodings || !params.encodings.length) params.encodings = [{}];
-    const encoding = params.encodings[0];
-    encoding.maxBitrate = bitrate;
-    encoding.maxFramerate = frameRate;
-    if ('scaleResolutionDownBy' in encoding || scaleResolutionDownBy > 1) {
-      encoding.scaleResolutionDownBy = keepTextSharp ? 1 : Math.max(1, scaleResolutionDownBy);
-    }
-    if ('degradationPreference' in params || keepTextSharp) {
-      params.degradationPreference = keepTextSharp ? 'maintain-resolution' : 'balanced';
-    }
-    await sender.setParameters(params);
+    if (!pc || !sender || typeof RTCRtpSender.getCapabilities !== 'function') return;
+    const capabilities = RTCRtpSender.getCapabilities('audio');
+    if (!capabilities || !Array.isArray(capabilities.codecs)) return;
+    const transceiver = pc.getTransceivers().find((item) => item.sender === sender);
+    if (!transceiver || typeof transceiver.setCodecPreferences !== 'function') return;
+
+    const opus = capabilities.codecs.filter((codec) =>
+      String(codec.mimeType || '').toLowerCase() === 'audio/opus'
+    );
+    if (!opus.length) return;
+    const otherCodecs = capabilities.codecs.filter((codec) =>
+      String(codec.mimeType || '').toLowerCase() !== 'audio/opus'
+    );
+    transceiver.setCodecPreferences([...opus, ...otherCodecs]);
   } catch (error) {
-    console.warn('Could not tune outgoing video:', error);
+    // Codec preference is optional; browser defaults remain available.
+    console.warn('Could not prefer Opus codec:', error);
   }
 }
 
-function updateRtcQualityIndicator(level, path, rttMs, packetLoss, peerName) {
+async function withSenderParameterLock(sender, update) {
+  const previous = senderParameterQueues.get(sender) || Promise.resolve();
+  const next = previous.catch(() => {}).then(update);
+  senderParameterQueues.set(sender, next);
+  try {
+    return await next;
+  } finally {
+    if (senderParameterQueues.get(sender) === next) senderParameterQueues.delete(sender);
+  }
+}
+
+async function tuneAudioSender(sender) {
+  if (!sender || typeof sender.getParameters !== 'function') return;
+  return withSenderParameterLock(sender, async () => {
+    const params = sender.getParameters();
+    if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+    const encoding = params.encodings[0];
+    encoding.maxBitrate = 64000;
+    if ('priority' in encoding || !Object.prototype.hasOwnProperty.call(encoding, 'priority')) {
+      encoding.priority = 'high';
+    }
+    try {
+      await sender.setParameters(params);
+    } catch (error) {
+      // Retry without priority for browsers that do not implement encoding priority.
+      try {
+        const fallback = sender.getParameters();
+        if (!fallback.encodings || !fallback.encodings.length) fallback.encodings = [{}];
+        fallback.encodings[0].maxBitrate = 64000;
+        await sender.setParameters(fallback);
+      } catch (fallbackError) {
+        console.warn('Could not tune speech sender:', fallbackError || error);
+      }
+    }
+  });
+}
+
+async function tuneVideoSender(sender, bitrate, frameRate, keepTextSharp = false, scaleResolutionDownBy = 1) {
+  if (!sender || typeof sender.getParameters !== 'function') return;
+  return withSenderParameterLock(sender, async () => {
+    const apply = async (includeScale) => {
+      const params = sender.getParameters();
+      if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+      const encoding = params.encodings[0];
+      encoding.maxBitrate = Math.max(120000, Math.round(bitrate));
+      encoding.maxFramerate = Math.max(6, Math.round(frameRate));
+      encoding.priority = keepTextSharp ? 'medium' : 'low';
+      if (includeScale) encoding.scaleResolutionDownBy = Math.max(1, scaleResolutionDownBy);
+      params.degradationPreference = keepTextSharp ? 'maintain-resolution' : 'maintain-framerate';
+      await sender.setParameters(params);
+    };
+
+    try {
+      await apply(true);
+    } catch (error) {
+      // Older mobile browsers may reject scale/degradation hints. Keep bitrate and FPS tuning.
+      try {
+        await apply(false);
+      } catch (fallbackError) {
+        console.warn('Could not tune outgoing video:', fallbackError || error);
+      }
+    }
+  });
+}
+
+function updateRtcQualityIndicator(level, path, rttMs, videoPacketLoss, peerName, audioJitterMs = NaN, audioPacketLoss = 0) {
   const bars = $('#rtcQualityBars');
   const label = $('#rtcQualityText');
   if (!bars || !label) return;
@@ -1008,52 +1180,73 @@ function updateRtcQualityIndicator(level, path, rttMs, packetLoss, peerName) {
   bars.classList.add(`quality-${level}`);
   label.textContent = path ? `WEBRTC · ${path}` : 'WEBRTC';
 
-  const lossPercent = Math.round(Math.max(0, packetLoss || 0) * 100);
   const details = [
     peerName ? `Участник: ${peerName}` : '',
     path ? `Маршрут: ${path}` : '',
     Number.isFinite(rttMs) ? `RTT: ${rttMs} мс` : '',
-    `Потери: ${lossPercent}%`,
+    `Потери видео: ${Math.round(Math.max(0, videoPacketLoss || 0) * 100)}%`,
+    `Потери голоса: ${Math.round(Math.max(0, audioPacketLoss || 0) * 100)}%`,
+    Number.isFinite(audioJitterMs) ? `Джиттер голоса: ${Math.round(audioJitterMs)} мс` : '',
     `Качество: ${level === 'good' ? 'хорошее' : level === 'medium' ? 'среднее' : 'слабое'}`
   ].filter(Boolean);
   bars.title = details.join(' · ');
 }
 
+
 async function startScreenShare() {
   if (!isInCall) return;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-    showToast('Этот браузер не умеет передавать экран из веб-страницы. Это ограничение браузера телефона, а не KOTOMASTER.');
+    showToast('Этот браузер не умеет передавать экран из веб-страницы. На этом устройстве нужен браузер или приложение с поддержкой захвата экрана.');
     return;
   }
 
   const profile = VIDEO_PROFILES[$('#videoResolutionSelect').value] || VIDEO_PROFILES.auto;
-  const frameRate = profile.shareFrameRate || 12;
+  const frameRate = profile.shareFrameRate || 15;
+  let capturedStream = null;
+  const changedSenders = [];
+
   try {
-    // Share text and UI details at a modest frame rate to reduce upload delay.
-    screenStream = await navigator.mediaDevices.getDisplayMedia({
+    capturedStream = await navigator.mediaDevices.getDisplayMedia({
       video: {
         width: { ideal: profile.width },
         height: { ideal: profile.height },
-        frameRate: { ideal: frameRate }
+        frameRate: { ideal: frameRate, max: frameRate },
+        cursor: 'always'
       },
       audio: false
     });
-    const screenTrack = screenStream.getVideoTracks()[0];
+
+    const screenTrack = capturedStream.getVideoTracks()[0];
     if (!screenTrack) throw new Error('Браузер не вернул видеопоток экрана.');
     try { screenTrack.contentHint = 'detail'; } catch (_error) {}
-
-    isSharing = true;
-    screenTrack.onended = () => stopScreenShare();
+    try {
+      await screenTrack.applyConstraints({
+        frameRate: { ideal: frameRate, max: frameRate }
+      });
+    } catch (_error) {
+      // Some display-capture sources expose fixed constraints. Keep the browser-selected settings.
+    }
 
     for (const pc of peerConnections.values()) {
-      let sender = pc.getSenders().find((item) => item.track && item.track.kind === 'video');
+      if (pc.signalingState === 'closed') continue;
+      let sender = findVideoSender(pc);
+      let createdTransceiver = false;
+
       if (sender) {
+        const previousTrack = sender.track;
         await sender.replaceTrack(screenTrack);
+        changedSenders.push({ pc, sender, previousTrack, createdTransceiver });
       } else {
-        sender = pc.addTrack(screenTrack, screenStream);
+        sender = pc.addTrack(screenTrack, capturedStream);
+        createdTransceiver = true;
+        changedSenders.push({ pc, sender, previousTrack: null, createdTransceiver });
       }
-      await tuneVideoSender(sender, profile.shareBitrate || 850000, frameRate, true);
+      await tuneVideoSender(sender, profile.shareBitrate || 1200000, frameRate, true);
     }
+
+    screenStream = capturedStream;
+    isSharing = true;
+    screenTrack.onended = () => stopScreenShare();
 
     const localTile = makeVideoTile(socket.id, myName, true);
     const localVideo = localTile.querySelector('video');
@@ -1064,14 +1257,32 @@ async function startScreenShare() {
     updateTileState(socket.id, { audio: isMicOn, video: true, sharing: true });
     updateCallButtons();
     publishMediaState();
-    showToast('Демонстрация экрана началась. Нажми ⛶ на видео, чтобы увеличить.');
+
+    const actual = screenTrack.getSettings ? screenTrack.getSettings() : {};
+    const actualSize = actual.width && actual.height ? `${actual.width}×${actual.height}` : 'автоматическое разрешение';
+    showToast(`Демонстрация экрана началась: ${actualSize}, до ${frameRate} FPS.`);
   } catch (error) {
     console.error('Screen share error:', error);
-    if (screenStream) {
-      screenStream.getTracks().forEach((track) => track.stop());
-      screenStream = null;
+
+    // Roll back any tracks already replaced so a partial failure cannot leave peers without camera video.
+    for (const entry of changedSenders.reverse()) {
+      try {
+        if (entry.createdTransceiver) {
+          entry.pc.removeTrack(entry.sender);
+        } else {
+          await entry.sender.replaceTrack(entry.previousTrack || null);
+        }
+      } catch (rollbackError) {
+        console.warn('Screen-share rollback failed:', rollbackError);
+      }
     }
+
+    if (capturedStream) {
+      capturedStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
+    }
+    screenStream = null;
     isSharing = false;
+
     if (error && error.name === 'NotAllowedError') showToast('Доступ к экрану отменён или запрещён браузером.');
     else if (error && error.name === 'NotFoundError') showToast('Браузер не нашёл источник экрана для передачи.');
     else if (error && error.name === 'NotSupportedError') showToast('Передача экрана не поддерживается этим браузером.');
@@ -1079,14 +1290,13 @@ async function startScreenShare() {
   }
 }
 
-
 async function stopScreenShare() {
   if (!isSharing) return;
   isSharing = false;
   const cameraTrack = localStream && localStream.getVideoTracks()[0];
   const profile = VIDEO_PROFILES[$('#videoResolutionSelect').value] || VIDEO_PROFILES.auto;
   for (const pc of peerConnections.values()) {
-    const sender = pc.getSenders().find((item) => item.track && item.track.kind === 'video');
+    const sender = findVideoSender(pc);
     if (sender) {
       try {
         await sender.replaceTrack(cameraTrack || null);
@@ -1175,11 +1385,11 @@ function closeVideoViewer() {
 }
 
 const VIDEO_PROFILES = {
-  auto: { width: 1280, height: 720, frameRate: 24, bitrate: 1200000, shareFrameRate: 10, shareBitrate: 600000 },
-  '360': { width: 640, height: 360, frameRate: 24, bitrate: 450000, shareFrameRate: 8, shareBitrate: 300000 },
-  '480': { width: 854, height: 480, frameRate: 24, bitrate: 750000, shareFrameRate: 10, shareBitrate: 420000 },
-  '720': { width: 1280, height: 720, frameRate: 30, bitrate: 1500000, shareFrameRate: 12, shareBitrate: 650000 },
-  '1080': { width: 1920, height: 1080, frameRate: 30, bitrate: 2500000, shareFrameRate: 12, shareBitrate: 1000000 }
+  auto: { width: 1280, height: 720, frameRate: 24, bitrate: 1200000, shareFrameRate: 15, shareBitrate: 1200000 },
+  '360': { width: 640, height: 360, frameRate: 24, bitrate: 450000, shareFrameRate: 10, shareBitrate: 420000 },
+  '480': { width: 854, height: 480, frameRate: 24, bitrate: 750000, shareFrameRate: 12, shareBitrate: 750000 },
+  '720': { width: 1280, height: 720, frameRate: 30, bitrate: 1500000, shareFrameRate: 15, shareBitrate: 1400000 },
+  '1080': { width: 1920, height: 1080, frameRate: 30, bitrate: 2500000, shareFrameRate: 15, shareBitrate: 2200000 }
 };
 
 async function changeVideoResolution() {
