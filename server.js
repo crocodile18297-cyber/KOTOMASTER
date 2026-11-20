@@ -89,8 +89,88 @@ io.use(async (socket, next) => {
   socket.data.userId = user.id;
   socket.data.email = user.email;
   socket.data.authUser = user;
+  socket.data.accessToken = token;
   next();
 });
+
+
+async function supabaseApi(socket, endpoint, options = {}) {
+  if (!AUTH_REQUIRED || !socket.data.accessToken) {
+    throw new Error('Сессия Supabase отсутствует. Войди в аккаунт заново.');
+  }
+  const response = await fetch(`${SUPABASE_URL}${endpoint}`, {
+    ...options,
+    headers: {
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${socket.data.accessToken}`,
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    },
+    signal: AbortSignal.timeout(9000)
+  });
+  const raw = await response.text();
+  let body = null;
+  try { body = raw ? JSON.parse(raw) : null; } catch (_error) { body = raw; }
+  if (!response.ok) {
+    const message = body && (body.message || body.error_description || body.hint)
+      ? (body.message || body.error_description || body.hint)
+      : `Supabase вернул ошибку ${response.status}`;
+    throw new Error(String(message).slice(0, 240));
+  }
+  return body;
+}
+
+async function supabaseRpc(socket, functionName, payload) {
+  return supabaseApi(socket, `/rest/v1/rpc/${functionName}`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+async function loadConversationMessages(socket, conversationId) {
+  const params = new URLSearchParams({
+    select: 'id,sender_id,body,reply_to,edited_at,deleted_at,created_at',
+    conversation_id: `eq.${conversationId}`,
+    order: 'created_at.desc',
+    limit: String(MAX_MESSAGES)
+  });
+  const rows = await supabaseApi(socket, `/rest/v1/messages?${params.toString()}`);
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  const ids = [...new Set(rows.map((row) => row.sender_id).filter(Boolean))];
+  const profiles = await supabaseApi(socket,
+    `/rest/v1/profiles?select=id,display_name&id=in.(${ids.join(',')})`);
+  const names = new Map((Array.isArray(profiles) ? profiles : [])
+    .map((profile) => [profile.id, profile.display_name || 'Котик']));
+  return rows.reverse().map((row) => ({
+    id: row.id,
+    from: row.sender_id,
+    senderId: row.sender_id,
+    name: names.get(row.sender_id) || 'Котик',
+    text: row.deleted_at ? '' : row.body,
+    time: Date.parse(row.created_at) || Date.now(),
+    editedAt: row.edited_at ? Date.parse(row.edited_at) : null,
+    deleted: Boolean(row.deleted_at),
+    reactions: {},
+    readBy: [],
+    replyTo: null
+  }));
+}
+
+async function persistRoomMessage(socket, conversationId, text, replyTo) {
+  const body = [{
+    conversation_id: conversationId,
+    sender_id: socket.data.userId,
+    body: text,
+    reply_to: replyTo || null
+  }];
+  const rows = await supabaseApi(socket, '/rest/v1/messages?select=id,sender_id,body,reply_to,edited_at,deleted_at,created_at', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(body)
+  });
+  if (!Array.isArray(rows) || !rows[0]) throw new Error('Сообщение не сохранилось в базе.');
+  return rows[0];
+}
 
 function cleanName(value) {
   const name = String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 24);
@@ -133,8 +213,31 @@ function cleanClientId(value, fallback) {
   return /^[a-zA-Z0-9_-]{12,80}$/.test(clientId) ? clientId : fallback;
 }
 
-function joinRoom(socket, payload, ack, createNew = false) {
+async function joinRoom(socket, payload, ack, createNew = false) {
   if (!socket.data.userId) return (typeof ack === 'function' ? ack : () => {})({ ok: false, error: 'Сначала войди в аккаунт.' });
+
+  let conversationId = null;
+  try {
+    if (createNew) {
+      let linked = false;
+      for (let attempt = 0; attempt < 6 && !linked; attempt += 1) {
+        const candidate = makeRoomId();
+        try {
+          const result = await supabaseRpc(socket, 'create_room_conversation', { p_room_code: candidate });
+          roomId = candidate;
+          conversationId = result;
+          linked = true;
+        } catch (error) {
+          if (!/already exists/i.test(error.message)) throw error;
+        }
+      }
+      if (!linked) throw new Error('Не удалось подобрать свободный код комнаты. Попробуй ещё раз.');
+    } else {
+      conversationId = await supabaseRpc(socket, 'join_room_conversation', { p_room_code: roomId });
+    }
+  } catch (error) {
+    return callback({ ok: false, error: `Не удалось открыть постоянную переписку: ${error.message}` });
+  }
 
   const callback = typeof ack === 'function' ? ack : () => {};
   const name = cleanName(payload && payload.name);
@@ -147,9 +250,11 @@ function joinRoom(socket, payload, ack, createNew = false) {
   let room = rooms.get(roomId);
   if (!room && !createNew) return callback({ ok: false, error: 'Комната не найдена. Проверьте код.' });
   if (!room) {
-    room = { id: roomId, members: new Map(), messages: [], pinnedMessageId: null, createdAt: Date.now() };
+    room = { id: roomId, conversationId, members: new Map(), messages: [], pinnedMessageId: null, createdAt: Date.now() };
     rooms.set(roomId, room);
   }
+  if (room.conversationId && room.conversationId !== conversationId) return callback({ ok: false, error: 'Код комнаты связан с другой перепиской. Перезагрузи страницу.' });
+  room.conversationId = conversationId;
 
   // A mobile network can reconnect before the server notices the old transport is dead.
   // Replace the previous socket for this browser tab instead of adding a duplicate member.
@@ -190,15 +295,27 @@ function joinRoom(socket, payload, ack, createNew = false) {
   socket.data.roomId = roomId;
   socket.data.name = name;
   socket.data.clientId = clientId;
+  socket.data.conversationId = conversationId;
   socket.join(roomId);
 
   socket.to(roomId).emit('room:peer-joined', toPublicMember(member));
+  let persistentMessages = [];
+  try {
+    persistentMessages = await loadConversationMessages(socket, conversationId);
+    room.messages = persistentMessages;
+  } catch (error) {
+    room.members.delete(socket.id);
+    socket.leave(roomId);
+    socket.data.roomId = null;
+    socket.data.conversationId = null;
+    return callback({ ok: false, error: `Не удалось загрузить историю чата: ${error.message}` });
+  }
   callback({
     ok: true,
     roomId,
     self: toPublicMember(member),
     participants: previousMembers,
-    messages: room.messages.slice(-MAX_MESSAGES),
+    messages: persistentMessages.slice(-MAX_MESSAGES),
     pinnedMessage: room.messages.find((item) => item.id === room.pinnedMessageId) || null,
     maxRoomSize: MAX_ROOM_SIZE
   });
@@ -225,8 +342,16 @@ function leaveRoom(socket, reason = 'left') {
 }
 
 io.on('connection', (socket) => {
-  socket.on('room:create', (payload, ack) => joinRoom(socket, payload, ack, true));
-  socket.on('room:join', (payload, ack) => joinRoom(socket, payload, ack, false));
+  socket.on('room:create', (payload, ack) => {
+    joinRoom(socket, payload, ack, true).catch((error) => {
+      if (typeof ack === 'function') ack({ ok: false, error: error.message || 'Не удалось создать комнату.' });
+    });
+  });
+  socket.on('room:join', (payload, ack) => {
+    joinRoom(socket, payload, ack, false).catch((error) => {
+      if (typeof ack === 'function') ack({ ok: false, error: error.message || 'Не удалось войти в комнату.' });
+    });
+  });
   socket.on('room:sync', (payload, ack) => {
     const callback = typeof ack === 'function' ? ack : () => {};
     const roomId = socket.data.roomId;
