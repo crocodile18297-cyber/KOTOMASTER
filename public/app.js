@@ -589,7 +589,7 @@ function createActionButton(label, title, action, messageId) {
 function createMessageNode(message) {
   const mine = Boolean(socket && message.from === socket.id);
   const row = document.createElement('div');
-  row.className = \`message-row\${mine ? ' mine' : ''}\`;
+  row.className = `message-row${mine ? ' mine' : ''}`;
   row.dataset.messageId = message.id;
 
   const avatar = document.createElement('div');
@@ -746,7 +746,7 @@ function createMessageNode(message) {
 }
 
 function refreshMessageNode(message) {
-  const current = messagesList.querySelector(\`[data-message-id="\${CSS.escape(message.id)}"]\`);
+  const current = messagesList.querySelector(`[data-message-id="${CSS.escape(message.id)}"]`);
   if (!current) return;
   current.replaceWith(createMessageNode(message));
 }
@@ -800,7 +800,7 @@ function renderPinnedMessage() {
   jump.textContent = '↓';
   jump.title = 'Перейти к сообщению';
   jump.addEventListener('click', () => {
-    const node = messagesList.querySelector(\`[data-message-id="\${CSS.escape(pinnedMessage.id)}"]\`);
+    const node = messagesList.querySelector(`[data-message-id="${CSS.escape(pinnedMessage.id)}"]`);
     if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
   banner.append(marker, copy, jump);
