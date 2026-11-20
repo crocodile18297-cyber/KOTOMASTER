@@ -228,6 +228,9 @@
               <header class="community-chat-heading"><div><strong id="communityChatTitle">Чат</strong><small id="communityChatSubtitle">Личная переписка</small></div><button id="communityRefreshMessages" type="button" title="Обновить сообщения">↻</button></header>
               <div id="communityMessages" class="community-messages"></div>
               <form id="communityMessageForm" class="community-composer">
+                <button id="communityAttachBtn" type="button" title="Прикрепить файл" aria-label="Прикрепить файл">＋</button>
+                <input id="communityFileInput" type="file" accept="image/*,video/mp4,video/webm,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" multiple hidden>
+                <button id="communityVoiceBtn" type="button" title="Записать голосовое сообщение" aria-label="Записать голосовое сообщение">🎙</button>
                 <input id="communityMessageInput" maxlength="12000" placeholder="Напиши сообщение..." autocomplete="off" required>
                 <button type="submit" aria-label="Отправить">➤</button>
               </form>
