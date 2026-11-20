@@ -916,7 +916,7 @@ async function startCall() {
   let usedAudioPreview = false;
 
   try {
-    const profile = VIDEO_PROFILES[$('#videoResolutionSelect').value] || VIDEO_PROFILES.auto;
+    const profile = getSelectedVideoProfile();
     try {
       const previewTrack = previewAudioStream && previewAudioStream.getAudioTracks().find((track) => track.readyState === 'live');
       if (previewTrack) {
@@ -1038,7 +1038,7 @@ async function enableCameraAfterAudio(profile) {
 }
 
 function currentOutgoingVideoSettings() {
-  const profile = VIDEO_PROFILES[$('#videoResolutionSelect').value] || VIDEO_PROFILES.auto;
+  const profile = getSelectedVideoProfile();
   const sharing = Boolean(isSharing && screenStream && screenStream.getVideoTracks().length);
   return {
     bitrate: sharing ? profile.shareBitrate : profile.bitrate,
@@ -1192,20 +1192,20 @@ function startPeerQualityMonitor(peerId, pc) {
       let fpsFactor = 1;
 
       if (ratio < 0.22 || droppedFrameRatio > 0.22 || encoderLimit === 'cpu' && encodeLoad > 0.85) {
-        scale = current.keepTextSharp ? 1.5 : 1.85;
-        fpsFactor = 0.56;
+        scale = current.keepTextSharp ? 1.8 : (videoQualityBoostEnabled ? 2.35 : 1.85);
+        fpsFactor = videoQualityBoostEnabled && !current.keepTextSharp ? 0.72 : 0.56;
       } else if (ratio < 0.40 || videoPacketLoss > 0.14 || droppedFrameRatio > 0.12 || encoderLimit === 'bandwidth') {
-        scale = current.keepTextSharp ? 1.3 : 1.5;
-        fpsFactor = 0.72;
+        scale = current.keepTextSharp ? 1.5 : (videoQualityBoostEnabled ? 1.85 : 1.5);
+        fpsFactor = videoQualityBoostEnabled && !current.keepTextSharp ? 0.82 : 0.72;
       } else if (ratio < 0.66 || videoPacketLoss > 0.07 || droppedFrameRatio > 0.06 || encodeLoad > 0.68) {
-        scale = current.keepTextSharp ? 1.1 : 1.2;
-        fpsFactor = 0.86;
+        scale = current.keepTextSharp ? 1.15 : (videoQualityBoostEnabled ? 1.35 : 1.2);
+        fpsFactor = videoQualityBoostEnabled && !current.keepTextSharp ? 0.92 : 0.86;
       }
 
-      const targetFrameRate = Math.max(
-        current.keepTextSharp ? 8 : 10,
-        Math.round(current.frameRate * fpsFactor)
-      );
+      const minimumFrameRate = videoQualityBoostEnabled
+        ? (current.keepTextSharp ? 12 : 20)
+        : (current.keepTextSharp ? 8 : 10);
+      const targetFrameRate = Math.max(minimumFrameRate, Math.round(current.frameRate * fpsFactor));
 
       if (sender) {
         const previousScale = pc._lastScaleDown || 1;
@@ -1589,7 +1589,7 @@ async function toggleCamera() {
   let tracks = localStream.getVideoTracks();
   if (!tracks.length) {
     try {
-      const profile = VIDEO_PROFILES[$('#videoResolutionSelect').value] || VIDEO_PROFILES.auto;
+      const profile = getSelectedVideoProfile();
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
@@ -1772,7 +1772,7 @@ async function startScreenShare() {
     return;
   }
 
-  const profile = VIDEO_PROFILES[$('#videoResolutionSelect').value] || VIDEO_PROFILES.auto;
+  const profile = getSelectedVideoProfile();
   const frameRate = profile.shareFrameRate || 15;
   let capturedStream = null;
   const changedSenders = [];
@@ -1819,6 +1819,7 @@ async function startScreenShare() {
     }
 
     screenStream = capturedStream;
+    attachLocalVideoTrackLifecycle(screenTrack);
     isSharing = true;
     screenTrack.onended = () => stopScreenShare();
 
@@ -1871,7 +1872,7 @@ async function stopScreenShare() {
   if (!isSharing) return;
   isSharing = false;
   const cameraTrack = localStream && localStream.getVideoTracks()[0];
-  const profile = VIDEO_PROFILES[$('#videoResolutionSelect').value] || VIDEO_PROFILES.auto;
+  const profile = getSelectedVideoProfile();
   for (const pc of peerConnections.values()) {
     const sender = findVideoSender(pc);
     if (sender) {
@@ -1976,14 +1977,58 @@ const VIDEO_PROFILES = {
   '1080': { width: 1920, height: 1080, frameRate: 30, bitrate: 2500000, shareFrameRate: 15, shareBitrate: 2200000 }
 };
 
+function getSelectedVideoProfile() {
+  const selected = $('#videoResolutionSelect');
+  const key = selected && VIDEO_PROFILES[selected.value] ? selected.value : 'auto';
+  const base = VIDEO_PROFILES[key];
+  if (!videoQualityBoostEnabled) return base;
+
+  const bitrateByProfile = {
+    auto: 2600000,
+    '360': 700000,
+    '480': 1250000,
+    '720': 1950000,
+    '1080': 3200000
+  };
+  const shareBitrateByProfile = {
+    auto: 1800000,
+    '360': 520000,
+    '480': 900000,
+    '720': 1450000,
+    '1080': 2600000
+  };
+  return {
+    ...base,
+    width: key === 'auto' ? 1920 : base.width,
+    height: key === 'auto' ? 1080 : base.height,
+    frameRate: 30,
+    bitrate: Math.max(base.bitrate, bitrateByProfile[key]),
+    shareFrameRate: 20,
+    shareBitrate: Math.max(base.shareBitrate, shareBitrateByProfile[key])
+  };
+}
+
+function updateVideoQualityBoostButton() {
+  const button = $('#videoQualityBoostBtn');
+  if (!button) return;
+  button.classList.toggle('active', videoQualityBoostEnabled);
+  button.setAttribute('aria-pressed', videoQualityBoostEnabled ? 'true' : 'false');
+  button.textContent = videoQualityBoostEnabled ? 'ЧЁТЧЕ · ВКЛ' : 'ЧЁТЧЕ · ВЫКЛ';
+  button.title = videoQualityBoostEnabled
+    ? 'Повышенное качество: до 30 FPS. Нажми, чтобы выключить'
+    : 'Повысить качество и частоту кадров до 30 FPS';
+}
+
 async function changeVideoResolution() {
   const select = $('#videoResolutionSelect');
-  const profile = VIDEO_PROFILES[select.value] || VIDEO_PROFILES.auto;
+  const profile = getSelectedVideoProfile();
   const sharingTrack = isSharing && screenStream ? screenStream.getVideoTracks()[0] : null;
   const cameraTrack = localStream && localStream.getVideoTracks()[0];
   const track = sharingTrack || cameraTrack;
   if (!track || !isInCall) {
-    showToast('Сначала включи камеру или демонстрацию экрана.');
+    showToast(videoQualityBoostEnabled
+      ? 'Режим «Чётче» сохранён и применится при следующем звонке.'
+      : 'Качество сохранено и применится при следующем звонке.');
     return;
   }
 
@@ -1993,18 +2038,28 @@ async function changeVideoResolution() {
     await track.applyConstraints({
       width: { ideal: profile.width },
       height: { ideal: profile.height },
-      frameRate: { ideal: frameRate }
+      frameRate: { ideal: frameRate, max: frameRate }
     });
     for (const pc of peerConnections.values()) {
       const sender = findVideoSender(pc);
       if (sender) await tuneVideoSender(sender, bitrate, frameRate, Boolean(sharingTrack));
     }
-    const mode = select.value === 'auto' ? 'Автоматическое качество' : `Качество до ${select.value}p`;
+    const mode = videoQualityBoostEnabled ? 'Повышенное качество' :
+      (select.value === 'auto' ? 'Автоматическое качество' : `Качество до ${select.value}p`);
     showToast(sharingTrack ? `${mode} демонстрации применено.` : `${mode} камеры применено.`);
   } catch (error) {
     console.warn('Resolution change failed:', error);
-    showToast('Это разрешение не поддерживается текущим источником. Выбери ниже.');
+    showToast('Источник не поддерживает этот режим. Попробуй 720p или выключи «Чётче».');
   }
+}
+
+async function toggleVideoQualityBoost() {
+  videoQualityBoostEnabled = !videoQualityBoostEnabled;
+  try {
+    localStorage.setItem('kotomaster-video-quality-boost', videoQualityBoostEnabled ? '1' : '0');
+  } catch (_error) {}
+  updateVideoQualityBoostButton();
+  await changeVideoResolution();
 }
 
 
@@ -2128,6 +2183,7 @@ $('#videoViewerModal').addEventListener('click', (event) => {
   if (event.target === $('#videoViewerModal')) closeVideoViewer();
 });
 $('#videoResolutionSelect').addEventListener('change', changeVideoResolution);
+$('#videoQualityBoostBtn').addEventListener('click', toggleVideoQualityBoost);
 $('#audioInputSelect').addEventListener('change', selectAudioInput);
 $('#micPreviewBtn').addEventListener('click', selectAudioInput);
 if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
@@ -2163,4 +2219,5 @@ rtcConfigPromise = (async function loadConfig() {
 
 refreshAudioInputDevices();
 updateCallButtons();
+updateVideoQualityBoostButton();
 restoreSavedRoom();
