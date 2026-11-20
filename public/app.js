@@ -125,31 +125,42 @@ function bindSocketEvents() {
       updateCallStage();
       return;
     }
-    if (isInCall && socket.id.localeCompare(member.id) < 0) {
+    if (isInCall) {
       createPeerConnection(member.id).catch((error) => showToast(error.message));
     }
   });
 
-  socket.on('rtc:signal', async ({ from, name, signal }) => {
+  socket.on('rtc:signal', async ({ from, signal }) => {
     if (!from || !signal || !isInCall) return;
     try {
       const pc = await createPeerConnection(from);
-      if (signal.type === 'offer') {
-        // The lower socket ID is the designated offerer; this avoids offer glare.
-        if (pc.signalingState !== 'stable') {
+      if (pc.signalingState === 'closed') return;
+
+      if (signal.type === 'offer' || signal.type === 'answer') {
+        const readyForOffer = !pc._makingOffer &&
+          (pc.signalingState === 'stable' || pc._isSettingRemoteAnswerPending);
+        const offerCollision = signal.type === 'offer' && !readyForOffer;
+        pc._ignoreOffer = !pc._polite && offerCollision;
+
+        // An impolite peer ignores a colliding offer; the polite peer rolls back and accepts it.
+        if (pc._ignoreOffer) return;
+        if (offerCollision && pc._polite) {
           await pc.setLocalDescription({ type: 'rollback' });
         }
+
+        pc._isSettingRemoteAnswerPending = signal.type === 'answer';
         await pc.setRemoteDescription(new RTCSessionDescription(signal));
+        pc._isSettingRemoteAnswerPending = false;
         await flushPendingIce(from, pc);
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        if (socket && socket.connected) {
-          socket.emit('rtc:signal', { to: from, signal: pc.localDescription });
+
+        if (signal.type === 'offer') {
+          await pc.setLocalDescription();
+          if (socket && socket.connected) {
+            socket.emit('rtc:signal', { to: from, signal: pc.localDescription });
+          }
         }
-      } else if (signal.type === 'answer') {
-        await pc.setRemoteDescription(new RTCSessionDescription(signal));
-        await flushPendingIce(from, pc);
       } else if (signal.candidate) {
+        if (pc._ignoreOffer) return;
         const candidate = new RTCIceCandidate(signal.candidate);
         if (pc.remoteDescription) {
           await pc.addIceCandidate(candidate);
@@ -161,7 +172,11 @@ function bindSocketEvents() {
       }
     } catch (error) {
       console.error('WebRTC signal error:', error);
-      showToast('Не удалось установить связь с участником.');
+      showToast('Не удалось согласовать видеосвязь. Повторяем подключение…');
+      const pc = peerConnections.get(from);
+      if (pc && pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed') {
+        scheduleIceRestart(from, pc);
+      }
     }
   });
 
@@ -205,7 +220,7 @@ function bindSocketEvents() {
           participants.set(socket.id, self);
           publishMediaState();
           for (const member of participants.values()) {
-            if (member.id !== socket.id && member.inCall && socket.id.localeCompare(member.id) < 0) {
+            if (member.id !== socket.id && member.inCall) {
               createPeerConnection(member.id).catch((error) => showToast(error.message));
             }
           }
@@ -431,18 +446,62 @@ async function startCall() {
     showToast('Для видеозвонка открой KOTOMASTER через HTTPS или localhost.');
     return;
   }
+
   const button = $('#startCallBtn');
   button.disabled = true;
-  button.textContent = 'Подключаем камеру…';
+  button.textContent = 'Подключаемся…';
+  let audioError = null;
+  let videoError = null;
+
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: (() => { const p = VIDEO_PROFILES[$('#videoResolutionSelect').value] || VIDEO_PROFILES.auto; return { width: { ideal: p.width }, height: { ideal: p.height }, frameRate: { ideal: p.frameRate, max: p.frameRate } }; })()
-    });
+    const profile = VIDEO_PROFILES[$('#videoResolutionSelect').value] || VIDEO_PROFILES.auto;
+    let audioStream = null;
+    let videoStream = null;
+
+    try {
+      audioStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        },
+        video: false
+      });
+    } catch (error) {
+      audioError = error;
+      console.warn('Microphone unavailable; trying video-only:', error);
+    }
+
+    try {
+      videoStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          width: { ideal: profile.width },
+          height: { ideal: profile.height },
+          frameRate: { ideal: profile.frameRate, max: profile.frameRate }
+        }
+      });
+    } catch (error) {
+      videoError = error;
+      console.warn('Camera unavailable; trying audio-only:', error);
+    }
+
+    const tracks = [
+      ...(audioStream ? audioStream.getAudioTracks() : []),
+      ...(videoStream ? videoStream.getVideoTracks() : [])
+    ];
+
+    if (!tracks.length) {
+      const error = audioError || videoError || new Error('Не удалось получить доступ ни к микрофону, ни к камере.');
+      throw error;
+    }
+
+    localStream = new MediaStream(tracks);
     isInCall = true;
     isMicOn = localStream.getAudioTracks().length > 0;
     isCameraOn = localStream.getVideoTracks().length > 0;
     isSharing = false;
+
     const localTile = makeVideoTile(socket.id, myName, true);
     const localVideo = localTile.querySelector('video');
     localVideo.srcObject = localStream;
@@ -455,17 +514,21 @@ async function startCall() {
     updateCallStage();
 
     for (const member of participants.values()) {
-      if (member.id !== socket.id && member.inCall && socket.id.localeCompare(member.id) < 0) {
+      if (member.id !== socket.id && member.inCall) {
         createPeerConnection(member.id).catch((error) => showToast(error.message));
       }
     }
-    showToast('Ты подключился к видеозвонку.');
+
+    if (!isMicOn) showToast('Микрофон недоступен. Звонок начат без звука с твоей стороны.');
+    else if (!isCameraOn) showToast('Камера недоступна. Звонок начат только со звуком.');
+    else showToast('Ты подключился к видеозвонку.');
   } catch (error) {
     console.error('getUserMedia error:', error);
-    let message = 'Не удалось включить камеру и микрофон.';
-    if (error && error.name === 'NotAllowedError') message = 'Разреши доступ к камере и микрофону в браузере.';
-    else if (error && error.name === 'NotFoundError') message = 'Камера или микрофон не найдены. Проверь устройства.';
-    else if (error && error.name === 'NotReadableError') message = 'Камера занята другим приложением.';
+    let message = 'Не удалось получить доступ к камере или микрофону.';
+    if (error && error.name === 'NotAllowedError') message = 'Разреши доступ хотя бы к микрофону или камере в настройках браузера.';
+    else if (error && error.name === 'NotFoundError') message = 'На устройстве не найдена камера или микрофон.';
+    else if (error && error.name === 'NotReadableError') message = 'Камера или микрофон заняты другим приложением.';
+    else if (error && error.name === 'OverconstrainedError') message = 'Устройство не поддерживает запрошенное качество. Выбери 480p или 360p.';
     showToast(message);
   } finally {
     button.disabled = false;
@@ -484,7 +547,7 @@ function currentOutgoingVideoSettings() {
 }
 
 function scheduleIceRestart(peerId, pc) {
-  if (!pc || !pc._isOfferer || pc.signalingState === 'closed' || !isInCall) return;
+  if (!pc || pc.signalingState === 'closed' || !isInCall) return;
   if (pc._iceRestartTimer) return;
 
   const delay = pc.iceConnectionState === 'failed' ? 0 : 4500;
@@ -513,6 +576,7 @@ function startPeerQualityMonitor(peerId, pc) {
   if (pc._qualityTimer) clearInterval(pc._qualityTimer);
   pc._qualityBusy = false;
   pc._lastAdaptiveBitrate = 0;
+  pc._lastScaleDown = 1;
 
   pc._qualityTimer = setInterval(async () => {
     if (pc._qualityBusy || pc.signalingState === 'closed' || !isInCall) return;
@@ -522,6 +586,7 @@ function startPeerQualityMonitor(peerId, pc) {
       let selectedPairId = null;
       let selectedPair = null;
       let packetLoss = 0;
+      let rttMs = NaN;
 
       stats.forEach((report) => {
         if (report.type === 'transport' && report.selectedCandidatePairId) {
@@ -539,23 +604,47 @@ function startPeerQualityMonitor(peerId, pc) {
         }
       });
 
-      const sender = pc.getSenders().find((item) => item.track && item.track.kind === 'video');
-      if (!sender) return;
+      if (selectedPair && Number.isFinite(selectedPair.currentRoundTripTime)) {
+        rttMs = Math.round(selectedPair.currentRoundTripTime * 1000);
+      }
 
+      let path = '';
+      if (selectedPair && typeof stats.get === 'function') {
+        const localCandidate = stats.get(selectedPair.localCandidateId);
+        path = localCandidate && localCandidate.candidateType === 'relay' ? 'TURN' : 'P2P';
+      }
+
+      const sender = pc.getSenders().find((item) => item.track && item.track.kind === 'video');
       const current = currentOutgoingVideoSettings();
       let target = current.bitrate;
+
       if (selectedPair && Number.isFinite(selectedPair.availableOutgoingBitrate) && selectedPair.availableOutgoingBitrate > 0) {
         target = Math.min(target, selectedPair.availableOutgoingBitrate * 0.78);
       }
       if (packetLoss > 0.18) target *= 0.58;
       else if (packetLoss > 0.09) target *= 0.78;
-      target = Math.max(180000, Math.round(target));
+      target = Math.max(120000, Math.round(target));
 
-      const previous = pc._lastAdaptiveBitrate || 0;
-      if (!previous || Math.abs(target - previous) > Math.max(70000, previous * 0.14)) {
-        await tuneVideoSender(sender, target, current.frameRate, current.keepTextSharp);
-        pc._lastAdaptiveBitrate = target;
+      const ratio = target / Math.max(current.bitrate, 1);
+      const scale = current.keepTextSharp ? 1 : ratio < 0.34 ? 1.75 : ratio < 0.55 ? 1.35 : ratio < 0.72 ? 1.15 : 1;
+
+      if (sender) {
+        const previous = pc._lastAdaptiveBitrate || 0;
+        const previousScale = pc._lastScaleDown || 1;
+        const bitrateChanged = !previous || Math.abs(target - previous) > Math.max(70000, previous * 0.14);
+        const scaleChanged = scale !== previousScale;
+
+        if (bitrateChanged || scaleChanged) {
+          await tuneVideoSender(sender, target, current.frameRate, current.keepTextSharp, scale);
+          pc._lastAdaptiveBitrate = target;
+          pc._lastScaleDown = scale;
+        }
       }
+
+      let level = 'good';
+      if (packetLoss > 0.15 || (Number.isFinite(rttMs) && rttMs > 450) || ratio < 0.4) level = 'poor';
+      else if (packetLoss > 0.06 || (Number.isFinite(rttMs) && rttMs > 250) || ratio < 0.72) level = 'medium';
+      updateRtcQualityIndicator(level, path, rttMs, packetLoss, (participants.get(peerId) || {}).name);
     } catch (error) {
       console.warn('WebRTC quality monitor skipped:', error);
     } finally {
@@ -584,24 +673,25 @@ async function createPeerConnection(peerId) {
       bundlePolicy: 'max-bundle',
       rtcpMuxPolicy: 'require'
     });
-    pc._isOfferer = Boolean(socket && socket.id.localeCompare(peerId) < 0);
+    pc._polite = Boolean(socket && socket.id.localeCompare(peerId) > 0);
     pc._makingOffer = false;
+    pc._ignoreOffer = false;
+    pc._isSettingRemoteAnswerPending = false;
     pc._iceRestartAttempts = 0;
     peerConnections.set(peerId, pc);
 
     pc.onnegotiationneeded = async () => {
-      if (!pc._isOfferer || pc._makingOffer || pc.signalingState !== 'stable' || !socket || !socket.connected) return;
+      if (pc._makingOffer || pc.signalingState !== 'stable' || !socket || !socket.connected) return;
       pc._makingOffer = true;
       try {
-        const offer = await pc.createOffer();
-        if (pc.signalingState !== 'stable') return;
-        await pc.setLocalDescription(offer);
+        // Perfect Negotiation: both peers may offer; polite/impolite roles resolve collisions.
+        await pc.setLocalDescription();
         if (socket && socket.connected) {
           socket.emit('rtc:signal', { to: peerId, signal: pc.localDescription });
         }
       } catch (error) {
-        console.error('WebRTC offer error:', error);
-        showToast(`Не удалось начать соединение с ${member.name || 'участником'}.`);
+        console.error('WebRTC negotiation error:', error);
+        showToast(`Не удалось согласовать соединение с ${member.name || 'участником'}.`);
       } finally {
         pc._makingOffer = false;
       }
@@ -787,21 +877,44 @@ function toggleCamera() {
   publishMediaState();
 }
 
-async function tuneVideoSender(sender, bitrate, frameRate, keepTextSharp = false) {
+async function tuneVideoSender(sender, bitrate, frameRate, keepTextSharp = false, scaleResolutionDownBy = 1) {
   if (!sender || typeof sender.getParameters !== 'function') return;
   try {
     const params = sender.getParameters();
     if (!params.encodings || !params.encodings.length) params.encodings = [{}];
-    params.encodings[0].maxBitrate = bitrate;
-    params.encodings[0].maxFramerate = frameRate;
+    const encoding = params.encodings[0];
+    encoding.maxBitrate = bitrate;
+    encoding.maxFramerate = frameRate;
+    if ('scaleResolutionDownBy' in encoding || scaleResolutionDownBy > 1) {
+      encoding.scaleResolutionDownBy = keepTextSharp ? 1 : Math.max(1, scaleResolutionDownBy);
+    }
     if ('degradationPreference' in params || keepTextSharp) {
-      params.degradationPreference = keepTextSharp ? 'maintain-resolution' : 'maintain-framerate';
+      params.degradationPreference = keepTextSharp ? 'maintain-resolution' : 'balanced';
     }
     await sender.setParameters(params);
   } catch (error) {
-    // Some mobile browsers expose only part of RTCRtpSendParameters.
     console.warn('Could not tune outgoing video:', error);
   }
+}
+
+function updateRtcQualityIndicator(level, path, rttMs, packetLoss, peerName) {
+  const bars = $('#rtcQualityBars');
+  const label = $('#rtcQualityText');
+  if (!bars || !label) return;
+
+  bars.classList.remove('quality-good', 'quality-medium', 'quality-poor');
+  bars.classList.add(`quality-${level}`);
+  label.textContent = path ? `WEBRTC · ${path}` : 'WEBRTC';
+
+  const lossPercent = Math.round(Math.max(0, packetLoss || 0) * 100);
+  const details = [
+    peerName ? `Участник: ${peerName}` : '',
+    path ? `Маршрут: ${path}` : '',
+    Number.isFinite(rttMs) ? `RTT: ${rttMs} мс` : '',
+    `Потери: ${lossPercent}%`,
+    `Качество: ${level === 'good' ? 'хорошее' : level === 'medium' ? 'среднее' : 'слабое'}`
+  ].filter(Boolean);
+  bars.title = details.join(' · ');
 }
 
 async function startScreenShare() {
