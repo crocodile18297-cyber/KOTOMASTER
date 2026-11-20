@@ -1426,9 +1426,11 @@ async function tuneVideoSender(sender, bitrate, frameRate, keepTextSharp = false
       const encoding = params.encodings[0];
       encoding.maxBitrate = Math.max(120000, Math.round(bitrate));
       encoding.maxFramerate = Math.max(6, Math.round(frameRate));
-      encoding.priority = keepTextSharp ? 'medium' : 'low';
+      // Audio is configured as high priority; video yields bandwidth to speech.
+      encoding.priority = 'low';
       if (includeScale) encoding.scaleResolutionDownBy = Math.max(1, scaleResolutionDownBy);
-      params.degradationPreference = keepTextSharp && scaleResolutionDownBy <= 1 ? 'maintain-resolution' : 'maintain-framerate';
+      // For screen shares, preserve frame delivery and reduce resolution before allowing visible freezes.
+      params.degradationPreference = 'maintain-framerate';
       await sender.setParameters(params);
     };
 
@@ -1666,11 +1668,11 @@ function closeVideoViewer() {
 }
 
 const VIDEO_PROFILES = {
-  auto: { width: 1280, height: 720, frameRate: 24, bitrate: 1200000, shareFrameRate: 18, shareBitrate: 1700000 },
-  '360': { width: 640, height: 360, frameRate: 24, bitrate: 450000, shareFrameRate: 12, shareBitrate: 480000 },
-  '480': { width: 854, height: 480, frameRate: 24, bitrate: 750000, shareFrameRate: 15, shareBitrate: 900000 },
-  '720': { width: 1280, height: 720, frameRate: 30, bitrate: 1500000, shareFrameRate: 20, shareBitrate: 2100000 },
-  '1080': { width: 1920, height: 1080, frameRate: 30, bitrate: 2500000, shareFrameRate: 18, shareBitrate: 3000000 }
+  auto: { width: 1280, height: 720, frameRate: 24, bitrate: 1200000, shareFrameRate: 15, shareBitrate: 1250000 },
+  '360': { width: 640, height: 360, frameRate: 24, bitrate: 450000, shareFrameRate: 10, shareBitrate: 420000 },
+  '480': { width: 854, height: 480, frameRate: 24, bitrate: 750000, shareFrameRate: 12, shareBitrate: 780000 },
+  '720': { width: 1280, height: 720, frameRate: 30, bitrate: 1500000, shareFrameRate: 15, shareBitrate: 1450000 },
+  '1080': { width: 1920, height: 1080, frameRate: 30, bitrate: 2500000, shareFrameRate: 15, shareBitrate: 2200000 }
 };
 
 async function changeVideoResolution() {
