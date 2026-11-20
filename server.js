@@ -9,7 +9,7 @@ const { Server } = require('socket.io');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  maxHttpBufferSize: 1e6,
+  maxHttpBufferSize: 128 * 1024,
   pingInterval: 25000,
   pingTimeout: 20000
 });
@@ -197,11 +197,43 @@ io.on('connection', (socket) => {
     const roomId = socket.data.roomId;
     const room = roomId && rooms.get(roomId);
     const targetId = String(payload && payload.to || '');
-    if (!room || !room.members.has(targetId) || !payload || !payload.signal) return;
+    const rawSignal = payload && payload.signal;
+
+    if (!room || !targetId || targetId === socket.id || !room.members.has(targetId) || !rawSignal) return;
+
+    // Bound signalling traffic and accept only SDP descriptions or ICE candidates.
+    const now = Date.now();
+    const windowState = socket.data.rtcSignalWindow;
+    if (!windowState || now - windowState.startedAt >= 10000) {
+      socket.data.rtcSignalWindow = { startedAt: now, count: 0 };
+    }
+    socket.data.rtcSignalWindow.count += 1;
+    if (socket.data.rtcSignalWindow.count > 160) return;
+
+    let signal;
+    if ((rawSignal.type === 'offer' || rawSignal.type === 'answer') &&
+        typeof rawSignal.sdp === 'string' && rawSignal.sdp.length <= 24000) {
+      signal = { type: rawSignal.type, sdp: rawSignal.sdp };
+    } else if (rawSignal.candidate &&
+        typeof rawSignal.candidate.candidate === 'string' &&
+        rawSignal.candidate.candidate.length <= 4096) {
+      const candidate = rawSignal.candidate;
+      signal = {
+        candidate: {
+          candidate: candidate.candidate,
+          sdpMid: typeof candidate.sdpMid === 'string' ? candidate.sdpMid.slice(0, 128) : null,
+          sdpMLineIndex: Number.isInteger(candidate.sdpMLineIndex) ? candidate.sdpMLineIndex : null,
+          usernameFragment: typeof candidate.usernameFragment === 'string' ? candidate.usernameFragment.slice(0, 128) : null
+        }
+      };
+    } else {
+      return;
+    }
+
     io.to(targetId).emit('rtc:signal', {
       from: socket.id,
       name: socket.data.name,
-      signal: payload.signal
+      signal
     });
   });
 
