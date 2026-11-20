@@ -266,12 +266,30 @@ function bindSocketEvents() {
         }
         showToast('Связь восстановлена. Ты снова в комнате.');
       } else {
-        showToast(response.error || 'Комната больше недоступна.');
+        resetAfterRoomRecoveryFailure(response.error || 'Комната больше недоступна.');
       }
     } catch (error) {
-      showToast('Не удалось вернуться в комнату. Проверь соединение.');
+      console.warn('Room reconnection failed:', error);
+      showToast('Не удалось вернуться в комнату. Повторяем подключение…');
     }
   });
+}
+
+function resetAfterRoomRecoveryFailure(message) {
+  if (isInCall) stopCall();
+  if (previewAudioStream) {
+    previewAudioStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
+    previewAudioStream = null;
+  }
+  roomId = '';
+  participants.clear();
+  seenMessages.clear();
+  messagesList.replaceChildren();
+  appScreen.hidden = true;
+  joinScreen.hidden = false;
+  if (myName) nameInput.value = myName;
+  showJoinError(`${message} Создай новую комнату или введи действующий код.`);
+  if (socket) socket.disconnect();
 }
 
 async function createRoom(name) {
