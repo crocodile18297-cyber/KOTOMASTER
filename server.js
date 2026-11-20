@@ -378,6 +378,17 @@ io.on('connection', (socket) => {
     });
   });
 
+  socket.on('profile:update', (payload) => {
+    const roomId = socket.data.roomId;
+    const room = roomId && rooms.get(roomId);
+    const member = room && room.members.get(socket.id);
+    if (!member) return;
+    const name = cleanName(payload && payload.name);
+    member.name = name;
+    socket.data.name = name;
+    io.to(roomId).emit('room:peer-renamed', toPublicMember(member));
+  });
+
   socket.on('room:leave', () => leaveRoom(socket));
 
   socket.on('chat:send', async (payload, ack) => {
