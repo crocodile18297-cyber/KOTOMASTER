@@ -595,6 +595,7 @@ function startPeerQualityMonitor(peerId, pc) {
   pc._qualityBusy = false;
   pc._lastAdaptiveBitrate = 0;
   pc._lastScaleDown = 1;
+  pc._lastAdaptiveFrameRate = 0;
 
   pc._qualityTimer = setInterval(async () => {
     if (pc._qualityBusy || pc.signalingState === 'closed' || !isInCall) return;
@@ -609,26 +610,16 @@ function startPeerQualityMonitor(peerId, pc) {
       let encoderLimit = 'none';
 
       stats.forEach((report) => {
-        if (report.type === 'transport' && report.selectedCandidatePairId) {
-          selectedPairId = report.selectedCandidatePairId;
-        }
-
+        if (report.type === 'transport' && report.selectedCandidatePairId) selectedPairId = report.selectedCandidatePairId;
         if (report.type === 'remote-inbound-rtp') {
           const loss = Math.max(0, Number(report.fractionLost) || 0);
-          if (report.kind === 'audio' || report.mediaType === 'audio') {
-            audioPacketLoss = Math.max(audioPacketLoss, loss);
-          } else if (report.kind === 'video' || report.mediaType === 'video') {
-            videoPacketLoss = Math.max(videoPacketLoss, loss);
-          }
+          if (report.kind === 'audio' || report.mediaType === 'audio') audioPacketLoss = Math.max(audioPacketLoss, loss);
+          else if (report.kind === 'video' || report.mediaType === 'video') videoPacketLoss = Math.max(videoPacketLoss, loss);
         }
-
-        if (report.type === 'inbound-rtp' && (report.kind === 'audio' || report.mediaType === 'audio') &&
-            Number.isFinite(report.jitter)) {
+        if (report.type === 'inbound-rtp' && (report.kind === 'audio' || report.mediaType === 'audio') && Number.isFinite(report.jitter)) {
           audioJitterMs = Math.max(Number.isFinite(audioJitterMs) ? audioJitterMs : 0, report.jitter * 1000);
         }
-
-        if (report.type === 'outbound-rtp' && (report.kind === 'video' || report.mediaType === 'video') &&
-            report.qualityLimitationReason) {
+        if (report.type === 'outbound-rtp' && (report.kind === 'video' || report.mediaType === 'video') && report.qualityLimitationReason) {
           if (report.qualityLimitationReason === 'cpu' || report.qualityLimitationReason === 'bandwidth') {
             encoderLimit = report.qualityLimitationReason;
           }
@@ -637,9 +628,7 @@ function startPeerQualityMonitor(peerId, pc) {
 
       stats.forEach((report) => {
         if (report.type !== 'candidate-pair' || report.state !== 'succeeded') return;
-        if ((selectedPairId && report.id === selectedPairId) || (!selectedPairId && (report.selected || report.nominated))) {
-          selectedPair = report;
-        }
+        if ((selectedPairId && report.id === selectedPairId) || (!selectedPairId && (report.selected || report.nominated))) selectedPair = report;
       });
 
       const rttMs = selectedPair && Number.isFinite(selectedPair.currentRoundTripTime)
@@ -655,38 +644,63 @@ function startPeerQualityMonitor(peerId, pc) {
       const sender = findVideoSender(pc);
       const current = currentOutgoingVideoSettings();
       let desiredBitrate = current.bitrate;
-
       if (selectedPair && Number.isFinite(selectedPair.availableOutgoingBitrate) && selectedPair.availableOutgoingBitrate > 0) {
         desiredBitrate = Math.min(desiredBitrate, selectedPair.availableOutgoingBitrate * 0.74);
       }
+
       if (videoPacketLoss > 0.18) desiredBitrate *= 0.55;
       else if (videoPacketLoss > 0.10) desiredBitrate *= 0.72;
       else if (videoPacketLoss > 0.06) desiredBitrate *= 0.86;
       if (encoderLimit === 'cpu') desiredBitrate *= 0.82;
-
       desiredBitrate = Math.max(160000, Math.round(desiredBitrate));
 
       const previousBitrate = pc._lastAdaptiveBitrate || 0;
-      // React quickly to congestion, but recover quality slowly to avoid bitrate oscillation.
+      // Cut quickly when a link degrades; recover slowly to avoid bitrate oscillation.
       const targetBitrate = previousBitrate
         ? Math.round(desiredBitrate < previousBitrate
-          ? previousBitrate * 0.55 + desiredBitrate * 0.45
-          : previousBitrate * 0.82 + desiredBitrate * 0.18)
+          ? previousBitrate * 0.52 + desiredBitrate * 0.48
+          : previousBitrate * 0.84 + desiredBitrate * 0.16)
         : desiredBitrate;
 
       const ratio = targetBitrate / Math.max(current.bitrate, 1);
-      const scale = current.keepTextSharp
-        ? 1
-        : (encoderLimit === 'cpu' ? 1.25 : ratio < 0.30 ? 1.75 : ratio < 0.48 ? 1.4 : ratio < 0.68 ? 1.15 : 1);
-      const targetFrameRate = !current.keepTextSharp && encoderLimit === 'cpu'
-        ? Math.max(12, Math.round(current.frameRate * 0.82))
-        : current.frameRate;
+      const congested = videoPacketLoss > 0.10 || ratio < 0.58 || encoderLimit === 'cpu';
+
+      let scale = 1;
+      let fpsFactor = 1;
+      if (current.keepTextSharp) {
+        // Preserve screen detail while possible; under severe congestion trade some resolution for smoothness.
+        if (ratio < 0.22 || videoPacketLoss > 0.22) {
+          scale = 1.45;
+          fpsFactor = 0.62;
+        } else if (ratio < 0.42 || videoPacketLoss > 0.15) {
+          scale = 1.2;
+          fpsFactor = 0.78;
+        } else if (ratio < 0.62 || videoPacketLoss > 0.09) {
+          fpsFactor = 0.88;
+        }
+      } else {
+        if (ratio < 0.30 || videoPacketLoss > 0.18) {
+          scale = 1.75;
+          fpsFactor = 0.55;
+        } else if (ratio < 0.48 || videoPacketLoss > 0.12) {
+          scale = 1.4;
+          fpsFactor = 0.72;
+        } else if (ratio < 0.68 || videoPacketLoss > 0.07) {
+          scale = 1.15;
+          fpsFactor = 0.86;
+        }
+        if (encoderLimit === 'cpu') fpsFactor *= 0.82;
+      }
+
+      const minimumFps = current.keepTextSharp ? 8 : 10;
+      const targetFrameRate = Math.max(minimumFps, Math.round(current.frameRate * fpsFactor));
 
       if (sender) {
         const previousScale = pc._lastScaleDown || 1;
         const bitrateChanged = !previousBitrate || Math.abs(targetBitrate - previousBitrate) > Math.max(60000, previousBitrate * 0.10);
         const scaleChanged = scale !== previousScale;
-        if (bitrateChanged || scaleChanged || pc._lastAdaptiveFrameRate !== targetFrameRate) {
+        const frameRateChanged = targetFrameRate !== pc._lastAdaptiveFrameRate;
+        if (bitrateChanged || scaleChanged || frameRateChanged) {
           await tuneVideoSender(sender, targetBitrate, targetFrameRate, current.keepTextSharp, scale);
           pc._lastAdaptiveBitrate = targetBitrate;
           pc._lastScaleDown = scale;
@@ -701,18 +715,15 @@ function startPeerQualityMonitor(peerId, pc) {
         videoPacketLoss > 0.18 ||
         (Number.isFinite(rttMs) && rttMs > 550) ||
         (encoderLimit === 'cpu' && ratio < 0.42)
-      ) {
-        level = 'poor';
-      } else if (
+      ) level = 'poor';
+      else if (
         audioPacketLoss > 0.05 ||
         (Number.isFinite(audioJitterMs) && audioJitterMs > 35) ||
         videoPacketLoss > 0.07 ||
         (Number.isFinite(rttMs) && rttMs > 280) ||
         ratio < 0.72 ||
         encoderLimit !== 'none'
-      ) {
-        level = 'medium';
-      }
+      ) level = 'medium';
 
       updateRtcQualityIndicator(
         level, path, rttMs, videoPacketLoss,
@@ -1123,7 +1134,7 @@ async function tuneAudioSender(sender) {
     const params = sender.getParameters();
     if (!params.encodings || !params.encodings.length) params.encodings = [{}];
     const encoding = params.encodings[0];
-    encoding.maxBitrate = 64000;
+    encoding.maxBitrate = 96000;
     if ('priority' in encoding || !Object.prototype.hasOwnProperty.call(encoding, 'priority')) {
       encoding.priority = 'high';
     }
@@ -1134,7 +1145,7 @@ async function tuneAudioSender(sender) {
       try {
         const fallback = sender.getParameters();
         if (!fallback.encodings || !fallback.encodings.length) fallback.encodings = [{}];
-        fallback.encodings[0].maxBitrate = 64000;
+        fallback.encodings[0].maxBitrate = 96000;
         await sender.setParameters(fallback);
       } catch (fallbackError) {
         console.warn('Could not tune speech sender:', fallbackError || error);
@@ -1154,7 +1165,7 @@ async function tuneVideoSender(sender, bitrate, frameRate, keepTextSharp = false
       encoding.maxFramerate = Math.max(6, Math.round(frameRate));
       encoding.priority = keepTextSharp ? 'medium' : 'low';
       if (includeScale) encoding.scaleResolutionDownBy = Math.max(1, scaleResolutionDownBy);
-      params.degradationPreference = keepTextSharp ? 'maintain-resolution' : 'maintain-framerate';
+      params.degradationPreference = keepTextSharp && scaleResolutionDownBy <= 1 ? 'maintain-resolution' : 'maintain-framerate';
       await sender.setParameters(params);
     };
 
@@ -1385,11 +1396,11 @@ function closeVideoViewer() {
 }
 
 const VIDEO_PROFILES = {
-  auto: { width: 1280, height: 720, frameRate: 24, bitrate: 1200000, shareFrameRate: 15, shareBitrate: 1200000 },
-  '360': { width: 640, height: 360, frameRate: 24, bitrate: 450000, shareFrameRate: 10, shareBitrate: 420000 },
-  '480': { width: 854, height: 480, frameRate: 24, bitrate: 750000, shareFrameRate: 12, shareBitrate: 750000 },
-  '720': { width: 1280, height: 720, frameRate: 30, bitrate: 1500000, shareFrameRate: 15, shareBitrate: 1400000 },
-  '1080': { width: 1920, height: 1080, frameRate: 30, bitrate: 2500000, shareFrameRate: 15, shareBitrate: 2200000 }
+  auto: { width: 1280, height: 720, frameRate: 24, bitrate: 1200000, shareFrameRate: 18, shareBitrate: 1700000 },
+  '360': { width: 640, height: 360, frameRate: 24, bitrate: 450000, shareFrameRate: 12, shareBitrate: 480000 },
+  '480': { width: 854, height: 480, frameRate: 24, bitrate: 750000, shareFrameRate: 15, shareBitrate: 900000 },
+  '720': { width: 1280, height: 720, frameRate: 30, bitrate: 1500000, shareFrameRate: 20, shareBitrate: 2100000 },
+  '1080': { width: 1920, height: 1080, frameRate: 30, bitrate: 2500000, shareFrameRate: 18, shareBitrate: 3000000 }
 };
 
 async function changeVideoResolution() {
