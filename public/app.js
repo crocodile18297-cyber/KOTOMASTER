@@ -27,6 +27,8 @@ let seenMessages = new Set();
 let peerConnections = new Map();
 let pendingIce = new Map();
 let localStream = null;
+let previewAudioStream = null;
+let selectedAudioDeviceId = '';
 let screenStream = null;
 let isInCall = false;
 let isMicOn = false;
@@ -462,38 +464,57 @@ function getSpeechAudioConstraints(deviceId = '') {
   return constraints;
 }
 
+async function captureAudioInput(deviceId = '') {
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: getSpeechAudioConstraints(deviceId), video: false });
+  } catch (error) {
+    if (deviceId && ['NotFoundError', 'OverconstrainedError'].includes(error && error.name)) {
+      console.warn('Selected microphone is no longer available; falling back to the system microphone.', error);
+      return navigator.mediaDevices.getUserMedia({ audio: getSpeechAudioConstraints(), video: false });
+    }
+    if (error && error.name === 'OverconstrainedError') {
+      console.warn('Advanced microphone constraints are unsupported; retrying with basic audio capture.', error);
+      return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    }
+    throw error;
+  }
+}
+
 async function refreshAudioInputDevices(preferredDeviceId = '') {
   const select = $('#audioInputSelect');
-  if (!select || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
-
+  if (!select) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices || !navigator.mediaDevices.getUserMedia) {
+    select.disabled = true;
+    select.title = 'Браузер не предоставляет доступ к микрофонам. Открой KOTOMASTER по HTTPS в поддерживаемом браузере.';
+    return;
+  }
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const microphones = devices.filter((device) => device.kind === 'audioinput');
-    const activeTrack = localStream && localStream.getAudioTracks()[0];
-    const activeDeviceId = preferredDeviceId ||
-      (activeTrack && activeTrack.getSettings ? activeTrack.getSettings().deviceId : '') ||
-      select.value || '';
-
+    const activeStream = localStream || previewAudioStream;
+    const activeTrack = activeStream && activeStream.getAudioTracks()[0];
+    const activeDeviceId = preferredDeviceId || selectedAudioDeviceId ||
+      (activeTrack && activeTrack.getSettings ? activeTrack.getSettings().deviceId : '') || select.value || '';
     select.replaceChildren();
     const automatic = document.createElement('option');
     automatic.value = '';
     automatic.textContent = 'Системный микрофон';
     select.append(automatic);
-
     microphones.forEach((device, index) => {
       const option = document.createElement('option');
       option.value = device.deviceId;
       option.textContent = device.label || `Микрофон ${index + 1}`;
       select.append(option);
     });
-
     select.value = microphones.some((device) => device.deviceId === activeDeviceId) ? activeDeviceId : '';
-    select.disabled = !isInCall || microphones.length === 0;
+    select.disabled = microphones.length === 0 || isSwitchingAudioInput;
     select.title = microphones.length
-      ? 'Выбери микрофон, с которого собеседник будет слышать тебя'
+      ? (isInCall ? 'Выбери микрофон, с которого собеседник будет слышать тебя' : 'Выбери микрофон и проверь уровень сигнала до начала звонка')
       : 'Браузер пока не обнаружил доступные микрофоны';
   } catch (error) {
     console.warn('Could not enumerate microphones:', error);
+    select.disabled = true;
+    select.title = 'Не удалось получить список микрофонов. Проверь разрешение на микрофон в браузере.';
   }
 }
 
@@ -562,81 +583,84 @@ function attachLocalAudioTrackLifecycle(track) {
 }
 
 async function selectAudioInput() {
-  if (!isInCall || !localStream || isSwitchingAudioInput) return;
+  if (isSwitchingAudioInput) return;
   const select = $('#audioInputSelect');
-  if (!select) return;
-
+  if (!select || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showToast('Браузер не поддерживает доступ к микрофону. Открой KOTOMASTER по HTTPS.');
+    return;
+  }
   isSwitchingAudioInput = true;
   select.disabled = true;
   const requestedDeviceId = select.value;
+  const isLiveCall = Boolean(isInCall && localStream);
   let captured = null;
   const changedSenders = [];
-
   try {
-    captured = await navigator.mediaDevices.getUserMedia({
-      audio: getSpeechAudioConstraints(requestedDeviceId),
-      video: false
-    });
+    captured = await captureAudioInput(requestedDeviceId);
     const nextTrack = captured.getAudioTracks()[0];
     if (!nextTrack) throw new Error('Браузер не вернул аудиодорожку микрофона.');
-
     nextTrack.enabled = true;
     attachLocalAudioTrackLifecycle(nextTrack);
-
-    for (const pc of peerConnections.values()) {
-      if (pc.signalingState === 'closed') continue;
-      let sender = findAudioSender(pc);
-      if (sender) {
-        const previousTrack = sender.track;
-        await sender.replaceTrack(nextTrack);
-        changedSenders.push({ pc, sender, previousTrack });
-        await tuneAudioSender(sender);
-      } else {
-        sender = pc.addTrack(nextTrack, localStream);
-        changedSenders.push({ pc, sender, previousTrack: null, added: true });
-        await tuneAudioSender(sender);
-        preferOpusAudioCodec(pc, sender);
+    if (isLiveCall) {
+      for (const pc of peerConnections.values()) {
+        if (pc.signalingState === 'closed') continue;
+        let sender = findAudioSender(pc);
+        if (sender) {
+          const previousTrack = sender.track;
+          await sender.replaceTrack(nextTrack);
+          changedSenders.push({ pc, sender, previousTrack });
+          await tuneAudioSender(sender);
+        } else {
+          sender = pc.addTrack(nextTrack, localStream);
+          changedSenders.push({ pc, sender, previousTrack: null, added: true });
+          await tuneAudioSender(sender);
+          preferOpusAudioCodec(pc, sender);
+        }
       }
+      const previousTracks = localStream.getAudioTracks();
+      previousTracks.forEach((track) => localStream.removeTrack(track));
+      localStream.addTrack(nextTrack);
+      captured = null;
+      previousTracks.forEach((track) => { track.onended = null; track.stop(); });
+      isMicOn = true;
+      updateTileState(socket.id, { audio: true, video: isCameraOn });
+      updateCallButtons();
+      publishMediaState();
+    } else {
+      stopMicInputMeter();
+      if (previewAudioStream) previewAudioStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
+      previewAudioStream = captured;
+      captured = null;
     }
-
-    const previousTracks = localStream.getAudioTracks();
-    previousTracks.forEach((track) => localStream.removeTrack(track));
-    localStream.addTrack(nextTrack);
-    previousTracks.forEach((track) => {
-      track.onended = null;
-      track.stop();
-    });
-
-    isMicOn = true;
-    startMicInputMeter(nextTrack);
-    await refreshAudioInputDevices(nextTrack.getSettings ? nextTrack.getSettings().deviceId : requestedDeviceId);
-    updateTileState(socket.id, { audio: true, video: isCameraOn });
-    updateCallButtons();
-    publishMediaState();
-
-    const settings = nextTrack.getSettings ? nextTrack.getSettings() : {};
-    const deviceName = settings.deviceId
-      ? (select.selectedOptions[0] && select.selectedOptions[0].textContent) || 'выбранный микрофон'
-      : 'системный микрофон';
-    showToast(`Микрофон переключён: ${deviceName}. Проверь индикатор уровня.`);
+    const activeStream = isLiveCall ? localStream : previewAudioStream;
+    const activeTrack = activeStream && activeStream.getAudioTracks()[0];
+    const settings = activeTrack && activeTrack.getSettings ? activeTrack.getSettings() : {};
+    selectedAudioDeviceId = settings.deviceId || requestedDeviceId || '';
+    startMicInputMeter(activeTrack);
+    await refreshAudioInputDevices(selectedAudioDeviceId);
+    const selectedOption = select.selectedOptions[0];
+    const deviceName = selectedOption && selectedOption.textContent ? selectedOption.textContent : 'системный микрофон';
+    showToast(isLiveCall
+      ? `Микрофон переключён: ${deviceName}. Проверь индикатор уровня.`
+      : `Микрофон готов: ${deviceName}. Говори и проверь индикатор уровня до звонка.`);
   } catch (error) {
-    console.error('Microphone switch failed:', error);
+    console.error('Microphone selection failed:', error);
     for (const entry of changedSenders.reverse()) {
       try {
         if (entry.added) entry.pc.removeTrack(entry.sender);
         else await entry.sender.replaceTrack(entry.previousTrack || null);
-      } catch (rollbackError) {
-        console.warn('Microphone rollback failed:', rollbackError);
-      }
+      } catch (rollbackError) { console.warn('Microphone rollback failed:', rollbackError); }
     }
     if (captured) captured.getTracks().forEach((track) => track.stop());
     await refreshAudioInputDevices();
-    showToast(error && error.name === 'NotAllowedError'
-      ? 'Нет разрешения на выбранный микрофон. Разреши доступ в браузере.'
-      : 'Не удалось переключить микрофон. Попробуй другое устройство.');
+    let message = 'Не удалось включить выбранный микрофон. Попробуй системный микрофон.';
+    if (error && (error.name === 'NotAllowedError' || error.name === 'SecurityError')) message = 'Браузеру запрещён доступ к микрофону. Разреши его для KOTOMASTER в настройках сайта.';
+    else if (error && error.name === 'NotFoundError') message = 'Выбранный микрофон больше не найден. Выбери системный микрофон.';
+    else if (error && error.name === 'NotReadableError') message = 'Микрофон занят другим приложением. Закрой его и попробуй снова.';
+    showToast(message);
   } finally {
     isSwitchingAudioInput = false;
-    select.disabled = false;
+    await refreshAudioInputDevices(selectedAudioDeviceId);
   }
 }
 
@@ -647,27 +671,30 @@ function markSpeechTrack(track) {
 
 async function startCall() {
   if (isInCall) return;
+  if (isSwitchingAudioInput) { showToast('Дождись завершения проверки микрофона.'); return; }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     showToast('Для видеозвонка открой KOTOMASTER через HTTPS или localhost.');
     return;
   }
-
   const button = $('#startCallBtn');
   button.disabled = true;
   button.textContent = 'Подключаемся…';
   let audioError = null;
   let videoError = null;
-
+  let audioStream = null;
+  let videoStream = null;
+  let usedAudioPreview = false;
   try {
     const profile = VIDEO_PROFILES[$('#videoResolutionSelect').value] || VIDEO_PROFILES.auto;
-    let audioStream = null;
-    let videoStream = null;
-
     try {
-      audioStream = await navigator.mediaDevices.getUserMedia({
-        audio: getSpeechAudioConstraints(),
-        video: false
-      });
+      const previewTrack = previewAudioStream && previewAudioStream.getAudioTracks().find((track) => track.readyState === 'live');
+      if (previewTrack) {
+        previewTrack.enabled = true;
+        audioStream = previewAudioStream;
+        usedAudioPreview = true;
+      } else {
+        audioStream = await captureAudioInput(selectedAudioDeviceId);
+      }
     } catch (error) {
       audioError = error;
       console.warn('Microphone unavailable; trying video-only:', error);
@@ -698,6 +725,9 @@ async function startCall() {
     }
 
     localStream = new MediaStream(tracks);
+    if (usedAudioPreview) previewAudioStream = null;
+    const activeAudioTrack = localStream.getAudioTracks()[0];
+    if (activeAudioTrack && activeAudioTrack.getSettings) selectedAudioDeviceId = activeAudioTrack.getSettings().deviceId || selectedAudioDeviceId;
     localStream.getAudioTracks().forEach(attachLocalAudioTrackLifecycle);
     localStream.getVideoTracks().forEach((track) => { try { track.contentHint = 'motion'; } catch (_error) {} });
     isInCall = true;
@@ -736,6 +766,12 @@ async function startCall() {
     else showToast('Ты подключился к видеозвонку.');
   } catch (error) {
     console.error('getUserMedia error:', error);
+    if (isInCall) stopCall();
+    else {
+      if (usedAudioPreview && audioStream) previewAudioStream = audioStream;
+      else if (audioStream) audioStream.getTracks().forEach((track) => track.stop());
+      if (videoStream) videoStream.getTracks().forEach((track) => track.stop());
+    }
     let message = 'Не удалось получить доступ к камере или микрофону.';
     if (error && error.name === 'NotAllowedError') message = 'Разреши доступ хотя бы к микрофону или камере в настройках браузера.';
     else if (error && error.name === 'NotFoundError') message = 'На устройстве не найдена камера или микрофон.';
@@ -1258,10 +1294,7 @@ async function toggleMic() {
   let tracks = localStream.getAudioTracks();
   if (!tracks.length) {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: getSpeechAudioConstraints(),
-        video: false
-      });
+      const stream = await captureAudioInput(selectedAudioDeviceId);
       tracks = stream.getAudioTracks();
       tracks.forEach((track) => {
         track.enabled = true;
@@ -1472,7 +1505,10 @@ function updateRtcQualityIndicator(level, path, rttMs, videoPacketLoss, peerName
 async function startScreenShare() {
   if (!isInCall) return;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-    showToast('Этот браузер не умеет передавать экран из веб-страницы. На этом устройстве нужен браузер или приложение с поддержкой захвата экрана.');
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+    showToast(isMobile
+      ? 'Этот мобильный браузер не поддерживает передачу экрана из веб-страницы. Можно смотреть демонстрацию с компьютера.'
+      : 'Браузер не поддерживает передачу экрана. Открой KOTOMASTER в актуальном браузере по HTTPS.');
     return;
   }
 
@@ -1561,7 +1597,10 @@ async function startScreenShare() {
     screenStream = null;
     isSharing = false;
 
-    if (error && error.name === 'NotAllowedError') showToast('Доступ к экрану отменён или запрещён браузером.');
+    const isAndroid = /Android/i.test(navigator.userAgent || '');
+    if (isAndroid && error && ['NotAllowedError', 'NotSupportedError'].includes(error.name)) {
+      showToast('Этот браузер Android не разрешает сайту захватывать экран. На телефоне можно смотреть демонстрацию, а начать её — с компьютера.');
+    } else if (error && error.name === 'NotAllowedError') showToast('Доступ к экрану отменён или запрещён браузером. Проверь разрешения и попробуй снова.');
     else if (error && error.name === 'NotFoundError') showToast('Браузер не нашёл источник экрана для передачи.');
     else if (error && error.name === 'NotSupportedError') showToast('Передача экрана не поддерживается этим браузером.');
     else showToast(error.message || 'Не удалось показать экран.');
@@ -1728,6 +1767,11 @@ async function copyText(value) {
 }
 
 function leaveRoom() {
+  if (previewAudioStream) {
+    previewAudioStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
+    previewAudioStream = null;
+  }
+  stopMicInputMeter();
   stopCall();
   if (socket) {
     socket.emit('room:leave');
@@ -1847,4 +1891,5 @@ rtcConfigPromise = (async function loadConfig() {
   }
 })();
 
+refreshAudioInputDevices();
 updateCallButtons();
