@@ -189,7 +189,8 @@ function bindSocketEvents() {
   socket.on('chat:pinned', (message) => {
     pinnedMessage = message || null;
     renderPinnedMessage();
-    if (pinnedMessage) showToast('Сообщение закреплено');
+    messageRecords.forEach((item) => refreshMessageNode(item));
+    showToast(pinnedMessage ? 'Сообщение закреплено' : 'Закрепление снято');
   });
 
   socket.on('chat:typing', ({ id, name, typing }) => {
@@ -571,6 +572,7 @@ function appendMessage(message, shouldScroll = true) {
   const row = createMessageNode(message);
   messagesList.append(row);
   $('.chat-welcome').hidden = true;
+  applyMessageSearch();
   if (shouldScroll) requestAnimationFrame(() => { chatScroll.scrollTop = chatScroll.scrollHeight; });
 }
 
@@ -820,7 +822,9 @@ function renderTypingIndicator() {
 
 function markMessagesRead(ids) {
   if (!socket || !socket.connected || !Array.isArray(ids) || !ids.length) return;
-  socket.emit('chat:read', { messageIds: ids.slice(0, 50) });
+  for (let index = 0; index < ids.length; index += 50) {
+    socket.emit('chat:read', { messageIds: ids.slice(index, index + 50) });
+  }
 }
 
 function applyMessageSearch() {
