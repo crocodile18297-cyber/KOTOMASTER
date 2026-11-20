@@ -299,6 +299,84 @@ function resetAfterRoomRecoveryFailure(message) {
   if (socket) socket.disconnect();
 }
 
+async function syncRoomAfterResume() {
+  if (isRoomSyncing || document.hidden || !roomId || !socket || !socket.connected || !participants.has(socket.id)) return;
+  isRoomSyncing = true;
+  const syncingRoom = roomId;
+  try {
+    const response = await emitWithAck('room:sync', {});
+    if (roomId !== syncingRoom) return;
+    if (!response.ok) {
+      resetAfterRoomRecoveryFailure(response.error || 'Комната больше недоступна.');
+      return;
+    }
+    enterWorkspace(response, true);
+    if (isInCall && localStream) {
+      publishMediaState();
+      for (const member of participants.values()) {
+        if (member.id !== socket.id && member.inCall) {
+          createPeerConnection(member.id).catch((error) => showToast(error.message));
+        }
+      }
+      for (const [peerId, pc] of peerConnections.entries()) {
+        if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+          scheduleIceRestart(peerId, pc);
+        }
+      }
+      await recoverInterruptedMedia();
+    }
+  } catch (error) {
+    console.warn('Room sync after mobile resume failed:', error);
+    showToast('Проверяем соединение с комнатой. Попробуй переключиться между вкладками.');
+  } finally {
+    isRoomSyncing = false;
+  }
+}
+
+function handlePageResume() {
+  if (document.hidden || !roomId || !socket) return;
+  if (!socket.connected) {
+    socket.connect();
+    return;
+  }
+  syncRoomAfterResume();
+}
+
+async function restoreSavedRoom() {
+  let saved = null;
+  try {
+    saved = JSON.parse(localStorage.getItem(ROOM_SESSION_KEY) || 'null');
+  } catch (_error) {
+    localStorage.removeItem(ROOM_SESSION_KEY);
+  }
+  if (!saved || !saved.roomId || !saved.name) return;
+  if (Date.now() - Number(saved.savedAt || 0) > 7 * 24 * 60 * 60 * 1000) {
+    localStorage.removeItem(ROOM_SESSION_KEY);
+    return;
+  }
+  nameInput.value = String(saved.name).slice(0, 24);
+  roomInput.value = String(saved.roomId).slice(0, 6);
+  showJoinError('Восстанавливаем последнюю комнату…');
+  try {
+    await connectSocket();
+    await joinRoom(nameInput.value, roomInput.value);
+    showJoinError('');
+    showToast('Последняя комната восстановлена.');
+  } catch (error) {
+    console.warn('Saved room could not be restored:', error);
+    if (String(error.message || '').includes('Комната не найдена')) {
+      localStorage.removeItem(ROOM_SESSION_KEY);
+      showJoinError('Прежняя комната уже закрыта. Создай новую или введи актуальный код.');
+    } else {
+      showJoinError('Не удалось автоматически открыть прежнюю комнату. Проверь интернет и попробуй войти ещё раз.');
+    }
+    if (socket && !roomId) {
+      socket.disconnect();
+      socket = null;
+    }
+  }
+}
+
 async function createRoom(name) {
   const response = await emitWithAck('room:create', { name, clientId: tabClientId });
   if (!response.ok) throw new Error(response.error || 'Не удалось создать комнату.');
@@ -867,6 +945,8 @@ async function startCall() {
     isInCall = true;
     isMicOn = localStream.getAudioTracks().length > 0;
     isCameraOn = false;
+    wasMicInterrupted = false;
+    wasCameraInterrupted = false;
     isSharing = false;
 
     const localTile = makeVideoTile(socket.id, myName, true);
@@ -931,7 +1011,9 @@ async function enableCameraAfterAudio(profile) {
       return;
     }
     try { videoTrack.contentHint = 'motion'; } catch (_error) {}
+    attachLocalVideoTrackLifecycle(videoTrack);
     localStream.addTrack(videoTrack);
+    wasCameraInterrupted = false;
     isCameraOn = true;
     const localTile = makeVideoTile(socket.id, myName, true);
     const localVideo = localTile.querySelector('video');
@@ -1520,6 +1602,7 @@ async function toggleCamera() {
       tracks.forEach((track) => {
         try { track.contentHint = 'motion'; } catch (_error) {}
         track.enabled = true;
+        attachLocalVideoTrackLifecycle(track);
         localStream.addTrack(track);
       });
       if (tracks[0]) {
@@ -1840,6 +1923,8 @@ function stopCall() {
   isInCall = false;
   isMicOn = false;
   isCameraOn = false;
+  wasMicInterrupted = false;
+  wasCameraInterrupted = false;
   removeVideoTile(socket && socket.id);
   videoGrid.replaceChildren();
   publishMediaState();
@@ -2060,6 +2145,12 @@ $('#leaveRoomBtn').addEventListener('click', leaveRoom);
 inviteModal.addEventListener('click', (event) => { if (event.target === inviteModal) inviteModal.hidden = true; });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { inviteModal.hidden = true; if (!$('#videoViewerModal').hidden) closeVideoViewer(); } });
 
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) handlePageResume();
+});
+window.addEventListener('pageshow', handlePageResume);
+window.addEventListener('online', handlePageResume);
+
 rtcConfigPromise = (async function loadConfig() {
   try {
     const response = await fetch('/api/config', { cache: 'no-store' });
@@ -2072,3 +2163,4 @@ rtcConfigPromise = (async function loadConfig() {
 
 refreshAudioInputDevices();
 updateCallButtons();
+restoreSavedRoom();
