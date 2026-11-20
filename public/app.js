@@ -270,6 +270,7 @@ function bindSocketEvents() {
             }
           }
           updateCallStage();
+          await recoverInterruptedMedia();
         }
         showToast('Связь восстановлена. Ты снова в комнате.');
       } else {
@@ -1945,6 +1946,7 @@ function stopCall() {
   if (audioSelect) audioSelect.disabled = true;
   const meter = $('#micInputLevel');
   if (meter) meter.style.width = '0%';
+  saveRoomSessionBeforePageExit();
   showToast('Ты вышел из видеозвонка.');
 }
 
