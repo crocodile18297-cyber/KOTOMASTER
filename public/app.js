@@ -460,7 +460,7 @@ function getSpeechAudioConstraints(deviceId = '') {
   if (deviceId) constraints.deviceId = { exact: deviceId };
   if (supported.channelCount) constraints.channelCount = { ideal: 1 };
   if (supported.sampleRate) constraints.sampleRate = { ideal: 48000 };
-  if (supported.latency) constraints.latency = { ideal: 0.02 };
+  if (supported.latency) constraints.latency = { ideal: 0.01 };
   return constraints;
 }
 
@@ -676,14 +676,13 @@ async function startCall() {
     showToast('Для видеозвонка открой KOTOMASTER через HTTPS или localhost.');
     return;
   }
+
   const button = $('#startCallBtn');
   button.disabled = true;
-  button.textContent = 'Подключаемся…';
-  let audioError = null;
-  let videoError = null;
+  button.textContent = 'Подключаем голос…';
   let audioStream = null;
-  let videoStream = null;
   let usedAudioPreview = false;
+
   try {
     const profile = VIDEO_PROFILES[$('#videoResolutionSelect').value] || VIDEO_PROFILES.auto;
     try {
@@ -696,63 +695,42 @@ async function startCall() {
         audioStream = await captureAudioInput(selectedAudioDeviceId);
       }
     } catch (error) {
-      audioError = error;
-      console.warn('Microphone unavailable; trying video-only:', error);
+      console.warn('Microphone unavailable; continuing without microphone:', error);
+      showToast(error && error.name === 'NotAllowedError'
+        ? 'Нет доступа к микрофону. Звонок попробует запуститься без него.'
+        : 'Микрофон пока не подключился. Камеру запускаем отдельно.');
     }
 
-    try {
-      videoStream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          width: { ideal: profile.width },
-          height: { ideal: profile.height },
-          frameRate: { ideal: profile.frameRate, max: profile.frameRate }
-        }
-      });
-    } catch (error) {
-      videoError = error;
-      console.warn('Camera unavailable; trying audio-only:', error);
-    }
-
-    const tracks = [
-      ...(audioStream ? audioStream.getAudioTracks() : []),
-      ...(videoStream ? videoStream.getVideoTracks() : [])
-    ];
-
-    if (!tracks.length) {
-      const error = audioError || videoError || new Error('Не удалось получить доступ ни к микрофону, ни к камере.');
-      throw error;
-    }
-
-    localStream = new MediaStream(tracks);
+    // Start the call as soon as audio is ready. Camera capture must not delay speech.
+    localStream = new MediaStream(audioStream ? audioStream.getAudioTracks() : []);
     if (usedAudioPreview) previewAudioStream = null;
     const activeAudioTrack = localStream.getAudioTracks()[0];
-    if (activeAudioTrack && activeAudioTrack.getSettings) selectedAudioDeviceId = activeAudioTrack.getSettings().deviceId || selectedAudioDeviceId;
+    if (activeAudioTrack && activeAudioTrack.getSettings) {
+      selectedAudioDeviceId = activeAudioTrack.getSettings().deviceId || selectedAudioDeviceId;
+    }
     localStream.getAudioTracks().forEach(attachLocalAudioTrackLifecycle);
-    localStream.getVideoTracks().forEach((track) => { try { track.contentHint = 'motion'; } catch (_error) {} });
+
     isInCall = true;
     isMicOn = localStream.getAudioTracks().length > 0;
-    isCameraOn = localStream.getVideoTracks().length > 0;
+    isCameraOn = false;
     isSharing = false;
 
     const localTile = makeVideoTile(socket.id, myName, true);
     const localVideo = localTile.querySelector('video');
     localVideo.srcObject = localStream;
-    updateTileState(socket.id, { audio: isMicOn, video: isCameraOn });
+    updateTileState(socket.id, { audio: isMicOn, video: false });
     updateCallButtons();
-    socket.emit('media:state', { inCall: true, audio: isMicOn, video: isCameraOn, sharing: false });
-    participants.set(socket.id, { id: socket.id, name: myName, inCall: true, audio: isMicOn, video: isCameraOn, sharing: false });
+    socket.emit('media:state', { inCall: true, audio: isMicOn, video: false, sharing: false });
+    participants.set(socket.id, { id: socket.id, name: myName, inCall: true, audio: isMicOn, video: false, sharing: false });
     renderParticipants();
     updateCallDescription();
     updateCallStage();
 
-    const initialAudioTrack = localStream.getAudioTracks()[0];
-    if (initialAudioTrack) {
-      startMicInputMeter(initialAudioTrack);
-      await refreshAudioInputDevices(initialAudioTrack.getSettings ? initialAudioTrack.getSettings().deviceId : '');
+    if (activeAudioTrack) {
+      startMicInputMeter(activeAudioTrack);
+      await refreshAudioInputDevices(activeAudioTrack.getSettings ? activeAudioTrack.getSettings().deviceId : '');
     } else {
       await refreshAudioInputDevices();
-      showToast('Микрофон не выбран. Выбери гарнитуру в списке «Микрофон».');
     }
 
     for (const member of participants.values()) {
@@ -761,26 +739,65 @@ async function startCall() {
       }
     }
 
-    if (!isMicOn) showToast('Микрофон недоступен. Звонок начат без звука с твоей стороны.');
-    else if (!isCameraOn) showToast('Камера недоступна. Звонок начат только со звуком.');
-    else showToast('Ты подключился к видеозвонку.');
+    showToast(isMicOn ? 'Голос подключён. Запускаем камеру…' : 'Звонок запущен. Подключаем камеру и ждём микрофон…');
+    enableCameraAfterAudio(profile).catch((error) => {
+      console.warn('Camera startup failed:', error);
+    });
   } catch (error) {
-    console.error('getUserMedia error:', error);
+    console.error('Call startup error:', error);
     if (isInCall) stopCall();
-    else {
-      if (usedAudioPreview && audioStream) previewAudioStream = audioStream;
-      else if (audioStream) audioStream.getTracks().forEach((track) => track.stop());
-      if (videoStream) videoStream.getTracks().forEach((track) => track.stop());
-    }
-    let message = 'Не удалось получить доступ к камере или микрофону.';
-    if (error && error.name === 'NotAllowedError') message = 'Разреши доступ хотя бы к микрофону или камере в настройках браузера.';
-    else if (error && error.name === 'NotFoundError') message = 'На устройстве не найдена камера или микрофон.';
-    else if (error && error.name === 'NotReadableError') message = 'Камера или микрофон заняты другим приложением.';
-    else if (error && error.name === 'OverconstrainedError') message = 'Устройство не поддерживает запрошенное качество. Выбери 480p или 360p.';
+    else if (audioStream && !usedAudioPreview) audioStream.getTracks().forEach((track) => track.stop());
+    let message = 'Не удалось запустить видеозвонок.';
+    if (error && error.name === 'NotAllowedError') message = 'Разреши доступ к микрофону в настройках браузера.';
+    else if (error && error.name === 'NotFoundError') message = 'На устройстве не найден микрофон.';
+    else if (error && error.name === 'NotReadableError') message = 'Микрофон занят другим приложением.';
     showToast(message);
   } finally {
     button.disabled = false;
     button.innerHTML = '<span>▶</span> Войти в видеозвонок';
+  }
+}
+
+async function enableCameraAfterAudio(profile) {
+  if (!isInCall || !localStream || isCameraOn || isSharing) return;
+  let videoStream = null;
+  try {
+    videoStream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        width: { ideal: profile.width },
+        height: { ideal: profile.height },
+        frameRate: { ideal: profile.frameRate, max: profile.frameRate }
+      }
+    });
+    const videoTrack = videoStream.getVideoTracks()[0];
+    if (!videoTrack) throw new Error('Браузер не вернул видеодорожку камеры.');
+    if (!isInCall || !localStream) {
+      videoStream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    try { videoTrack.contentHint = 'motion'; } catch (_error) {}
+    localStream.addTrack(videoTrack);
+    isCameraOn = true;
+    const localTile = makeVideoTile(socket.id, myName, true);
+    const localVideo = localTile.querySelector('video');
+    localVideo.srcObject = localStream;
+    await addLocalTrackToPeers(videoTrack, 'video');
+    updateTileState(socket.id, { audio: isMicOn, video: true });
+    updateCallButtons();
+    publishMediaState();
+    showToast('Камера подключена. Голос уже передавался, не дожидаясь её запуска.');
+  } catch (error) {
+    console.warn('Camera unavailable:', error);
+    let message = 'Камера не подключилась. Звонок продолжится со звуком.';
+    if (error && error.name === 'NotAllowedError') message = 'Браузеру запрещён доступ к камере. Звонок продолжится со звуком.';
+    else if (error && error.name === 'NotFoundError') message = 'Камера не найдена. Звонок продолжится со звуком.';
+    else if (error && error.name === 'NotReadableError') message = 'Камера занята другим приложением. Звонок продолжится со звуком.';
+    showToast(message);
+    if (!isMicOn && isInCall) {
+      showToast('Не удалось подключить ни микрофон, ни камеру. Проверь разрешения браузера.');
+      stopCall();
+    }
   }
 }
 
@@ -1079,6 +1096,12 @@ async function createPeerConnection(peerId) {
       const currentMember = participants.get(peerId) || member;
 
       if (event.track.kind === 'audio') {
+        // Prefer a short voice jitter buffer where the browser exposes this control.
+        try {
+          if (event.receiver && 'jitterBufferTarget' in event.receiver) event.receiver.jitterBufferTarget = 80;
+        } catch (error) {
+          console.warn('Could not set low-latency audio playout:', error);
+        }
         let audioElements = remoteAudioElements.get(peerId);
         if (!audioElements) {
           audioElements = [];
@@ -1707,10 +1730,10 @@ function closeVideoViewer() {
 }
 
 const VIDEO_PROFILES = {
-  auto: { width: 1280, height: 720, frameRate: 24, bitrate: 1200000, shareFrameRate: 15, shareBitrate: 1250000 },
+  auto: { width: 1280, height: 720, frameRate: 24, bitrate: 900000, shareFrameRate: 15, shareBitrate: 950000 },
   '360': { width: 640, height: 360, frameRate: 24, bitrate: 450000, shareFrameRate: 10, shareBitrate: 420000 },
   '480': { width: 854, height: 480, frameRate: 24, bitrate: 750000, shareFrameRate: 12, shareBitrate: 780000 },
-  '720': { width: 1280, height: 720, frameRate: 30, bitrate: 1500000, shareFrameRate: 15, shareBitrate: 1450000 },
+  '720': { width: 1280, height: 720, frameRate: 24, bitrate: 1150000, shareFrameRate: 15, shareBitrate: 1150000 },
   '1080': { width: 1920, height: 1080, frameRate: 30, bitrate: 2500000, shareFrameRate: 15, shareBitrate: 2200000 }
 };
 
