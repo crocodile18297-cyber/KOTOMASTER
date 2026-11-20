@@ -214,18 +214,32 @@ function cleanClientId(value, fallback) {
 }
 
 async function joinRoom(socket, payload, ack, createNew = false) {
-  if (!socket.data.userId) return (typeof ack === 'function' ? ack : () => {})({ ok: false, error: 'Сначала войди в аккаунт.' });
+  const callback = typeof ack === 'function' ? ack : () => {};
+  const name = cleanName(payload && payload.name);
+  let roomId = createNew ? '' : cleanRoomId(payload && payload.roomId);
+  const clientId = cleanClientId(payload && payload.clientId, `socket-${socket.id}`);
+
+  if (!socket.data.userId) return callback({ ok: false, error: 'Сначала войди в аккаунт.' });
+  if (!createNew && !roomId) return callback({ ok: false, error: 'Введите код комнаты из 6 символов.' });
+  if (socket.data.roomId) return callback({ ok: false, error: 'Сначала выйдите из текущей комнаты.' });
+
+  // Reject an obviously full in-memory room before creating a persistent membership row.
+  let room = roomId ? rooms.get(roomId) : null;
+  const isReplacingSameTab = room && Array.from(room.members.values())
+    .some((member) => member.clientId === clientId);
+  if (room && room.members.size >= MAX_ROOM_SIZE && !isReplacingSameTab) {
+    return callback({ ok: false, error: `В комнате уже максимум ${MAX_ROOM_SIZE} участников.` });
+  }
 
   let conversationId = null;
   try {
     if (createNew) {
       let linked = false;
-      for (let attempt = 0; attempt < 6 && !linked; attempt += 1) {
+      for (let attempt = 0; attempt < 8 && !linked; attempt += 1) {
         const candidate = makeRoomId();
         try {
-          const result = await supabaseRpc(socket, 'create_room_conversation', { p_room_code: candidate });
+          conversationId = await supabaseRpc(socket, 'create_room_conversation', { p_room_code: candidate });
           roomId = candidate;
-          conversationId = result;
           linked = true;
         } catch (error) {
           if (!/already exists/i.test(error.message)) throw error;
@@ -239,21 +253,13 @@ async function joinRoom(socket, payload, ack, createNew = false) {
     return callback({ ok: false, error: `Не удалось открыть постоянную переписку: ${error.message}` });
   }
 
-  const callback = typeof ack === 'function' ? ack : () => {};
-  const name = cleanName(payload && payload.name);
-  const roomId = createNew ? makeRoomId() : cleanRoomId(payload && payload.roomId);
-  const clientId = cleanClientId(payload && payload.clientId, `socket-${socket.id}`);
-
-  if (!roomId) return callback({ ok: false, error: 'Введите код комнаты из 6 символов.' });
-  if (socket.data.roomId) return callback({ ok: false, error: 'Сначала выйдите из текущей комнаты.' });
-
-  let room = rooms.get(roomId);
-  if (!room && !createNew) return callback({ ok: false, error: 'Комната не найдена. Проверьте код.' });
+  room = rooms.get(roomId);
   if (!room) {
     room = { id: roomId, conversationId, members: new Map(), messages: [], pinnedMessageId: null, createdAt: Date.now() };
     rooms.set(roomId, room);
+  } else if (room.conversationId && room.conversationId !== conversationId) {
+    return callback({ ok: false, error: 'Код комнаты связан с другой перепиской. Перезагрузи страницу.' });
   }
-  if (room.conversationId && room.conversationId !== conversationId) return callback({ ok: false, error: 'Код комнаты связан с другой перепиской. Перезагрузи страницу.' });
   room.conversationId = conversationId;
 
   // A mobile network can reconnect before the server notices the old transport is dead.
@@ -268,13 +274,11 @@ async function joinRoom(socket, payload, ack, createNew = false) {
       previousSocket.emit('room:session-replaced');
       previousSocket.data.roomId = null;
       previousSocket.data.name = null;
+      previousSocket.data.conversationId = null;
       previousSocket.leave(roomId);
       previousSocket.disconnect(true);
     }
-    io.to(roomId).emit('room:peer-left', {
-      id: previousSession.id,
-      reason: 'reconnected'
-    });
+    io.to(roomId).emit('room:peer-left', { id: previousSession.id, reason: 'reconnected' });
   });
 
   if (room.members.size >= MAX_ROOM_SIZE) {
@@ -310,6 +314,7 @@ async function joinRoom(socket, payload, ack, createNew = false) {
     socket.data.conversationId = null;
     return callback({ ok: false, error: `Не удалось загрузить историю чата: ${error.message}` });
   }
+
   callback({
     ok: true,
     roomId,
