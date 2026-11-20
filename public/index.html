@@ -8,7 +8,8 @@
   <title>KOTOMASTER — на связи по-кошачьи</title>
   <link rel="stylesheet" href="/styles.css?v=20261120-full-messenger2">
   <script src="/socket.io/socket.io.js" defer></script>
-  <script src="/app.js?v=20261120-chat-tools2" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="/app.js?v=20261120-auth1" defer></script>
 </head>
 <body>
   <div class="ambient ambient-one"></div>
@@ -78,6 +79,23 @@
         <h2>Привет, котик!</h2>
         <p class="card-subtitle">Как тебя будут видеть друзья?</p>
 
+        <section id="authPanel" class="auth-panel">
+          <div class="auth-heading"><strong>Твой аккаунт</strong><span>Один аккаунт для всех устройств</span></div>
+          <form id="authForm" autocomplete="on">
+            <label class="field-label" for="authEmail">ЭЛЕКТРОННАЯ ПОЧТА</label>
+            <div class="input-wrap"><span class="input-icon">✉</span><input id="authEmail" type="email" autocomplete="email" placeholder="name@example.com" required></div>
+            <label class="field-label" for="authPassword">ПАРОЛЬ</label>
+            <div class="input-wrap"><span class="input-icon">♢</span><input id="authPassword" type="password" minlength="8" autocomplete="current-password" placeholder="Не менее 8 символов" required></div>
+            <div id="authDisplayNameWrap" hidden>
+              <label class="field-label" for="authDisplayName">ИМЯ В KOTOMASTER</label>
+              <div class="input-wrap"><span class="input-icon">✦</span><input id="authDisplayName" maxlength="24" autocomplete="nickname" placeholder="Например, Барсик"></div>
+            </div>
+            <button id="authSubmitBtn" class="primary-button" type="submit"><span class="button-cat">✦</span><span>Войти</span><span class="button-arrow">↗</span></button>
+          </form>
+          <button id="authModeToggle" class="auth-mode-toggle" type="button">Нет аккаунта? Зарегистрироваться</button>
+          <p id="authError" class="form-error" role="status" aria-live="polite"></p>
+        </section>
+        <div id="roomAccessPanel" hidden>
         <form id="joinForm" autocomplete="off">
           <label class="field-label" for="nameInput">ТВОЁ ИМЯ</label>
           <div class="input-wrap"><span class="input-icon">✦</span><input id="nameInput" maxlength="24" placeholder="Например, Барсик" required></div>
@@ -91,6 +109,7 @@
           <div class="input-wrap code-wrap"><span class="input-icon">⌘</span><input id="roomInput" maxlength="6" placeholder="ВВЕДИ 6 СИМВОЛОВ" autocapitalize="characters" spellcheck="false"><button id="joinRoomBtn" type="submit" class="join-code-button">Войти <span>→</span></button></div>
         </form>
         <p id="joinError" class="form-error" role="status"></p>
+        </div>
         <div class="privacy-note"><span class="privacy-lock">♢</span> Комната доступна только тем, у кого есть код</div>
       </div>
       <div class="join-bottom"><span>© 2026 KOTOMASTER</span><span>СОЗДАНО ДЛЯ ОБЩЕНИЯ <b>♥</b></span></div>
@@ -118,6 +137,7 @@
 
       <div class="sidebar-bottom">
         <div class="profile-card"><div id="myAvatar" class="avatar avatar-me">К</div><div class="profile-info"><strong id="myName">Котик</strong><small><span class="online-dot"></span> В сети</small></div><button id="leaveRoomBtn" class="icon-button leave-icon" title="Выйти из комнаты" aria-label="Выйти из комнаты">↪</button></div>
+        <button id="signOutBtn" class="sign-out-button" type="button">Выйти из аккаунта</button>
         <div class="sidebar-caption">KOTOMASTER <span>v1.0</span></div>
       </div>
     </aside>
