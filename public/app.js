@@ -82,6 +82,148 @@ let notificationsEnabled = false;
 let messageSearchQuery = '';
 let activeCallStartedAt = 0;
 
+let supabaseClient = null;
+let authSession = null;
+let authMode = 'signin';
+let authReady = false;
+let authProfile = null;
+
+async function initializeSupabase() {
+  const response = await fetch('/api/config', { cache: 'no-store' });
+  if (!response.ok) throw new Error('Не удалось загрузить настройки сервиса.');
+  const config = await response.json();
+  appConfig = { ...appConfig, ...config };
+  if (!config.supabaseUrl || !config.supabasePublishableKey || !window.supabase?.createClient) {
+    throw new Error('Авторизация не настроена. Обнови страницу позже.');
+  }
+  supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabasePublishableKey, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+  });
+  const { data, error } = await supabaseClient.auth.getSession();
+  if (error) throw error;
+  authSession = data.session;
+  supabaseClient.auth.onAuthStateChange((_event, session) => {
+    const previousToken = authSession?.access_token;
+    authSession = session;
+    updateAuthInterface();
+    if (session?.access_token && socket) {
+      socket.auth = { accessToken: session.access_token };
+      if (previousToken && previousToken !== session.access_token && socket.connected) {
+        socket.disconnect();
+        socket.connect();
+      }
+    }
+    if (!session && socket) {
+      if (isInCall) stopCall();
+      if (roomId) leaveRoom();
+    }
+  });
+  authReady = true;
+  updateAuthInterface();
+}
+
+function updateAuthInterface() {
+  const signedIn = Boolean(authSession?.user);
+  const authPanel = $('#authPanel');
+  const roomAccessPanel = $('#roomAccessPanel');
+  if (authPanel) authPanel.hidden = signedIn;
+  if (roomAccessPanel) roomAccessPanel.hidden = !signedIn;
+  const user = authSession?.user;
+  const displayName = authProfile?.display_name || user?.user_metadata?.display_name || user?.email?.split('@')[0] || '';
+  if (signedIn && displayName) {
+    nameInput.value = String(displayName).slice(0, 24);
+    myName = nameInput.value;
+  }
+  const accountName = $('#accountEmailLabel');
+  if (accountName) accountName.textContent = user?.email || '';
+}
+
+function setAuthMode(mode) {
+  authMode = mode === 'signup' ? 'signup' : 'signin';
+  const signup = authMode === 'signup';
+  $('#authDisplayNameWrap').hidden = !signup;
+  $('#authPassword').autocomplete = signup ? 'new-password' : 'current-password';
+  $('#authSubmitBtn').querySelector('span:nth-child(2)').textContent = signup ? 'Создать аккаунт' : 'Войти';
+  $('#authModeToggle').textContent = signup ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Зарегистрироваться';
+  $('#authError').textContent = '';
+}
+
+async function loadMyProfile() {
+  if (!supabaseClient || !authSession?.user) return;
+  const { data, error } = await supabaseClient.from('profiles')
+    .select('id,username,display_name,avatar_path,bio')
+    .eq('id', authSession.user.id).maybeSingle();
+  if (error) { console.warn('Profile load failed:', error); return; }
+  authProfile = data;
+  updateAuthInterface();
+}
+
+async function handleAuthSubmit(event) {
+  event.preventDefault();
+  const button = $('#authSubmitBtn');
+  const email = $('#authEmail').value.trim().toLowerCase();
+  const password = $('#authPassword').value;
+  const displayName = $('#authDisplayName').value.trim().slice(0, 24);
+  const errorNode = $('#authError');
+  errorNode.textContent = '';
+  if (authMode === 'signup' && !displayName) { errorNode.textContent = 'Укажи имя для профиля.'; return; }
+  setBusy(button, true, authMode === 'signup' ? 'Создаём аккаунт…' : 'Входим…');
+  try {
+    if (authMode === 'signup') {
+      const { data, error } = await supabaseClient.auth.signUp({
+        email, password,
+        options: { data: { display_name: displayName } }
+      });
+      if (error) throw error;
+      if (!data.session) {
+        errorNode.textContent = 'Почти готово. Подтверди электронную почту по письму от Supabase, затем войди.';
+        return;
+      }
+      authSession = data.session;
+      authProfile = null;
+      updateAuthInterface();
+      await loadMyProfile();
+      showToast('Аккаунт создан. Добро пожаловать в KOTOMASTER.');
+    } else {
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      authSession = data.session;
+      authProfile = null;
+      updateAuthInterface();
+      await loadMyProfile();
+      showToast('Вход выполнен.');
+    }
+  } catch (error) {
+    errorNode.textContent = authErrorMessage(error);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+function authErrorMessage(error) {
+  const message = String(error?.message || 'Не удалось выполнить запрос.');
+  if (/invalid login credentials/i.test(message)) return 'Неверная почта или пароль.';
+  if (/user already registered/i.test(message)) return 'Этот адрес уже зарегистрирован. Попробуй войти.';
+  if (/password should be at least/i.test(message)) return 'Пароль должен содержать не менее 8 символов.';
+  if (/email not confirmed/i.test(message)) return 'Сначала подтверди электронную почту.';
+  if (/rate limit/i.test(message)) return 'Слишком много попыток. Подожди немного и повтори.';
+  return message;
+}
+
+async function signOutAccount() {
+  if (!supabaseClient) return;
+  if (isInCall) stopCall();
+  if (roomId) leaveRoom();
+  const { error } = await supabaseClient.auth.signOut();
+  if (error) showToast('Не удалось выйти: ' + error.message);
+  else {
+    authSession = null;
+    authProfile = null;
+    updateAuthInterface();
+    showToast('Ты вышел из аккаунта.');
+  }
+}
+
 function showToast(message) {
   toastNode.textContent = message;
   toastNode.classList.add('show');
@@ -106,10 +248,11 @@ function setBusy(button, busy, label) {
 }
 
 async function connectSocket() {
+  if (!authSession?.access_token) throw new Error('Сначала войди в аккаунт.');
   if (socket && socket.connected) return;
   if (!window.io) throw new Error('Не загрузился модуль связи. Обнови страницу.');
   if (!socket) {
-    socket = window.io({ autoConnect: false, reconnection: true, reconnectionAttempts: Infinity, reconnectionDelay: 700, reconnectionDelayMax: 9000, randomizationFactor: 0.35, timeout: 12000 });
+    socket = window.io({ auth: { accessToken: authSession.access_token }, autoConnect: false, reconnection: true, reconnectionAttempts: Infinity, reconnectionDelay: 700, reconnectionDelayMax: 9000, randomizationFactor: 0.35, timeout: 12000 });
     bindSocketEvents();
   }
   await new Promise((resolve, reject) => {
@@ -421,6 +564,7 @@ function handlePageResume() {
 }
 
 async function restoreSavedRoom() {
+  if (!authSession?.user) return;
   let saved = null;
   try {
     saved = JSON.parse(localStorage.getItem(ROOM_SESSION_KEY) || 'null');
@@ -2538,6 +2682,10 @@ function leaveRoom() {
   showToast('Ты вышел из комнаты.');
 }
 
+$('#authForm').addEventListener('submit', handleAuthSubmit);
+$('#authModeToggle').addEventListener('click', () => setAuthMode(authMode === 'signin' ? 'signup' : 'signin'));
+$('#signOutBtn').addEventListener('click', signOutAccount);
+
 joinForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const button = $('#createRoomBtn');
@@ -2730,4 +2878,12 @@ rtcConfigPromise = (async function loadConfig() {
 refreshAudioInputDevices();
 updateCallButtons();
 updateVideoQualityBoostButton();
-restoreSavedRoom();
+initializeSupabase().then(async () => {
+  if (authSession?.user) {
+    await loadMyProfile();
+    restoreSavedRoom();
+  }
+}).catch((error) => {
+  console.error('KOTOMASTER auth initialization failed:', error);
+  $('#authError').textContent = error.message || 'Не удалось подключить авторизацию.';
+});
