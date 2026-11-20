@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0c0a19">
   <meta name="description" content="KOTOMASTER — мессенджер с видеозвонками и демонстрацией экрана.">
   <title>KOTOMASTER — на связи по-кошачьи</title>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=20261120-members">
   <script src="/socket.io/socket.io.js" defer></script>
-  <script src="/app.js" defer></script>
+  <script src="/app.js?v=20261120-members" defer></script>
 </head>
 <body>
   <div class="ambient ambient-one"></div>
@@ -127,6 +127,7 @@
         <div class="topbar-title"><div class="topbar-room-icon">✦</div><div><h2 id="topbarTitle">Общий чат</h2><p id="topbarSubtitle">Твоя комната · 1 участник</p></div></div>
         <div class="topbar-actions"><div class="secure-pill"><span>●</span> Комната по коду</div><button id="inviteBtn" class="invite-button"><span>＋</span> Пригласить</button></div>
       </header>
+      <div id="mobileMemberStrip" class="mobile-member-strip" aria-label="Участники комнаты"></div>
 
       <section id="chatPanel" class="chat-panel">
         <div class="chat-scroll" id="chatScroll">
