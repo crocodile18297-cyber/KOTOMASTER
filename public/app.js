@@ -79,7 +79,7 @@ let typingStopTimer = null;
 let lastTypingEmitAt = 0;
 let typingMembers = new Map();
 let pinnedMessage = null;
-let notificationsEnabled = false;
+let notificationsEnabled = (() => { try { return localStorage.getItem('kotomaster-notifications') === '1'; } catch (_error) { return false; } })();
 let messageSearchQuery = '';
 let activeCallStartedAt = 0;
 
@@ -109,6 +109,9 @@ async function initializeSupabase() {
     authSession = session;
     if (session?.user && (!previousToken || previousToken !== session.access_token)) {
       loadRemoteCallHistory().catch((error)=>console.warn('Could not refresh remote call history:',error));
+      startCommunityRealtime().catch((error)=>console.warn('Could not start inbox updates:',error));
+    } else if (!session) {
+      stopCommunityRealtime().catch((error)=>console.warn('Could not stop inbox updates:',error));
     }
     if (event === 'PASSWORD_RECOVERY') {
       passwordRecoveryPending = true;
@@ -1115,6 +1118,7 @@ const communityState = {
   currentConversationId: null,
   currentConversation: null,
   realtimeChannel: null,
+  globalChannel: null,
   searchTimer: null,
   voiceRecorder: null,
   voiceStream: null,
@@ -1122,6 +1126,63 @@ const communityState = {
   replyTarget: null,
   pinnedMessage: null
 };
+
+function updateNotificationsButton() {
+  const button=$('#notificationsBtn');
+  if(!button) return;
+  button.classList.toggle('enabled',notificationsEnabled);
+  button.setAttribute('aria-pressed',String(notificationsEnabled));
+  button.title=notificationsEnabled?'Отключить уведомления':'Включить уведомления';
+}
+
+async function stopCommunityRealtime() {
+  if(communityState.globalChannel && supabaseClient) {
+    const channel=communityState.globalChannel;
+    communityState.globalChannel=null;
+    try { await supabaseClient.removeChannel(channel); } catch(_error) {}
+  }
+  if(communityState.realtimeChannel && supabaseClient) {
+    const channel=communityState.realtimeChannel;
+    communityState.realtimeChannel=null;
+    try { await supabaseClient.removeChannel(channel); } catch(_error) {}
+  }
+}
+
+async function startCommunityRealtime() {
+  if(!supabaseClient || !communityUserId()) {
+    await stopCommunityRealtime();
+    return;
+  }
+  if(communityState.globalChannel) await stopCommunityRealtime();
+  const userId=communityUserId();
+  const channel=supabaseClient.channel('kotomaster-inbox-'+userId)
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},(payload)=>{
+      const message=payload.new;
+      if(!message || message.sender_id===userId) return;
+      loadCommunityConversations().catch((error)=>console.warn('Inbox refresh failed:',error));
+      if(document.hidden && notificationsEnabled && 'Notification' in window && Notification.permission==='granted') {
+        const conversation=communityState.conversations.find((item)=>item.id===message.conversation_id);
+        const title=conversation?.title||'Новое сообщение';
+        const body=message.body ? String(message.body).slice(0,120) : 'Тебе отправили вложение';
+        try {
+          const notification=new Notification('KOTOMASTER · '+title,{body,tag:'kotomaster-'+message.conversation_id});
+          notification.onclick=()=>{
+            window.focus();
+            switchPanel('community');
+            setCommunityTab('chats');
+            openCommunityConversation(message.conversation_id).catch((error)=>showToast(error.message));
+            notification.close();
+          };
+        } catch(error) { console.warn('Notification failed:',error); }
+      }
+    })
+    .on('postgres_changes',{event:'*',schema:'public',table:'friendships'},()=>{
+      loadCommunityFriends().catch((error)=>console.warn('Friend list refresh failed:',error));
+      loadCommunityConversations().catch((error)=>console.warn('Conversation refresh failed:',error));
+    })
+    .subscribe();
+  communityState.globalChannel=channel;
+}
 
 function communityUserId() {
   return authSession?.user?.id || null;
@@ -3757,10 +3818,8 @@ $('#notificationsBtn')?.addEventListener('click', async () => {
     }
   }
   notificationsEnabled = !notificationsEnabled;
-  const button = $('#notificationsBtn');
-  button.classList.toggle('enabled', notificationsEnabled);
-  button.setAttribute('aria-pressed', String(notificationsEnabled));
-  button.title = notificationsEnabled ? 'Отключить уведомления' : 'Включить уведомления';
+  try { localStorage.setItem('kotomaster-notifications',notificationsEnabled?'1':'0'); } catch(_error) {}
+  updateNotificationsButton();
   showToast(notificationsEnabled ? 'Уведомления включены, пока сайт открыт.' : 'Уведомления отключены.');
 });
 
@@ -3782,6 +3841,7 @@ $('#clearCallHistoryBtn')?.addEventListener('click', async () => {
   renderCallHistory();
 });
 renderCallHistory();
+updateNotificationsButton();
 $('#micBtn').addEventListener('click', toggleMic);
 $('#cameraBtn').addEventListener('click', toggleCamera);
 $('#shareBtn').addEventListener('click', () => isSharing ? stopScreenShare() : startScreenShare());
