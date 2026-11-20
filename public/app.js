@@ -1497,10 +1497,10 @@ function renderCommunityPinnedBanner(rows=[]) {
   const message=(rows||[]).find((row)=>row.id===pinned.message_id);
   banner.append(communityNode('strong','', 'Закреплённое сообщение'));
   banner.append(communityNode('span','',message?.body||'Нажми, чтобы перейти к сообщению'));
-  banner.addEventListener('click',()=>{
+  banner.onclick=()=>{
     const target=$('#communityMessages').querySelector(`[data-message-id="${pinned.message_id}"]`);
     if(target) target.scrollIntoView({behavior:'smooth',block:'center'});
-  },{once:true});
+  };
 }
 
 function setCommunityReply(message) {
