@@ -3353,16 +3353,6 @@ initializeSupabase().then(async () => {
   $('#authError').textContent = error.message || 'Не удалось подключить авторизацию.';
 });
 
-  activePanel = panel === 'call' ? 'call' : 'chat';
-  panel = activePanel;
-  const isCall = panel === 'call';
-  chatPanel.hidden = isCall;
-  callPanel.hidden = !isCall;
-  document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.panel === panel));
-  $('#topbarTitle').textContent = isCall ? 'Видеокомната' : 'Общий чат';
-  updateCallStage();
-}
-
 function updateCallDescription() {
   const inCallCount = Array.from(participants.values()).filter((member) => member.inCall).length;
   if (isInCall) {
