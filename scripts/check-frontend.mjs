@@ -59,10 +59,35 @@ for (const requiredId of [
   'typingIndicator',
   'replyPreview',
   'callHistoryList',
-  'clearCallHistoryBtn'
+  'clearCallHistoryBtn',
+  'authForm',
+  'authEmail',
+  'authPassword',
+  'authUsername',
+  'signOutBtn',
+  'communityPanel',
+  'friendSearchInput',
+  'friendRequestsList',
+  'friendList',
+  'communityConversationList',
+  'communityMessages',
+  'communityMessageForm',
+  'communityFileInput',
+  'communityVoiceBtn',
+  'newGroupForm',
+  'editProfileForm'
 ]) {
   assert.ok(uniqueIds.has(requiredId), 'Required UI element is missing: #' + requiredId);
 }
+
+assert.match(html, /supabase-js@2\.119\.2/, 'Supabase browser SDK must be version-pinned.');
+assert.match(server, /io\.use\(async \(socket, next\)/, 'Socket.IO must validate Supabase sessions.');
+assert.match(server, /fetchAuthenticatedProfile/, 'Room identity must use the authenticated profile.');
+assert.match(app, /request_friendship/, 'Friend requests must use the guarded RPC.');
+assert.match(app, /create_direct_conversation/, 'Private chats must use the guarded RPC.');
+assert.match(app, /create_group_conversation/, 'Group creation must use the guarded RPC.');
+assert.match(app, /chat-files/, 'Private file uploads must use the configured storage bucket.');
+assert.match(app, /MediaRecorder/, 'Voice messages must use browser media recording.');
 
 console.log(
   'Frontend integrity OK: ' + uniqueIds.size + ' unique HTML ids, ' +
