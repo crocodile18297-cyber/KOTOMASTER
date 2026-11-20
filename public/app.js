@@ -1644,6 +1644,7 @@ async function openCommunityConversation(conversationId) {
       .on('postgres_changes',{event:'*',schema:'public',table:'conversation_attachments',filter:`conversation_id=eq.${conversationId}`},()=>loadCommunityMessages(conversationId).catch((error)=>console.warn(error)))
       .on('postgres_changes',{event:'*',schema:'public',table:'message_reactions'},()=>loadCommunityMessages(conversationId).catch((error)=>console.warn(error)))
       .on('postgres_changes',{event:'*',schema:'public',table:'conversation_pins',filter:`conversation_id=eq.${conversationId}`},()=>loadCommunityMessages(conversationId).catch((error)=>console.warn(error)))
+      .on('postgres_changes',{event:'*',schema:'public',table:'conversation_members',filter:`conversation_id=eq.${conversationId}`},()=>loadCommunityMessages(conversationId).catch((error)=>console.warn(error)))
       .subscribe();
     await supabaseClient.from('conversation_members')
       .update({last_read_at:new Date().toISOString()})
