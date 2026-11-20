@@ -8,20 +8,12 @@ const server = fs.readFileSync('server.js', 'utf8');
 const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
 const uniqueIds = new Set(ids);
 const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
-assert.equal(
-  duplicateIds.length,
-  0,
-  \`Duplicate HTML id values: \${[...new Set(duplicateIds)].join(', ')}\`
-);
+assert.equal(duplicateIds.length, 0, 'Duplicate HTML ids: ' + [...new Set(duplicateIds)].join(', '));
 
 const selectorIds = [...app.matchAll(/\$\(\s*(['"])#([A-Za-z][\w-]*)\1\s*\)/g)]
   .map((match) => match[2]);
 const missingIds = [...new Set(selectorIds.filter((id) => !uniqueIds.has(id)))];
-assert.equal(
-  missingIds.length,
-  0,
-  \`JavaScript references missing HTML ids: \${missingIds.join(', ')}\`
-);
+assert.equal(missingIds.length, 0, 'JavaScript references missing HTML ids: ' + missingIds.join(', '));
 
 const socketHandlers = new Set(
   [...server.matchAll(/socket\.on\(\s*(['"])([^'"]+)\1/g)].map((match) => match[2])
@@ -31,11 +23,7 @@ const clientEvents = new Set([
   ...[...app.matchAll(/emitWithAck\(\s*(['"])([^'"]+)\1/g)].map((match) => match[2])
 ]);
 const missingHandlers = [...clientEvents].filter((event) => !socketHandlers.has(event));
-assert.equal(
-  missingHandlers.length,
-  0,
-  \`Client emits without server handlers: \${missingHandlers.join(', ')}\`
-);
+assert.equal(missingHandlers.length, 0, 'Client emits without server handlers: ' + missingHandlers.join(', '));
 
 const socketScriptIndex = html.indexOf('/socket.io/socket.io.js');
 const appScriptIndex = html.indexOf('/app.js?');
@@ -62,9 +50,11 @@ for (const requiredId of [
   'videoResolutionSelect',
   'mobileMemberStrip'
 ]) {
-  assert.ok(uniqueIds.has(requiredId), \`Required UI element is missing: #\${requiredId}\`);
+  assert.ok(uniqueIds.has(requiredId), 'Required UI element is missing: #' + requiredId);
 }
 
 console.log(
-  \`Frontend integrity OK: \${uniqueIds.size} unique HTML ids, \${new Set(selectorIds).size} JavaScript id selectors, \${clientEvents.size} client Socket.IO events.\`
+  'Frontend integrity OK: ' + uniqueIds.size + ' unique HTML ids, ' +
+  new Set(selectorIds).size + ' JavaScript id selectors, ' +
+  clientEvents.size + ' client Socket.IO events.'
 );
