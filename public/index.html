@@ -127,6 +127,7 @@
       <div class="sidebar-section-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
       <button class="nav-item active" data-panel="chat"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6a7.5 7.5 0 1 1 17-3.5Z"/><path d="M8 11h8m-8 4h5"/></svg></span>Чат<span class="nav-indicator"></span></button>
       <button class="nav-item" data-panel="call"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3z"/></svg></span>Видеокомната<span id="callNavBadge" class="nav-badge" hidden>LIVE</span></button>
+      <button class="nav-item" data-panel="community"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M20 8v6m3-3h-6"/></svg></span>Сообщения и друзья</button>
 
       <div class="sidebar-room-block">
         <div class="sidebar-section-label">ТВОЯ КОМНАТА</div>
@@ -186,6 +187,50 @@
           <div id="callHistoryList" class="call-history-list"></div>
           <p class="call-history-note">История хранится только в этом браузере.</p>
         </section>
+
+      <section id="communityPanel" class="community-panel" hidden>
+        <header class="community-header">
+          <div><div class="call-kicker">KOTOMASTER COMMUNITY</div><h3>Сообщения и друзья</h3><p>Личные диалоги, группы и список контактов</p></div>
+          <button id="newGroupBtn" class="invite-button" type="button">＋ Новая группа</button>
+        </header>
+        <div class="community-tabs" role="tablist">
+          <button class="community-tab active" data-community-tab="chats" type="button">Чаты</button>
+          <button class="community-tab" data-community-tab="friends" type="button">Друзья</button>
+          <button class="community-tab" data-community-tab="groups" type="button">Группы</button>
+        </div>
+        <div class="community-layout">
+          <aside class="community-list-panel">
+            <div id="communityChatsPanel">
+              <div class="community-list-heading"><strong>Твои диалоги</strong><button id="refreshCommunityBtn" type="button" aria-label="Обновить список">↻</button></div>
+              <div id="communityConversationList" class="community-items"></div>
+            </div>
+            <div id="communityFriendsPanel" hidden>
+              <label class="community-search-label" for="friendSearchInput">Найти пользователя</label>
+              <input id="friendSearchInput" class="community-search-input" type="search" placeholder="Имя или @username" autocomplete="off">
+              <div id="friendSearchResults" class="community-items"></div>
+              <div class="community-list-heading"><strong>Входящие заявки</strong></div>
+              <div id="friendRequestsList" class="community-items"></div>
+              <div class="community-list-heading"><strong>Мои друзья</strong></div>
+              <div id="friendList" class="community-items"></div>
+            </div>
+            <div id="communityGroupsPanel" hidden>
+              <div class="community-list-heading"><strong>Групповые чаты</strong></div>
+              <div id="communityGroupsList" class="community-items"></div>
+            </div>
+          </aside>
+          <section class="community-chat-panel">
+            <div id="communityEmpty" class="community-empty"><div class="empty-cat">ฅ^•ﻌ•^ฅ</div><h4>Выбери переписку</h4><p>Открой диалог из списка или начни общение с другом.</p></div>
+            <div id="communityActiveChat" class="community-active-chat" hidden>
+              <header class="community-chat-heading"><div><strong id="communityChatTitle">Чат</strong><small id="communityChatSubtitle">Личная переписка</small></div><button id="communityRefreshMessages" type="button" title="Обновить сообщения">↻</button></header>
+              <div id="communityMessages" class="community-messages"></div>
+              <form id="communityMessageForm" class="community-composer">
+                <input id="communityMessageInput" maxlength="12000" placeholder="Напиши сообщение..." autocomplete="off" required>
+                <button type="submit" aria-label="Отправить">➤</button>
+              </form>
+            </div>
+          </section>
+        </div>
+      </section>
       </section>
     </section>
   </main>
