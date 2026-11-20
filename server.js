@@ -91,21 +91,31 @@ function makeRoomId() {
   return code;
 }
 
-function getPublicMembers(room) {
-  return Array.from(room.members.values()).map((member) => ({
+function toPublicMember(member) {
+  return {
     id: member.id,
     name: member.name,
     inCall: member.inCall,
     audio: member.audio,
     video: member.video,
     sharing: member.sharing
-  }));
+  };
+}
+
+function getPublicMembers(room) {
+  return Array.from(room.members.values()).map(toPublicMember);
+}
+
+function cleanClientId(value, fallback) {
+  const clientId = String(value || '').trim();
+  return /^[a-zA-Z0-9_-]{12,80}$/.test(clientId) ? clientId : fallback;
 }
 
 function joinRoom(socket, payload, ack, createNew = false) {
   const callback = typeof ack === 'function' ? ack : () => {};
   const name = cleanName(payload && payload.name);
   const roomId = createNew ? makeRoomId() : cleanRoomId(payload && payload.roomId);
+  const clientId = cleanClientId(payload && payload.clientId, `socket-${socket.id}`);
 
   if (!roomId) return callback({ ok: false, error: 'Введите код комнаты из 6 символов.' });
   if (socket.data.roomId) return callback({ ok: false, error: 'Сначала выйдите из текущей комнаты.' });
@@ -116,20 +126,53 @@ function joinRoom(socket, payload, ack, createNew = false) {
     room = { id: roomId, members: new Map(), messages: [], createdAt: Date.now() };
     rooms.set(roomId, room);
   }
-  if (room.members.size >= MAX_ROOM_SIZE) return callback({ ok: false, error: `В комнате уже максимум ${MAX_ROOM_SIZE} участников.` });
 
-  const member = { id: socket.id, name, inCall: false, audio: false, video: false, sharing: false };
+  // A mobile network can reconnect before the server notices the old transport is dead.
+  // Replace the previous socket for this browser tab instead of adding a duplicate member.
+  const previousSession = Array.from(room.members.values()).find((member) =>
+    member.clientId === clientId && member.id !== socket.id
+  );
+  if (previousSession) {
+    room.members.delete(previousSession.id);
+    const previousSocket = io.sockets.sockets.get(previousSession.id);
+    if (previousSocket) {
+      previousSocket.emit('room:session-replaced');
+      previousSocket.data.roomId = null;
+      previousSocket.data.name = null;
+      previousSocket.leave(roomId);
+      previousSocket.disconnect(true);
+    }
+    io.to(roomId).emit('room:peer-left', {
+      id: previousSession.id,
+      reason: 'reconnected'
+    });
+  }
+
+  if (room.members.size >= MAX_ROOM_SIZE) {
+    return callback({ ok: false, error: `В комнате уже максимум ${MAX_ROOM_SIZE} участников.` });
+  }
+
+  const member = {
+    id: socket.id,
+    clientId,
+    name,
+    inCall: false,
+    audio: false,
+    video: false,
+    sharing: false
+  };
   const previousMembers = getPublicMembers(room);
   room.members.set(socket.id, member);
   socket.data.roomId = roomId;
   socket.data.name = name;
+  socket.data.clientId = clientId;
   socket.join(roomId);
 
-  socket.to(roomId).emit('room:peer-joined', { ...member });
+  socket.to(roomId).emit('room:peer-joined', toPublicMember(member));
   callback({
     ok: true,
     roomId,
-    self: { ...member },
+    self: toPublicMember(member),
     participants: previousMembers,
     messages: room.messages.slice(-MAX_MESSAGES),
     maxRoomSize: MAX_ROOM_SIZE
