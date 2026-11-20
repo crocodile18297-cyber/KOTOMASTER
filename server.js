@@ -92,7 +92,7 @@ io.use(async (socket, next) => {
   next();
 });
 
-function cleanNamefunction cleanName(value) {
+function cleanName(value) {
   const name = String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 24);
   return name || 'Котик';
 }
