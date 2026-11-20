@@ -1673,3 +1673,47 @@ button:focus-visible, input:focus-visible {
   .call-history-panel { margin-top:12px; padding:11px 12px 9px; }
   .call-history-copy small { font-size:8px; }
 }
+
+
+/* Supabase account access */
+.auth-panel {
+  margin:0 0 15px;
+  padding:15px;
+  border:1px solid #efdfd6;
+  border-radius:14px;
+  background:rgba(255,250,246,.92);
+  box-shadow:0 8px 24px rgba(114,79,68,.045);
+}
+.auth-heading { display:flex; flex-direction:column; gap:3px; margin-bottom:12px; }
+.auth-heading strong { color:#3e1e12; font:700 14px 'Plus Jakarta Sans',sans-serif; }
+.auth-heading span { color:#987e72; font-size:10px; }
+.auth-panel .field-label { display:block; margin:10px 0 6px; }
+.auth-panel .input-wrap { margin-bottom:8px; }
+.auth-panel .primary-button { margin-top:12px; }
+.auth-mode-toggle {
+  display:block;
+  width:100%;
+  margin-top:10px;
+  padding:8px 5px;
+  border:0;
+  color:#8c6252;
+  background:transparent;
+  font:600 11px 'DM Sans',sans-serif;
+  cursor:pointer;
+}
+.auth-mode-toggle:hover { color:#3e1e12; text-decoration:underline; }
+.auth-panel .form-error { min-height:0; margin:7px 0 0; }
+.auth-panel .form-error:empty { display:none; }
+.auth-panel [hidden], #roomAccessPanel[hidden] { display:none!important; }
+.sign-out-button {
+  width:100%;
+  margin-top:8px;
+  padding:7px 10px;
+  border:1px solid #efdfd6;
+  border-radius:9px;
+  color:#8b6b5d;
+  background:#fff8f4;
+  font:600 10px 'DM Sans',sans-serif;
+  cursor:pointer;
+}
+.sign-out-button:hover { border-color:#dfb39e; color:#724f44; background:#fff0e9; }
