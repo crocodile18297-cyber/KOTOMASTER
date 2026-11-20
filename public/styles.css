@@ -583,3 +583,41 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cyan); outl
     box-shadow: 0 0 7px rgba(121,225,179,.55);
   }
 }
+
+
+/* Optional clarity / 30 FPS mode; audio remains the highest-priority stream. */
+.video-quality-boost-button {
+  min-height: 27px;
+  padding: 0 9px;
+  border: 1px solid rgba(112,221,235,.25);
+  border-radius: 7px;
+  background: rgba(112,221,235,.07);
+  color: #a9a2bc;
+  font: 800 7px inherit;
+  letter-spacing: .35px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .18s, border-color .18s, color .18s;
+}
+.video-quality-boost-button.active {
+  border-color: rgba(112,221,235,.55);
+  background: rgba(112,221,235,.16);
+  color: #a6f0f0;
+  box-shadow: 0 0 12px rgba(112,221,235,.09);
+}
+.video-quality-boost-button:focus-visible,
+.mic-preview-button:focus-visible {
+  outline: 2px solid rgba(112,221,235,.7);
+  outline-offset: 2px;
+}
+@media (max-width: 740px) {
+  .video-quality-boost-button {
+    min-height: 29px;
+    padding: 0 8px;
+    font-size: 7px;
+  }
+  .call-quality {
+    column-gap: 6px;
+    row-gap: 7px;
+  }
+}
