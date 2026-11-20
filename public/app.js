@@ -208,6 +208,28 @@ function authErrorMessage(error) {
   return message;
 }
 
+async function handlePasswordRecovery() {
+  const email = $('#authEmail').value.trim().toLowerCase();
+  if (!email) {
+    $('#authError').textContent = 'Сначала введи электронную почту.';
+    $('#authEmail').focus();
+    return;
+  }
+  const button = $('#forgotPasswordBtn');
+  button.disabled = true;
+  try {
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin
+    });
+    if (error) throw error;
+    $('#authError').textContent = 'Если аккаунт с этой почтой существует, письмо для сброса пароля отправлено.';
+  } catch (error) {
+    $('#authError').textContent = authErrorMessage(error);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function signOutAccount() {
   if (!supabaseClient) return;
   if (isInCall) stopCall();
@@ -2683,6 +2705,7 @@ function leaveRoom() {
 $('#authForm').addEventListener('submit', handleAuthSubmit);
 $('#authModeToggle').addEventListener('click', () => setAuthMode(authMode === 'signin' ? 'signup' : 'signin'));
 $('#signOutBtn').addEventListener('click', signOutAccount);
+$('#forgotPasswordBtn').addEventListener('click', handlePasswordRecovery);
 
 joinForm.addEventListener('submit', async (event) => {
   event.preventDefault();
