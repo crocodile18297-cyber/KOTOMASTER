@@ -231,6 +231,20 @@
           </section>
         </div>
       </section>
+
+  <div id="newGroupModal" class="community-modal" hidden>
+    <form id="newGroupForm" class="community-modal-card">
+      <button id="closeNewGroupBtn" class="community-modal-close" type="button" aria-label="Закрыть">×</button>
+      <div class="call-kicker">KOTOMASTER GROUPS</div>
+      <h3>Новая группа</h3>
+      <label class="field-label" for="newGroupTitle">НАЗВАНИЕ ГРУППЫ</label>
+      <input id="newGroupTitle" class="community-search-input" maxlength="80" placeholder="Например, Наша компания" required>
+      <div class="community-list-heading"><strong>Добавить друзей</strong></div>
+      <div id="newGroupMembers" class="community-group-members"></div>
+      <p id="newGroupError" class="form-error" role="status"></p>
+      <button class="primary-button" type="submit"><span>＋</span> Создать группу</button>
+    </form>
+  </div>
       </section>
     </section>
   </main>
