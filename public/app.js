@@ -3658,7 +3658,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 $('#startCallBtn').addEventListener('click', startCall);
-$('#clearCallHistoryBtn')?.addEventListener('click', () => {
+$('#clearCallHistoryBtn')?.addEventListener('click', async () => {
   if (!window.confirm('Очистить историю звонков на этом устройстве?')) return;
   try { localStorage.removeItem(CALL_HISTORY_KEY); } catch (_error) {}
   remoteCallHistory=[];
