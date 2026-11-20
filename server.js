@@ -129,10 +129,10 @@ function joinRoom(socket, payload, ack, createNew = false) {
 
   // A mobile network can reconnect before the server notices the old transport is dead.
   // Replace the previous socket for this browser tab instead of adding a duplicate member.
-  const previousSession = Array.from(room.members.values()).find((member) =>
+  const previousSessions = Array.from(room.members.values()).filter((member) =>
     member.clientId === clientId && member.id !== socket.id
   );
-  if (previousSession) {
+  previousSessions.forEach((previousSession) => {
     room.members.delete(previousSession.id);
     const previousSocket = io.sockets.sockets.get(previousSession.id);
     if (previousSocket) {
@@ -146,7 +146,7 @@ function joinRoom(socket, payload, ack, createNew = false) {
       id: previousSession.id,
       reason: 'reconnected'
     });
-  }
+  });
 
   if (room.members.size >= MAX_ROOM_SIZE) {
     return callback({ ok: false, error: `В комнате уже максимум ${MAX_ROOM_SIZE} участников.` });
