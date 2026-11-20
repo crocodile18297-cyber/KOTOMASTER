@@ -5,7 +5,6 @@ const http = require('http');
 const path = require('path');
 const crypto = require('crypto');
 const { Server } = require('socket.io');
-const { AccessToken, RoomServiceClient } = require('livekit-server-sdk');
 
 const app = express();
 const server = http.createServer(app);
@@ -22,7 +21,6 @@ const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const rooms = new Map();
 
 app.disable('x-powered-by');
-app.use(express.json({ limit: '8kb' }));
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -32,140 +30,44 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 
 
-app.get('/api/livekit/status', (_req, res) => {
-  const configured = Boolean(
-    process.env.LIVEKIT_URL &&
-    process.env.LIVEKIT_API_KEY &&
-    process.env.LIVEKIT_API_SECRET
-  );
-  res.json({ configured });
-});
+app.get('/api/config', (_req, res) => {
+  const iceServers = [{
+    urls: [
+      'stun:stun.l.google.com:19302',
+      'stun:stun1.l.google.com:19302',
+      'stun:stun2.l.google.com:19302',
+      'stun:stun3.l.google.com:19302'
+    ]
+  }];
 
-const livekitTokenRequests = new Map();
+  const turnUrls = String(process.env.TURN_URLS || process.env.TURN_URL || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
 
-app.get('/api/livekit/diagnostics', async (_req, res) => {
-  const livekitUrl = String(process.env.LIVEKIT_URL || '').trim().replace(/\/$/, '');
-  const apiKey = String(process.env.LIVEKIT_API_KEY || '').trim();
-  const apiSecret = String(process.env.LIVEKIT_API_SECRET || '').trim();
+  if (turnUrls.length) {
+    let username = String(process.env.TURN_USERNAME || '').trim();
+    let credential = String(process.env.TURN_CREDENTIAL || '').trim();
 
-  const configured = Boolean(livekitUrl && apiKey && apiSecret);
-  if (!configured) {
-    return res.status(200).json({
-      configured: false,
-      accepted: false,
-      message: 'Не все три переменные LiveKit добавлены в Render Environment.'
-    });
-  }
+    // Optional coturn TURN REST API: issue short-lived credentials without exposing the shared secret.
+    if (process.env.TURN_SHARED_SECRET) {
+      username = `${Math.floor(Date.now() / 1000) + 3600}:${username || 'kotomaster'}`;
+      credential = crypto.createHmac('sha1', process.env.TURN_SHARED_SECRET)
+        .update(username)
+        .digest('base64');
+    }
 
-  if (!/^wss:\/\/[^/]+$/i.test(livekitUrl)) {
-    return res.status(200).json({
-      configured: true,
-      accepted: false,
-      message: 'LIVEKIT_URL должен быть адресом wss:// вашего проекта LiveKit Cloud.'
-    });
-  }
-
-  try {
-    const host = livekitUrl.replace(/^wss:/i, 'https:');
-    const rooms = new RoomServiceClient(host, apiKey, apiSecret);
-    await rooms.listRooms();
-    return res.json({
-      configured: true,
-      accepted: true,
-      host: new URL(livekitUrl).host,
-      message: 'LiveKit принял API Key и API Secret. Сервер подключается к правильному проекту.'
-    });
-  } catch (error) {
-    const status = Number(error && (error.status || error.statusCode || error.code)) || 0;
-    const rejected = status === 401 || status === 403 || /unauthorized|permission|invalid.*(key|token|auth)/i.test(String(error && error.message || ''));
-    console.error('LiveKit credential diagnostic failed:', {
-      status,
-      message: String(error && error.message || 'Unknown error').slice(0, 180)
-    });
-    return res.status(200).json({
-      configured: true,
-      accepted: false,
-      host: new URL(livekitUrl).host,
-      reason: rejected ? 'credentials_rejected' : 'connection_failed',
-      message: rejected
-        ? 'LiveKit отверг эту пару API Key и API Secret. Проверь, что оба значения взяты из одного проекта и одного API key.'
-        : 'Не удалось проверить API-доступ к LiveKit. Проверь адрес проекта и доступность сервиса.'
-    });
-  }
-});
-
-app.post('/api/livekit/token', async (req, res) => {
-  const now = Date.now();
-  const clientIp = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
-  const previous = livekitTokenRequests.get(clientIp) || [];
-  const recent = previous.filter((time) => now - time < 60_000);
-  if (recent.length >= 8) {
-    return res.status(429).json({ error: 'Слишком много попыток. Подожди минуту и попробуй снова.' });
-  }
-  recent.push(now);
-  livekitTokenRequests.set(clientIp, recent);
-  if (livekitTokenRequests.size > 2000) {
-    for (const [ip, times] of livekitTokenRequests) {
-      if (!times.some((time) => now - time < 60_000)) livekitTokenRequests.delete(ip);
+    if (username && credential) {
+      iceServers.push({ urls: turnUrls, username, credential });
     }
   }
-  const livekitUrl = String(process.env.LIVEKIT_URL || '').trim().replace(/\/$/, '');
-  const apiKey = String(process.env.LIVEKIT_API_KEY || '').trim();
-  const apiSecret = String(process.env.LIVEKIT_API_SECRET || '').trim();
 
-  if (!livekitUrl || !apiKey || !apiSecret) {
-    return res.status(503).json({
-      error: 'Тест LiveKit ещё не настроен. Добавь LIVEKIT_URL, LIVEKIT_API_KEY и LIVEKIT_API_SECRET в Render Environment.'
-    });
-  }
-  if (!/^wss:\/\/[^/]+$/i.test(livekitUrl)) {
-    return res.status(503).json({ error: 'LIVEKIT_URL должен начинаться с wss:// и содержать только адрес проекта.' });
-  }
-
-  const roomCode = String(req.body && req.body.room || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
-  const displayName = String(req.body && req.body.name || 'Котик')
-    .replace(/[\x00-\x1F\x7F]/g, '')
-    .trim()
-    .slice(0, 24) || 'Котик';
-
-  if (roomCode.length !== 6) {
-    return res.status(400).json({ error: 'Код тестовой комнаты должен состоять из 6 символов.' });
-  }
-
-  try {
-    const identity = crypto.randomUUID();
-    const roomName = `kotomaster-test-${roomCode}`;
-    const accessToken = new AccessToken(apiKey, apiSecret, {
-      identity,
-      name: displayName,
-      ttl: '15m'
-    });
-    accessToken.addGrant({
-      roomJoin: true,
-      room: roomName,
-      canPublish: true,
-      canSubscribe: true,
-      canPublishData: true
-    });
-
-    const token = await accessToken.toJwt();
-    return res.json({ url: livekitUrl, token, roomName, identity, name: displayName });
-  } catch (error) {
-    console.error('LiveKit token error:', error);
-    return res.status(500).json({ error: 'Не удалось создать токен тестовой видеокомнаты.' });
-  }
-});
-
-app.get('/api/config', (_req, res) => {
-  const iceServers = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
-  if (process.env.TURN_URL && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
-    iceServers.push({
-      urls: process.env.TURN_URL.split(',').map((value) => value.trim()).filter(Boolean),
-      username: process.env.TURN_USERNAME,
-      credential: process.env.TURN_CREDENTIAL
-    });
-  }
-  res.json({ iceServers, maxRoomSize: MAX_ROOM_SIZE });
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.json({
+    iceServers,
+    iceTransportPolicy: process.env.ICE_TRANSPORT_POLICY === 'relay' ? 'relay' : 'all',
+    maxRoomSize: MAX_ROOM_SIZE
+  });
 });
 
 function cleanName(value) {
