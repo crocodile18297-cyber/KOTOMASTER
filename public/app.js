@@ -461,6 +461,14 @@ function bindSocketEvents() {
     refreshMessageNode(message);
   });
 
+  socket.on('room:peer-renamed', (member) => {
+    if (!member || !member.id) return;
+    const previous=participants.get(member.id)||{};
+    participants.set(member.id,{...previous,...member});
+    renderParticipants();
+    updateCallDescription();
+  });
+
   socket.on('room:peer-joined', (member) => {
     participants.set(member.id, member);
     renderParticipants();
