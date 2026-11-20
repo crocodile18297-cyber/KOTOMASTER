@@ -176,7 +176,7 @@ async function loadConversationMessages(socket, conversationId) {
       reader.last_read_at && Date.parse(reader.last_read_at) >= createdAt).map((reader) => reader.user_id);
     return {
       id: row.id,
-      from: row.sender_id,
+      from: row.sender_id === socket.data.userId ? socket.id : row.sender_id,
       senderId: row.sender_id,
       name: names.get(row.sender_id) || 'Котик',
       text: row.deleted_at ? '' : row.body,
