@@ -25,6 +25,10 @@ const clientEvents = new Set([
 const missingHandlers = [...clientEvents].filter((event) => !socketHandlers.has(event));
 assert.equal(missingHandlers.length, 0, 'Client emits without server handlers: ' + missingHandlers.join(', '));
 
+for (const event of ['chat:typing', 'chat:edit', 'chat:delete', 'chat:react', 'chat:pin', 'chat:read']) {
+  assert.ok(socketHandlers.has(event), 'Required chat interaction handler is missing: ' + event);
+}
+
 const socketScriptIndex = html.indexOf('/socket.io/socket.io.js');
 const appScriptIndex = html.indexOf('/app.js?');
 assert.ok(socketScriptIndex >= 0, 'Socket.IO client script is missing.');
@@ -48,7 +52,14 @@ for (const requiredId of [
   'micPreviewBtn',
   'videoQualityBoostBtn',
   'videoResolutionSelect',
-  'mobileMemberStrip'
+  'mobileMemberStrip',
+  'chatSearchInput',
+  'notificationsBtn',
+  'pinnedMessageBanner',
+  'typingIndicator',
+  'replyPreview',
+  'callHistoryList',
+  'clearCallHistoryBtn'
 ]) {
   assert.ok(uniqueIds.has(requiredId), 'Required UI element is missing: #' + requiredId);
 }
