@@ -142,7 +142,7 @@ function bindSocketEvents() {
     updateCallDescription();
   });
 
-  socket.on('room:peer-left', ({ id }) => {
+  socket.on('room:peer-left', ({ id, reason }) => {
     const member = participants.get(id);
     closePeer(id);
     removeVideoTile(id);
@@ -150,7 +150,7 @@ function bindSocketEvents() {
     updateCallStage();
     renderParticipants();
     updateCallDescription();
-    if (member) showToast(`${member.name} вышел из комнаты`);
+    if (member && reason !== 'reconnected') showToast(`${member.name} вышел из комнаты`);
   });
 
   socket.on('media:peer-state', (member) => {
