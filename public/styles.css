@@ -492,3 +492,17 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cyan); outl
   .mic-input-control select { width: min(118px, 30vw); min-width: 66px; padding: 4px; }
   .mic-input-meter { width: 22px; }
 }
+
+
+/* Keep microphone controls visible and usable on phones. */
+.mic-preview-button { min-height: 25px; padding: 0 8px; border: 1px solid rgba(112,221,235,.28); border-radius: 7px; background: rgba(112,221,235,.09); color: #a6eaf0; font: 700 7px inherit; letter-spacing: .5px; cursor: pointer; }
+.mic-preview-button:disabled { opacity: .45; cursor: wait; }
+@media (max-width: 740px) {
+  .call-quality { display: flex; width: 100%; min-height: 34px; margin-top: 6px; padding: 4px 0; justify-content: center; flex-wrap: wrap; }
+  .mic-input-control { font-size: 7px; }
+  .mic-input-control select { width: min(145px, 39vw); min-width: 90px; }
+  .mic-input-meter { width: 28px; }
+  .mic-preview-button { min-height: 29px; padding: 0 10px; font-size: 8px; }
+  .resolution-control { display: none; }
+  #rtcQualityBars, #rtcQualityText { display: none; }
+}
