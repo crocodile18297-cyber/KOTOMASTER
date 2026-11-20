@@ -1153,7 +1153,11 @@ async function startCommunityRealtime() {
     await stopCommunityRealtime();
     return;
   }
-  if(communityState.globalChannel) await stopCommunityRealtime();
+  if(communityState.globalChannel) {
+    const oldChannel=communityState.globalChannel;
+    communityState.globalChannel=null;
+    await supabaseClient.removeChannel(oldChannel);
+  }
   const userId=communityUserId();
   const channel=supabaseClient.channel('kotomaster-inbox-'+userId)
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},(payload)=>{
