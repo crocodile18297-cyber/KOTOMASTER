@@ -731,7 +731,7 @@ async function createPeerConnection(peerId) {
         audio.srcObject = new MediaStream([event.track]);
         document.body.append(audio);
         audioElements.push(audio);
-        audio.play().catch(() => showToast('Нажми на видео участника, чтобы включить звук.'));
+        audio.play().catch(() => showToast('Нажми в любом месте видеокомнаты, чтобы включить звук участников.'));
         event.track.onended = () => {
           audio.pause();
           audio.srcObject = null;
@@ -857,24 +857,126 @@ function publishMediaState() {
   updateCallDescription();
 }
 
-function toggleMic() {
+async function addLocalTrackToPeers(track, kind) {
+  for (const pc of peerConnections.values()) {
+    if (pc.signalingState === 'closed') continue;
+
+    const sender = pc.getSenders().find((item) => item.track && item.track.kind === kind);
+    try {
+      if (sender) {
+        // While sharing the screen, keep the screen track published until sharing ends.
+        if (kind === 'video' && isSharing) continue;
+        await sender.replaceTrack(track);
+      } else {
+        pc.addTrack(track, localStream);
+      }
+    } catch (error) {
+      console.warn(`Could not add local ${kind} track:`, error);
+      showToast(kind === 'audio'
+        ? 'Не удалось подключить микрофон к текущему звонку.'
+        : 'Не удалось подключить камеру к текущему звонку.');
+    }
+  }
+}
+
+async function toggleMic() {
   if (!isInCall || !localStream) return;
-  isMicOn = !isMicOn;
-  localStream.getAudioTracks().forEach((track) => { track.enabled = isMicOn; });
+
+  let tracks = localStream.getAudioTracks();
+  if (!tracks.length) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false
+      });
+      tracks = stream.getAudioTracks();
+      tracks.forEach((track) => {
+        track.enabled = true;
+        localStream.addTrack(track);
+      });
+      if (tracks[0]) await addLocalTrackToPeers(tracks[0], 'audio');
+    } catch (error) {
+      console.warn('Could not enable microphone:', error);
+      showToast(error && error.name === 'NotAllowedError'
+        ? 'Разреши микрофон в настройках браузера.'
+        : 'Не удалось включить микрофон.');
+      return;
+    }
+    isMicOn = tracks.length > 0;
+  } else {
+    isMicOn = !isMicOn;
+    tracks.forEach((track) => { track.enabled = isMicOn; });
+  }
+
   updateTileState(socket.id, { audio: isMicOn, video: isCameraOn });
   updateCallButtons();
   publishMediaState();
 }
 
-function toggleCamera() {
+async function toggleCamera() {
   if (!isInCall || !localStream) return;
-  const tracks = localStream.getVideoTracks();
-  if (!tracks.length) return showToast('Камера не обнаружена.');
-  isCameraOn = !isCameraOn;
-  tracks.forEach((track) => { track.enabled = isCameraOn; });
+
+  let tracks = localStream.getVideoTracks();
+  if (!tracks.length) {
+    try {
+      const profile = VIDEO_PROFILES[$('#videoResolutionSelect').value] || VIDEO_PROFILES.auto;
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          width: { ideal: profile.width },
+          height: { ideal: profile.height },
+          frameRate: { ideal: profile.frameRate, max: profile.frameRate }
+        }
+      });
+      tracks = stream.getVideoTracks();
+      tracks.forEach((track) => {
+        track.enabled = true;
+        localStream.addTrack(track);
+      });
+      if (tracks[0]) {
+        await addLocalTrackToPeers(tracks[0], 'video');
+        const senderSettings = currentOutgoingVideoSettings();
+        for (const pc of peerConnections.values()) {
+          const sender = pc.getSenders().find((item) => item.track && item.track.kind === 'video');
+          if (sender && sender.track === tracks[0]) {
+            await tuneVideoSender(sender, senderSettings.bitrate, senderSettings.frameRate, senderSettings.keepTextSharp);
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Could not enable camera:', error);
+      let message = 'Не удалось включить камеру.';
+      if (error && error.name === 'NotAllowedError') message = 'Разреши камеру в настройках браузера.';
+      else if (error && error.name === 'NotReadableError') message = 'Камера занята другим приложением.';
+      else if (error && error.name === 'OverconstrainedError') message = 'Устройство не поддерживает выбранное разрешение. Выбери 480p или 360p.';
+      showToast(message);
+      return;
+    }
+    isCameraOn = tracks.length > 0;
+  } else {
+    isCameraOn = !isCameraOn;
+    tracks.forEach((track) => { track.enabled = isCameraOn; });
+  }
+
+  const localTile = makeVideoTile(socket.id, myName, true);
+  const localVideo = localTile.querySelector('video');
+  if (localVideo.srcObject !== localStream) localVideo.srcObject = localStream;
   updateTileState(socket.id, { audio: isMicOn, video: isCameraOn });
   updateCallButtons();
   publishMediaState();
+}
+
+function unlockRemoteAudioPlayback() {
+  let attempted = 0;
+  for (const audioElements of remoteAudioElements.values()) {
+    for (const audio of audioElements) {
+      if (audio.paused) {
+        attempted += 1;
+        audio.play().catch(() => {});
+      }
+    }
+  }
+  if (attempted) showToast('Пробуем включить звук участников.');
 }
 
 async function tuneVideoSender(sender, bitrate, frameRate, keepTextSharp = false, scaleResolutionDownBy = 1) {
@@ -1226,6 +1328,7 @@ $('#videoViewerModal').addEventListener('click', (event) => {
   if (event.target === $('#videoViewerModal')) closeVideoViewer();
 });
 $('#videoResolutionSelect').addEventListener('change', changeVideoResolution);
+callPanel.addEventListener('click', unlockRemoteAudioPlayback);
 $('#copyRoomBtn').addEventListener('click', () => roomId && copyText(roomId));
 $('#welcomeCopyBtn').addEventListener('click', () => roomId && copyText(roomId));
 $('#inviteBtn').addEventListener('click', () => { $('#modalRoomCode').textContent = roomId; inviteModal.hidden = false; });
