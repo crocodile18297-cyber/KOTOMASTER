@@ -313,6 +313,7 @@ async function joinRoom(socket, payload, ack, createNew = false) {
   callback({
     ok: true,
     roomId,
+    conversationId,
     self: toPublicMember(member),
     participants: previousMembers,
     messages: persistentMessages.slice(-MAX_MESSAGES),
@@ -368,6 +369,7 @@ io.on('connection', (socket) => {
     callback({
       ok: true,
       roomId,
+      conversationId: room.conversationId,
       self: toPublicMember(member),
       participants: getPublicMembers(room).filter((item) => item.id !== socket.id),
       messages: room.messages.slice(-MAX_MESSAGES),
