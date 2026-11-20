@@ -167,6 +167,7 @@ function setAuthMode(mode) {
   $('#authSubmitBtn').querySelector('span:nth-child(2)').textContent = signup ? 'Создать аккаунт' : 'Войти';
   $('#authModeToggle').textContent = signup ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Зарегистрироваться';
   $('#authError').textContent = '';
+  $('#authError').classList.remove('form-success');
 }
 
 async function loadMyProfile() {
@@ -191,6 +192,7 @@ async function handleAuthSubmit(event) {
   const username = $('#authUsername').value.trim().toLowerCase();
   const errorNode = $('#authError');
   errorNode.textContent = '';
+  errorNode.classList.remove('form-success');
   if (authMode === 'signup' && !displayName) { errorNode.textContent = 'Укажи имя для профиля.'; return; }
   if (authMode === 'signup' && !/^[a-z0-9_]{3,24}$/.test(username)) { errorNode.textContent = 'Username: 3–24 символа, только латинские буквы, цифры и _. '; return; }
   if (authMode === 'recovery' && password.length < 8) { errorNode.textContent = 'Новый пароль должен содержать не менее 8 символов.'; return; }
@@ -215,7 +217,8 @@ async function handleAuthSubmit(event) {
       });
       if (error) throw error;
       if (!data.session) {
-        errorNode.textContent = 'Почти готово. Подтверди электронную почту по письму от Supabase, затем войди.';
+        errorNode.classList.add('form-success');
+        errorNode.textContent = 'АККАУНТ СОЗДАН. Открой письмо от Supabase и нажми «Подтвердить почту». Если письма нет, проверь «Спам» и запроси регистрацию ещё раз только после проверки, что адрес не занят.';
         return;
       }
       authSession = data.session;
