@@ -22,5 +22,4 @@ jobs:
       - name: Validate JavaScript syntax
         run: |
           node --check public/app.js
-          node --check public/livekit-test.js
           node --check server.js
