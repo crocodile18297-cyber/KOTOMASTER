@@ -443,3 +443,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cyan); outl
   pointer-events: none;
   overflow: hidden;
 }
+
+.quality-bars.quality-medium i { background: var(--cyan); }
+.quality-bars.quality-poor i { background: var(--pink); }
