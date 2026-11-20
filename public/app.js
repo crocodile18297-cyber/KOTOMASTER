@@ -150,6 +150,9 @@ function updateAuthInterface() {
     nameInput.value = String(displayName).slice(0, 24);
     myName = nameInput.value;
   }
+  const usernameNode=$('#myUsername');
+  if(usernameNode) usernameNode.textContent=authProfile?.username?'@'+authProfile.username:'';
+
 }
 
 function setAuthMode(mode) {
@@ -171,6 +174,9 @@ async function loadMyProfile() {
   if (error) { console.warn('Profile load failed:', error); return; }
   authProfile = data;
   updateAuthInterface();
+  const usernameNode=$('#myUsername');
+  if(usernameNode) usernameNode.textContent=data?.username?'@'+data.username:'';
+
 }
 
 async function handleAuthSubmit(event) {
@@ -238,6 +244,49 @@ function authErrorMessage(error) {
   if (/email not confirmed/i.test(message)) return 'Сначала подтверди электронную почту.';
   if (/rate limit/i.test(message)) return 'Слишком много попыток. Подожди немного и повтори.';
   return message;
+}
+
+async function openProfileEditor() {
+  if(!authProfile) await loadMyProfile();
+  $('#profileDisplayName').value=authProfile?.display_name||myName||'';
+  $('#profileUsername').value=authProfile?.username||'';
+  $('#profileBio').value=authProfile?.bio||'';
+  $('#profileEditError').textContent='';
+  $('#editProfileModal').hidden=false;
+}
+
+async function saveProfileChanges(event) {
+  event.preventDefault();
+  const displayName=$('#profileDisplayName').value.trim().slice(0,24);
+  const username=$('#profileUsername').value.trim().toLowerCase();
+  const bio=$('#profileBio').value.trim().slice(0,160);
+  const errorNode=$('#profileEditError');
+  if(!displayName) { errorNode.textContent='Укажи имя.'; return; }
+  if(!/^[a-z0-9_]{3,24}$/.test(username)) {
+    errorNode.textContent='Username должен содержать 3–24 символа: латинские буквы, цифры и _.';
+    return;
+  }
+  const button=$('#editProfileForm').querySelector('button[type="submit"]');
+  setBusy(button,true,'Сохраняем…');
+  try {
+    const {data,error}=await supabaseClient.from('profiles')
+      .update({display_name:displayName,username,bio,updated_at:new Date().toISOString()})
+      .eq('id',communityUserId())
+      .select('id,username,display_name,avatar_path,bio').single();
+    if(error) throw error;
+    authProfile=data;
+    myName=displayName;
+    nameInput.value=displayName;
+    $('#myName').textContent=displayName;
+    $('#myAvatar').textContent=firstLetter(displayName);
+    $('#myUsername').textContent='@'+username;
+    $('#editProfileModal').hidden=true;
+    if(socket?.connected) socket.emit('profile:update',{name:displayName});
+    showToast('Профиль обновлён.');
+  } catch(error) {
+    if(error.code==='23505') errorNode.textContent='Этот username уже занят. Выбери другой.';
+    else errorNode.textContent=error.message||'Не удалось сохранить профиль.';
+  } finally { setBusy(button,false); }
 }
 
 async function handlePasswordRecovery() {
@@ -3516,6 +3565,11 @@ $('#authForm').addEventListener('submit', handleAuthSubmit);
 $('#authModeToggle').addEventListener('click', () => setAuthMode(authMode === 'signin' ? 'signup' : 'signin'));
 $('#signOutBtn').addEventListener('click', signOutAccount);
 $('#forgotPasswordBtn').addEventListener('click', handlePasswordRecovery);
+$('#editProfileBtn').addEventListener('click',openProfileEditor);
+$('#closeEditProfileBtn').addEventListener('click',()=>$('#editProfileModal').hidden=true);
+$('#editProfileModal').addEventListener('click',(event)=>{if(event.target===$('#editProfileModal'))$('#editProfileModal').hidden=true;});
+$('#editProfileForm').addEventListener('submit',saveProfileChanges);
+
 
 joinForm.addEventListener('submit', async (event) => {
   event.preventDefault();
