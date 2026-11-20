@@ -19,15 +19,16 @@ const videoGrid = $('#videoGrid');
 const callEmptyState = $('#callEmptyState');
 const callDescription = $('#callDescription');
 
+const ROOM_SESSION_KEY = 'kotomaster-last-room-session';
 const tabClientId = (() => {
-  const key = 'kotomaster-tab-client-id';
+  const key = 'kotomaster-device-client-id';
   try {
-    let value = sessionStorage.getItem(key);
+    let value = localStorage.getItem(key);
     if (!value) {
       value = window.crypto && typeof window.crypto.randomUUID === 'function'
         ? window.crypto.randomUUID()
         : `km-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-      sessionStorage.setItem(key, value);
+      localStorage.setItem(key, value);
     }
     return value;
   } catch (_error) {
@@ -53,6 +54,10 @@ let isInCall = false;
 let isMicOn = false;
 let isCameraOn = false;
 let isSharing = false;
+let isRoomSyncing = false;
+let wasMicInterrupted = false;
+let wasCameraInterrupted = false;
+let videoQualityBoostEnabled = (() => { try { return localStorage.getItem('kotomaster-video-quality-boost') === '1'; } catch (_error) { return false; } })();
 let appConfig = { iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }], iceTransportPolicy: 'all', maxRoomSize: 6 };
 let rtcConfigPromise = null;
 let peerConnectionPromises = new Map();
@@ -283,6 +288,7 @@ function resetAfterRoomRecoveryFailure(message) {
     previewAudioStream = null;
   }
   roomId = '';
+  try { localStorage.removeItem(ROOM_SESSION_KEY); } catch (_error) {}
   participants.clear();
   seenMessages.clear();
   messagesList.replaceChildren();
@@ -308,6 +314,9 @@ async function joinRoom(name, code) {
 function enterWorkspace(data, preservePanel = false) {
   roomId = data.roomId;
   myName = data.self.name;
+  try {
+    localStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({ roomId, name: myName, savedAt: Date.now() }));
+  } catch (_error) {}
   participants.clear();
   seenMessages.clear();
   participants.set(data.self.id, data.self);
@@ -328,7 +337,7 @@ function enterWorkspace(data, preservePanel = false) {
   joinScreen.hidden = true;
   appScreen.hidden = false;
   switchPanel(preservePanel ? activePanel : 'chat');
-  $('#messageInput').focus();
+  if (!preservePanel) $('#messageInput').focus();
 }
 
 function firstLetter(value) {
@@ -644,11 +653,87 @@ function attachLocalAudioTrackLifecycle(track) {
   markSpeechTrack(track);
   track.onended = () => {
     if (!isInCall || !localStream || !localStream.getAudioTracks().includes(track)) return;
+    wasMicInterrupted = isMicOn;
     isMicOn = false;
     updateCallButtons();
     publishMediaState();
-    showToast('Микрофон отключился. Выбери другое устройство в списке «Микрофон».');
+    showToast('Микрофон прервался. При возвращении в KOTOMASTER попробуем восстановить его.');
   };
+}
+
+function attachLocalVideoTrackLifecycle(track) {
+  if (!track) return;
+  track.onended = () => {
+    if (!isInCall || !localStream || !localStream.getVideoTracks().includes(track)) return;
+    wasCameraInterrupted = isCameraOn;
+    isCameraOn = false;
+    updateCallButtons();
+    publishMediaState();
+    showToast('Камера прервалась. При возвращении в KOTOMASTER попробуем восстановить её.');
+  };
+}
+
+async function recoverInterruptedMedia() {
+  if (!isInCall || !localStream || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+  const profile = getSelectedVideoProfile();
+
+  if (wasMicInterrupted) {
+    try {
+      const stream = await captureAudioInput(selectedAudioDeviceId);
+      const track = stream.getAudioTracks()[0];
+      if (!track) throw new Error('Браузер не вернул микрофон.');
+      track.enabled = true;
+      attachLocalAudioTrackLifecycle(track);
+      const previous = localStream.getAudioTracks();
+      previous.forEach((item) => localStream.removeTrack(item));
+      localStream.addTrack(track);
+      await addLocalTrackToPeers(track, 'audio');
+      previous.forEach((item) => { item.onended = null; item.stop(); });
+      selectedAudioDeviceId = track.getSettings ? track.getSettings().deviceId || selectedAudioDeviceId : selectedAudioDeviceId;
+      isMicOn = true;
+      wasMicInterrupted = false;
+      startMicInputMeter(track);
+      await refreshAudioInputDevices(selectedAudioDeviceId);
+      updateTileState(socket.id, { audio: true, video: isCameraOn });
+      publishMediaState();
+      showToast('Микрофон восстановлен.');
+    } catch (error) {
+      console.warn('Could not restore microphone after mobile resume:', error);
+      showToast('Микрофон не восстановился автоматически. Нажми кнопку микрофона.');
+    }
+  }
+
+  if (wasCameraInterrupted) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          width: { ideal: profile.width },
+          height: { ideal: profile.height },
+          frameRate: { ideal: profile.frameRate, max: profile.frameRate }
+        }
+      });
+      const track = stream.getVideoTracks()[0];
+      if (!track) throw new Error('Браузер не вернул камеру.');
+      try { track.contentHint = 'motion'; } catch (_error) {}
+      attachLocalVideoTrackLifecycle(track);
+      const previous = localStream.getVideoTracks();
+      previous.forEach((item) => localStream.removeTrack(item));
+      localStream.addTrack(track);
+      await addLocalTrackToPeers(track, 'video');
+      previous.forEach((item) => { item.onended = null; item.stop(); });
+      isCameraOn = true;
+      wasCameraInterrupted = false;
+      const tile = makeVideoTile(socket.id, myName, true);
+      tile.querySelector('video').srcObject = localStream;
+      updateTileState(socket.id, { audio: isMicOn, video: true });
+      publishMediaState();
+      showToast('Камера восстановлена.');
+    } catch (error) {
+      console.warn('Could not restore camera after mobile resume:', error);
+      showToast('Камера не восстановилась автоматически. Нажми кнопку камеры.');
+    }
+  }
 }
 
 async function selectAudioInput() {
@@ -1859,6 +1944,7 @@ async function copyText(value) {
 }
 
 function leaveRoom() {
+  try { localStorage.removeItem(ROOM_SESSION_KEY); } catch (_error) {}
   if (previewAudioStream) {
     previewAudioStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
     previewAudioStream = null;
