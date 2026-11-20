@@ -1356,7 +1356,7 @@ function renderCommunityConversations() {
   if(!groups.children.length) groups.append(communityNode('p','community-empty-note','Групповых чатов пока нет.'));
 }
 
-function renderCommunityMessages(rows,profiles,attachments=[],reactions=[]) {
+function renderCommunityMessages(rows,profiles,attachments=[],reactions=[],readThrough=0) {
   const list=$('#communityMessages');
   list.replaceChildren();
   if(!rows.length) {
@@ -1378,6 +1378,9 @@ function renderCommunityMessages(rows,profiles,attachments=[],reactions=[]) {
     header.append(communityNode('strong','',own?'Ты':(names.get(message.sender_id)||'Пользователь')));
     const date=new Date(message.created_at);
     header.append(communityNode('time','',date.toLocaleString('ru-RU',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})));
+    if(own && readThrough && Date.parse(message.created_at)<=readThrough) {
+      header.append(communityNode('span','community-read-indicator','✓✓ Прочитано'));
+    }
     if(message.reply_to) {
       const replied=messageMap.get(message.reply_to);
       const quote=communityNode('div','community-message-reply',replied?(replied.body||'Сообщение удалено'):'Ответ на сообщение');
@@ -1410,7 +1413,7 @@ function renderCommunityMessages(rows,profiles,attachments=[],reactions=[]) {
       link.href=attachment.signedUrl; link.target='_blank'; link.rel='noopener noreferrer';
       item.append(link);
     });
-    const reactionRows=reactionMap.get(message.id)||[];
+    const reactionRows=message.deleted_at?[]:(reactionMap.get(message.id)||[]);
     if(reactionRows.length) {
       const reactionBar=communityNode('div','community-reactions');
       const heartCount=reactionRows.filter((reaction)=>reaction.emoji==='❤️').length;
@@ -1458,6 +1461,11 @@ async function loadCommunityMessages(conversationId) {
   if(error) throw error;
   const rows=data||[];
   const profiles=await fetchCommunityProfiles(rows.map((m)=>m.sender_id));
+  const {data:readers,error:readersError}=await supabaseClient.from('conversation_members')
+    .select('user_id,last_read_at').eq('conversation_id',conversationId).neq('user_id',communityUserId());
+  if(readersError) throw readersError;
+  const readTimestamps=(readers||[]).map((reader)=>reader.last_read_at?Date.parse(reader.last_read_at):0);
+  const readThrough=readTimestamps.length&&readTimestamps.every((timestamp)=>timestamp>0)?Math.min(...readTimestamps):0;
   let attachments=[];
   if(rows.length) {
     const {data:attachmentRows,error:attachmentError}=await supabaseClient.from('conversation_attachments')
@@ -1484,7 +1492,7 @@ async function loadCommunityMessages(conversationId) {
     .eq('conversation_id',conversationId).maybeSingle();
   if(pinError) throw pinError;
   communityState.pinnedMessage=pin||null;
-  renderCommunityMessages(rows,profiles,attachments,reactions);
+  renderCommunityMessages(rows,profiles,attachments,reactions,readThrough);
 }
 
 
@@ -1579,8 +1587,28 @@ async function editCommunityMessage(message) {
 }
 
 async function deleteCommunityMessage(message) {
-  if(!window.confirm('Удалить это сообщение?')) return;
+  if(!window.confirm('Удалить это сообщение и прикреплённые файлы?')) return;
   try {
+    const {data:attachments,error:attachmentError}=await supabaseClient.from('conversation_attachments')
+      .select('id,bucket_id,object_path')
+      .eq('message_id',message.id).eq('uploader_id',communityUserId());
+    if(attachmentError) throw attachmentError;
+    const byBucket=new Map();
+    (attachments||[]).forEach((attachment)=>{
+      if(!byBucket.has(attachment.bucket_id)) byBucket.set(attachment.bucket_id,[]);
+      byBucket.get(attachment.bucket_id).push(attachment.object_path);
+    });
+    for(const [bucket,paths] of byBucket) {
+      const {error:storageError}=await supabaseClient.storage.from(bucket).remove(paths);
+      if(storageError) throw storageError;
+    }
+    if(attachments?.length) {
+      const {error:metaError}=await supabaseClient.from('conversation_attachments')
+        .delete().eq('message_id',message.id).eq('uploader_id',communityUserId());
+      if(metaError) throw metaError;
+    }
+    await supabaseClient.from('conversation_pins').delete()
+      .eq('conversation_id',communityState.currentConversationId).eq('message_id',message.id);
     const {error}=await supabaseClient.from('messages')
       .update({body:'',deleted_at:new Date().toISOString()})
       .eq('id',message.id).eq('sender_id',communityUserId());
