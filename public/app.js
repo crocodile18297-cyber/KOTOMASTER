@@ -87,6 +87,7 @@ let authSession = null;
 let authMode = 'signin';
 let authReady = false;
 let authProfile = null;
+let passwordRecoveryPending = false;
 
 async function initializeSupabase() {
   const response = await fetch('/api/config', { cache: 'no-store' });
@@ -102,9 +103,20 @@ async function initializeSupabase() {
   const { data, error } = await supabaseClient.auth.getSession();
   if (error) throw error;
   authSession = data.session;
-  supabaseClient.auth.onAuthStateChange((_event, session) => {
+  supabaseClient.auth.onAuthStateChange((event, session) => {
     const previousToken = authSession?.access_token;
     authSession = session;
+    if (event === 'PASSWORD_RECOVERY') {
+      passwordRecoveryPending = true;
+      authMode = 'recovery';
+      $('#authEmail').value = session?.user?.email || '';
+      $('#authEmail').readOnly = true;
+      $('#authPassword').value = '';
+      $('#authPassword').placeholder = 'Новый пароль';
+      $('#authModeToggle').hidden = true;
+      $('#forgotPasswordBtn').hidden = true;
+      $('#authSubmitBtn').querySelector('span:nth-child(2)').textContent = 'Сохранить пароль';
+    }
     updateAuthInterface();
     if (session?.access_token && socket) {
       socket.auth = { accessToken: session.access_token };
@@ -123,7 +135,7 @@ async function initializeSupabase() {
 }
 
 function updateAuthInterface() {
-  const signedIn = Boolean(authSession?.user);
+  const signedIn = Boolean(authSession?.user) && !passwordRecoveryPending;
   const authPanel = $('#authPanel');
   const roomAccessPanel = $('#roomAccessPanel');
   if (authPanel) authPanel.hidden = signedIn;
@@ -165,9 +177,22 @@ async function handleAuthSubmit(event) {
   const errorNode = $('#authError');
   errorNode.textContent = '';
   if (authMode === 'signup' && !displayName) { errorNode.textContent = 'Укажи имя для профиля.'; return; }
-  setBusy(button, true, authMode === 'signup' ? 'Создаём аккаунт…' : 'Входим…');
+  if (authMode === 'recovery' && password.length < 8) { errorNode.textContent = 'Новый пароль должен содержать не менее 8 символов.'; return; }
+  setBusy(button, true, authMode === 'signup' ? 'Создаём аккаунт…' : authMode === 'recovery' ? 'Сохраняем…' : 'Входим…');
   try {
-    if (authMode === 'signup') {
+    if (authMode === 'recovery') {
+      const { error } = await supabaseClient.auth.updateUser({ password });
+      if (error) throw error;
+      passwordRecoveryPending = false;
+      $('#authEmail').readOnly = false;
+      $('#authPassword').value = '';
+      $('#authPassword').placeholder = 'Не менее 8 символов';
+      $('#authModeToggle').hidden = false;
+      $('#forgotPasswordBtn').hidden = false;
+      authMode = 'signin';
+      updateAuthInterface();
+      showToast('Пароль успешно изменён.');
+    } else if (authMode === 'signup') {
       const { data, error } = await supabaseClient.auth.signUp({
         email, password,
         options: { data: { display_name: displayName } }
