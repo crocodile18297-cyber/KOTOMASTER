@@ -371,9 +371,12 @@ async function joinRoom(socket, payload, ack, createNew = false) {
 
   socket.to(roomId).emit('room:peer-joined', toPublicMember(member));
   let persistentMessages = [];
+  let persistentPin = null;
   try {
     persistentMessages = await loadConversationMessages(socket, conversationId);
     room.messages = persistentMessages;
+    persistentPin = await loadConversationPin(socket, conversationId, room);
+    room.pinnedMessageId = persistentPin ? persistentPin.id : null;
   } catch (error) {
     room.members.delete(socket.id);
     socket.leave(roomId);
@@ -389,7 +392,7 @@ async function joinRoom(socket, payload, ack, createNew = false) {
     self: toPublicMember(member),
     participants: previousMembers,
     messages: persistentMessages.slice(-MAX_MESSAGES),
-    pinnedMessage: room.messages.find((item) => item.id === room.pinnedMessageId) || null,
+    pinnedMessage: persistentPin,
     maxRoomSize: MAX_ROOM_SIZE
   });
 }
@@ -433,8 +436,11 @@ io.on('connection', (socket) => {
     if (!room || !member) {
       return callback({ ok: false, error: 'Комната больше недоступна. Войди в неё заново.' });
     }
+    let pinnedMessage = null;
     try {
       room.messages = await loadConversationMessages(socket, room.conversationId);
+      pinnedMessage = await loadConversationPin(socket, room.conversationId, room);
+      room.pinnedMessageId = pinnedMessage ? pinnedMessage.id : null;
     } catch (error) {
       return callback({ ok: false, error: `Не удалось обновить историю: ${error.message}` });
     }
@@ -445,7 +451,7 @@ io.on('connection', (socket) => {
       self: toPublicMember(member),
       participants: getPublicMembers(room).filter((item) => item.id !== socket.id),
       messages: room.messages.slice(-MAX_MESSAGES),
-      pinnedMessage: room.messages.find((item) => item.id === room.pinnedMessageId) || null,
+      pinnedMessage,
       maxRoomSize: MAX_ROOM_SIZE
     });
   });
@@ -568,6 +574,7 @@ io.on('connection', (socket) => {
       message.deletedAt = Date.now();
       message.reactions = {};
       if (room.pinnedMessageId === message.id) {
+        await supabaseApi(socket, `/rest/v1/conversation_pins?conversation_id=eq.${socket.data.conversationId}`, { method: 'DELETE' });
         room.pinnedMessageId = null;
         io.to(roomId).emit('chat:pinned', null);
       }
@@ -616,19 +623,36 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('chat:pin', (payload, ack) => {
+  socket.on('chat:pin', async (payload, ack) => {
     const callback = typeof ack === 'function' ? ack : () => {};
     const roomId = socket.data.roomId;
     const room = roomId && rooms.get(roomId);
-    if (!room || !room.members.has(socket.id)) return callback({ ok: false });
+    if (!room || !room.members.has(socket.id) || !socket.data.conversationId) return callback({ ok: false });
     const messageId = String(payload && payload.messageId || '');
     const message = messageId
       ? room.messages.find((item) => item.id === messageId && !item.deleted)
       : null;
     if (messageId && !message) return callback({ ok: false, error: 'Сообщение не найдено.' });
-    room.pinnedMessageId = message ? message.id : null;
-    io.to(roomId).emit('chat:pinned', message);
-    callback({ ok: true });
+    try {
+      await supabaseApi(socket, `/rest/v1/conversation_pins?conversation_id=eq.${socket.data.conversationId}`, {
+        method: 'DELETE'
+      });
+      if (message) {
+        await supabaseApi(socket, '/rest/v1/conversation_pins', {
+          method: 'POST',
+          body: JSON.stringify([{
+            conversation_id: socket.data.conversationId,
+            message_id: message.id,
+            pinned_by: socket.data.userId
+          }])
+        });
+      }
+      room.pinnedMessageId = message ? message.id : null;
+      io.to(roomId).emit('chat:pinned', message);
+      callback({ ok: true });
+    } catch (error) {
+      callback({ ok: false, error: `Не удалось сохранить закрепление: ${error.message}` });
+    }
   });
 
   socket.on('chat:read', async (payload) => {
