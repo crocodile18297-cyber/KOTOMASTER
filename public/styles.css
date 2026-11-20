@@ -2271,3 +2271,26 @@ button:focus-visible, input:focus-visible {
   font-size:17px;
   cursor:pointer;
 }
+
+
+.profile-username {
+  color:#a47965!important;
+  font-size:8px!important;
+  line-height:1.2;
+}
+.profile-edit-icon {
+  width:25px;
+  height:25px;
+  margin-left:auto;
+  border:1px solid #efdfd6;
+  border-radius:7px;
+  color:#8e7062;
+  background:#fff8f4;
+  font-size:12px;
+}
+.profile-edit-icon:hover { border-color:#dfb8a4; color:#724f44; background:#fbe8df; }
+.community-modal-card textarea.community-search-input {
+  min-height:75px;
+  padding:9px 11px;
+  resize:vertical;
+}
