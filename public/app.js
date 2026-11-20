@@ -1276,7 +1276,11 @@ function renderCommunityConversations() {
     content.append(communityNode('small','',last?(last.body||'Вложение').slice(0,70):'Начни общение'));
     item.append(icon,content);
     chats.append(item);
-    if(conversation.kind==='group') groups.append(item.cloneNode(true));
+    if(conversation.kind==='group') {
+      const groupItem=item.cloneNode(true);
+      groupItem.addEventListener('click',()=>openCommunityConversation(conversation.id));
+      groups.append(groupItem);
+    }
   });
   if(!groups.children.length) groups.append(communityNode('p','community-empty-note','Групповых чатов пока нет.'));
 }
@@ -3180,10 +3184,11 @@ $('#friendSearchInput').addEventListener('input',(event)=>{
 $('#refreshCommunityBtn').addEventListener('click',refreshCommunity);
 $('#communityRefreshMessages').addEventListener('click',()=>communityState.currentConversationId&&loadCommunityMessages(communityState.currentConversationId).catch((error)=>showToast(error.message)));
 $('#communityMessageForm').addEventListener('submit',sendCommunityMessage);
-$('#newGroupBtn').addEventListener('click',()=>{
+$('#newGroupBtn').addEventListener('click',async()=>{
   $('#newGroupError').textContent='';
-  renderGroupMemberChoices();
   $('#newGroupModal').hidden=false;
+  try { await loadCommunityFriends(); renderGroupMemberChoices(); }
+  catch(error) { $('#newGroupError').textContent=error.message; }
 });
 $('#closeNewGroupBtn').addEventListener('click',()=>$('#newGroupModal').hidden=true);
 $('#newGroupModal').addEventListener('click',(event)=>{if(event.target===$('#newGroupModal'))$('#newGroupModal').hidden=true;});
