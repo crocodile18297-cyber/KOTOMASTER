@@ -352,13 +352,18 @@ io.on('connection', (socket) => {
       if (typeof ack === 'function') ack({ ok: false, error: error.message || 'Не удалось войти в комнату.' });
     });
   });
-  socket.on('room:sync', (payload, ack) => {
+  socket.on('room:sync', async (payload, ack) => {
     const callback = typeof ack === 'function' ? ack : () => {};
     const roomId = socket.data.roomId;
     const room = roomId && rooms.get(roomId);
     const member = room && room.members.get(socket.id);
     if (!room || !member) {
       return callback({ ok: false, error: 'Комната больше недоступна. Войди в неё заново.' });
+    }
+    try {
+      room.messages = await loadConversationMessages(socket, room.conversationId);
+    } catch (error) {
+      return callback({ ok: false, error: `Не удалось обновить историю: ${error.message}` });
     }
     callback({
       ok: true,
@@ -373,40 +378,47 @@ io.on('connection', (socket) => {
 
   socket.on('room:leave', () => leaveRoom(socket));
 
-  socket.on('chat:send', (payload, ack) => {
+  socket.on('chat:send', async (payload, ack) => {
     const callback = typeof ack === 'function' ? ack : () => {};
     const roomId = socket.data.roomId;
     const room = roomId && rooms.get(roomId);
     const text = cleanMessage(payload && payload.text);
-    if (!room || !text) return callback({ ok: false });
+    if (!room || !text || !socket.data.conversationId) return callback({ ok: false });
 
-    const replyTarget = payload && typeof payload.replyTo === 'string'
-      ? room.messages.find((item) => item.id === payload.replyTo && !item.deleted)
-      : null;
-    const message = {
-      id: crypto.randomUUID(),
-      from: socket.id,
-      name: socket.data.name,
-      text,
-      time: Date.now(),
-      editedAt: null,
-      deleted: false,
-      reactions: {},
-      readBy: [],
-      replyTo: replyTarget ? {
-        id: replyTarget.id,
-        from: replyTarget.from,
-        name: replyTarget.name,
-        text: replyTarget.text.slice(0, 180)
-      } : null
-    };
-    room.messages.push(message);
-    if (room.messages.length > MAX_MESSAGES) {
-      const removed = room.messages.splice(0, room.messages.length - MAX_MESSAGES);
-      if (removed.some((item) => item.id === room.pinnedMessageId)) room.pinnedMessageId = null;
+    const replyId = payload && typeof payload.replyTo === 'string' && /^[0-9a-f-]{36}$/i.test(payload.replyTo)
+      ? payload.replyTo : null;
+    let replyTarget = replyId ? room.messages.find((item) => item.id === replyId && !item.deleted) : null;
+    try {
+      const row = await persistRoomMessage(socket, socket.data.conversationId, text, replyTarget && replyTarget.id);
+      const message = {
+        id: row.id,
+        from: socket.id,
+        senderId: socket.data.userId,
+        name: socket.data.name,
+        text: row.body,
+        time: Date.parse(row.created_at) || Date.now(),
+        editedAt: null,
+        deleted: false,
+        reactions: {},
+        readBy: [],
+        replyTo: replyTarget ? {
+          id: replyTarget.id,
+          from: replyTarget.from,
+          name: replyTarget.name,
+          text: replyTarget.text.slice(0, 180)
+        } : null
+      };
+      room.messages.push(message);
+      if (room.messages.length > MAX_MESSAGES) {
+        const removed = room.messages.splice(0, room.messages.length - MAX_MESSAGES);
+        if (removed.some((item) => item.id === room.pinnedMessageId)) room.pinnedMessageId = null;
+      }
+      io.to(roomId).emit('chat:message', message);
+      callback({ ok: true, id: message.id });
+    } catch (error) {
+      console.error('Persist room message failed:', error);
+      callback({ ok: false, error: `Сообщение не сохранено: ${error.message}` });
     }
-    io.to(roomId).emit('chat:message', message);
-    callback({ ok: true, id: message.id });
   });
 
   socket.on('chat:typing', (payload) => {
@@ -424,44 +436,64 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('chat:edit', (payload, ack) => {
+  socket.on('chat:edit', async (payload, ack) => {
     const callback = typeof ack === 'function' ? ack : () => {};
     const roomId = socket.data.roomId;
     const room = roomId && rooms.get(roomId);
     const messageId = String(payload && payload.messageId || '');
     const text = cleanMessage(payload && payload.text);
     const message = room && room.messages.find((item) => item.id === messageId);
-    if (!message || message.from !== socket.id || message.deleted || !text) {
+    if (!message || message.senderId !== socket.data.userId || message.deleted || !text) {
       return callback({ ok: false, error: 'Это сообщение нельзя изменить.' });
     }
-    message.text = text;
-    message.editedAt = Date.now();
-    io.to(roomId).emit('chat:edited', message);
-    callback({ ok: true });
+    try {
+      const rows = await supabaseApi(socket, `/rest/v1/messages?id=eq.${encodeURIComponent(messageId)}&sender_id=eq.${socket.data.userId}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ body: text, edited_at: new Date().toISOString() })
+      });
+      if (!Array.isArray(rows) || !rows[0]) return callback({ ok: false, error: 'Изменение не сохранено.' });
+      message.text = rows[0].body;
+      message.editedAt = Date.parse(rows[0].edited_at) || Date.now();
+      io.to(roomId).emit('chat:edited', message);
+      callback({ ok: true });
+    } catch (error) {
+      callback({ ok: false, error: `Не удалось изменить сообщение: ${error.message}` });
+    }
   });
 
-  socket.on('chat:delete', (payload, ack) => {
+  socket.on('chat:delete', async (payload, ack) => {
     const callback = typeof ack === 'function' ? ack : () => {};
     const roomId = socket.data.roomId;
     const room = roomId && rooms.get(roomId);
     const messageId = String(payload && payload.messageId || '');
     const message = room && room.messages.find((item) => item.id === messageId);
-    if (!message || message.from !== socket.id || message.deleted) {
+    if (!message || message.senderId !== socket.data.userId || message.deleted) {
       return callback({ ok: false, error: 'Это сообщение нельзя удалить.' });
     }
-    message.deleted = true;
-    message.text = '';
-    message.deletedAt = Date.now();
-    message.reactions = {};
-    if (room.pinnedMessageId === message.id) {
-      room.pinnedMessageId = null;
-      io.to(roomId).emit('chat:pinned', null);
+    try {
+      const rows = await supabaseApi(socket, `/rest/v1/messages?id=eq.${encodeURIComponent(messageId)}&sender_id=eq.${socket.data.userId}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ body: '', deleted_at: new Date().toISOString() })
+      });
+      if (!Array.isArray(rows) || !rows[0]) return callback({ ok: false, error: 'Удаление не сохранено.' });
+      message.deleted = true;
+      message.text = '';
+      message.deletedAt = Date.now();
+      message.reactions = {};
+      if (room.pinnedMessageId === message.id) {
+        room.pinnedMessageId = null;
+        io.to(roomId).emit('chat:pinned', null);
+      }
+      io.to(roomId).emit('chat:deleted', { messageId });
+      callback({ ok: true });
+    } catch (error) {
+      callback({ ok: false, error: `Не удалось удалить сообщение: ${error.message}` });
     }
-    io.to(roomId).emit('chat:deleted', { messageId });
-    callback({ ok: true });
   });
 
-  socket.on('chat:react', (payload, ack) => {
+  socket.on('chat:react', async (payload, ack) => {
     const callback = typeof ack === 'function' ? ack : () => {};
     const roomId = socket.data.roomId;
     const room = roomId && rooms.get(roomId);
@@ -470,15 +502,33 @@ io.on('connection', (socket) => {
     const allowed = new Set(['❤️', '👍', '😂', '🔥', '🐱', '🎉']);
     const message = room && room.messages.find((item) => item.id === messageId && !item.deleted);
     if (!message || !allowed.has(emoji)) return callback({ ok: false });
-    if (!message.reactions || typeof message.reactions !== 'object') message.reactions = {};
-    const users = Array.isArray(message.reactions[emoji]) ? message.reactions[emoji] : [];
-    const index = users.indexOf(socket.id);
-    if (index >= 0) users.splice(index, 1);
-    else users.push(socket.id);
-    if (users.length) message.reactions[emoji] = users;
-    else delete message.reactions[emoji];
-    io.to(roomId).emit('chat:reaction', { messageId, reactions: message.reactions });
-    callback({ ok: true });
+    try {
+      const params = new URLSearchParams({
+        select: 'message_id,user_id,emoji',
+        message_id: `eq.${messageId}`,
+        user_id: `eq.${socket.data.userId}`,
+        emoji: `eq.${emoji}`
+      });
+      const existing = await supabaseApi(socket, `/rest/v1/message_reactions?${params}`);
+      if (Array.isArray(existing) && existing.length) {
+        await supabaseApi(socket, `/rest/v1/message_reactions?message_id=eq.${messageId}&user_id=eq.${socket.data.userId}&emoji=eq.${encodeURIComponent(emoji)}`, { method: 'DELETE' });
+      } else {
+        await supabaseApi(socket, '/rest/v1/message_reactions', {
+          method: 'POST',
+          body: JSON.stringify([{ message_id: messageId, user_id: socket.data.userId, emoji }])
+        });
+      }
+      const all = await supabaseApi(socket, `/rest/v1/message_reactions?select=user_id,emoji&message_id=eq.${messageId}`);
+      message.reactions = {};
+      (Array.isArray(all) ? all : []).forEach((item) => {
+        if (!message.reactions[item.emoji]) message.reactions[item.emoji] = [];
+        message.reactions[item.emoji].push(item.user_id);
+      });
+      io.to(roomId).emit('chat:reaction', { messageId, reactions: message.reactions });
+      callback({ ok: true });
+    } catch (error) {
+      callback({ ok: false, error: `Реакция не сохранена: ${error.message}` });
+    }
   });
 
   socket.on('chat:pin', (payload, ack) => {
@@ -496,21 +546,28 @@ io.on('connection', (socket) => {
     callback({ ok: true });
   });
 
-  socket.on('chat:read', (payload) => {
+  socket.on('chat:read', async (payload) => {
     const roomId = socket.data.roomId;
     const room = roomId && rooms.get(roomId);
-    if (!room || !Array.isArray(payload && payload.messageIds)) return;
-    const ids = new Set(payload.messageIds.filter((id) => typeof id === 'string').slice(0, 50));
-    room.messages.forEach((message) => {
-      if (!ids.has(message.id) || message.from === socket.id || message.deleted) return;
-      if (!Array.isArray(message.readBy)) message.readBy = [];
-      if (!message.readBy.includes(socket.id)) message.readBy.push(socket.id);
-      socket.to(roomId).emit('chat:read-receipt', {
-        messageId: message.id,
-        readerId: socket.id,
-        readerName: socket.data.name
+    if (!room || !Array.isArray(payload && payload.messageIds) || !socket.data.conversationId) return;
+    try {
+      await supabaseApi(socket, `/rest/v1/conversation_members?conversation_id=eq.${socket.data.conversationId}&user_id=eq.${socket.data.userId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ last_read_at: new Date().toISOString() })
       });
-    });
+      const ids = new Set(payload.messageIds.filter((id) => typeof id === 'string').slice(0, 50));
+      room.messages.forEach((message) => {
+        if (!ids.has(message.id) || message.senderId === socket.data.userId || message.deleted) return;
+        socket.to(roomId).emit('chat:read-receipt', {
+          messageId: message.id,
+          readerId: socket.id,
+          readerUserId: socket.data.userId,
+          readerName: socket.data.name
+        });
+      });
+    } catch (error) {
+      console.warn('Could not mark room messages as read:', error.message);
+    }
   });
 
   socket.on('media:state', (payload) => {
