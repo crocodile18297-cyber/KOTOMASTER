@@ -136,16 +136,83 @@ async function loadConversationMessages(socket, conversationId) {
   });
   const rows = await supabaseApi(socket, `/rest/v1/messages?${params.toString()}`);
   if (!Array.isArray(rows) || rows.length === 0) return [];
-  const ids = [...new Set(rows.map((row) => row.sender_id).filter(Boolean))];
+
+  const replyIds = [...new Set(rows.map((row) => row.reply_to).filter(Boolean))];
+  let replyRows = [];
+  if (replyIds.length) {
+    replyRows = await supabaseApi(socket,
+      `/rest/v1/messages?select=id,sender_id,body,deleted_at&id=in.(${replyIds.join(',')})`);
+  }
+  const allSenderIds = [...new Set([
+    ...rows.map((row) => row.sender_id),
+    ...(Array.isArray(replyRows) ? replyRows.map((row) => row.sender_id) : [])
+  ].filter(Boolean))];
   const profiles = await supabaseApi(socket,
-    `/rest/v1/profiles?select=id,display_name&id=in.(${ids.join(',')})`);
+    `/rest/v1/profiles?select=id,display_name&id=in.(${allSenderIds.join(',')})`);
   const names = new Map((Array.isArray(profiles) ? profiles : [])
     .map((profile) => [profile.id, profile.display_name || 'Котик']));
-  return rows.reverse().map((row) => ({
+  const replyById = new Map((Array.isArray(replyRows) ? replyRows : []).map((row) => [row.id, row]));
+
+  const messageIds = rows.map((row) => row.id);
+  const [reactionRows, memberRows] = await Promise.all([
+    supabaseApi(socket,
+      `/rest/v1/message_reactions?select=message_id,user_id,emoji&message_id=in.(${messageIds.join(',')})`),
+    supabaseApi(socket,
+      `/rest/v1/conversation_members?select=user_id,last_read_at&conversation_id=eq.${conversationId}`)
+  ]);
+  const reactionsByMessage = new Map();
+  (Array.isArray(reactionRows) ? reactionRows : []).forEach((reaction) => {
+    if (!reactionsByMessage.has(reaction.message_id)) reactionsByMessage.set(reaction.message_id, {});
+    const reactionMap = reactionsByMessage.get(reaction.message_id);
+    if (!reactionMap[reaction.emoji]) reactionMap[reaction.emoji] = [];
+    reactionMap[reaction.emoji].push(reaction.user_id);
+  });
+  const readers = Array.isArray(memberRows) ? memberRows : [];
+
+  return rows.reverse().map((row) => {
+    const createdAt = Date.parse(row.created_at) || Date.now();
+    const reply = row.reply_to ? replyById.get(row.reply_to) : null;
+    const readBy = readers.filter((reader) => reader.user_id !== row.sender_id &&
+      reader.last_read_at && Date.parse(reader.last_read_at) >= createdAt).map((reader) => reader.user_id);
+    return {
+      id: row.id,
+      from: row.sender_id,
+      senderId: row.sender_id,
+      name: names.get(row.sender_id) || 'Котик',
+      text: row.deleted_at ? '' : row.body,
+      time: createdAt,
+      editedAt: row.edited_at ? Date.parse(row.edited_at) : null,
+      deleted: Boolean(row.deleted_at),
+      reactions: reactionsByMessage.get(row.id) || {},
+      readBy,
+      replyTo: reply ? {
+        id: reply.id,
+        from: reply.sender_id,
+        name: names.get(reply.sender_id) || 'Котик',
+        text: reply.deleted_at ? 'Сообщение удалено' : String(reply.body || '').slice(0,180)
+      } : null
+    };
+  });
+}
+
+async function loadConversationPin(socket, conversationId, room) {
+  const pins = await supabaseApi(socket,
+    `/rest/v1/conversation_pins?select=message_id&conversation_id=eq.${conversationId}`);
+  if (!Array.isArray(pins) || !pins[0]) return null;
+  const pinId = pins[0].message_id;
+  const cached = room.messages.find((message) => message.id === pinId);
+  if (cached) return cached;
+  const rows = await supabaseApi(socket,
+    `/rest/v1/messages?select=id,sender_id,body,edited_at,deleted_at,created_at&id=eq.${pinId}&limit=1`);
+  if (!Array.isArray(rows) || !rows[0]) return null;
+  const row = rows[0];
+  const profiles = await supabaseApi(socket,
+    `/rest/v1/profiles?select=id,display_name&id=eq.${row.sender_id}`);
+  return {
     id: row.id,
     from: row.sender_id,
     senderId: row.sender_id,
-    name: names.get(row.sender_id) || 'Котик',
+    name: Array.isArray(profiles) && profiles[0] ? profiles[0].display_name : 'Котик',
     text: row.deleted_at ? '' : row.body,
     time: Date.parse(row.created_at) || Date.now(),
     editedAt: row.edited_at ? Date.parse(row.edited_at) : null,
@@ -153,7 +220,7 @@ async function loadConversationMessages(socket, conversationId) {
     reactions: {},
     readBy: [],
     replyTo: null
-  }));
+  };
 }
 
 async function persistRoomMessage(socket, conversationId, text, replyTo) {
