@@ -211,7 +211,7 @@ async function handleAuthSubmit(event) {
     } else if (authMode === 'signup') {
       const { data, error } = await supabaseClient.auth.signUp({
         email, password,
-        options: { data: { display_name: displayName, username } }
+        options: { data: { display_name: displayName, username }, emailRedirectTo: window.location.origin }
       });
       if (error) throw error;
       if (!data.session) {
