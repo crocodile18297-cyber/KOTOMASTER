@@ -1039,7 +1039,2315 @@ function notifyIncomingMessage(message) {
   };
 }
 
+
+const communityState = {
+  tab: 'chats',
+  conversations: [],
+  friends: [],
+  requests: [],
+  currentConversationId: null,
+  currentConversation: null,
+  realtimeChannel: null,
+  searchTimer: null
+};
+
+function communityUserId() {
+  return authSession?.user?.id || null;
+}
+
+function setCommunityTab(tab) {
+  communityState.tab = ['chats','friends','groups'].includes(tab) ? tab : 'chats';
+  document.querySelectorAll('.community-tab').forEach((button) =>
+    button.classList.toggle('active', button.dataset.communityTab === communityState.tab)
+  );
+  $('#communityChatsPanel').hidden = communityState.tab !== 'chats';
+  $('#communityFriendsPanel').hidden = communityState.tab !== 'friends';
+  $('#communityGroupsPanel').hidden = communityState.tab !== 'groups';
+  $('#communityChatTitle').textContent = 'Чаты';
+  refreshCommunity();
+}
+
+function communityNode(tag, className, textValue) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (textValue !== undefined && textValue !== null) node.textContent = String(textValue);
+  return node;
+}
+
+async function fetchCommunityProfiles(ids) {
+  const uniqueIds = [...new Set((ids || []).filter(Boolean))];
+  if (!uniqueIds.length) return [];
+  const { data, error } = await supabaseClient.from('profiles')
+    .select('id,username,display_name,avatar_path,bio')
+    .in('id', uniqueIds);
+  if (error) throw error;
+  return data || [];
+}
+
+function renderCommunityLoading(container, message) {
+  container.replaceChildren(communityNode('p','community-empty-note',message));
+}
+
+async function loadCommunityFriends() {
+  const userId = communityUserId();
+  if (!userId) return;
+  const { data, error } = await supabaseClient.from('friendships')
+    .select('id,requester_id,addressee_id,status,created_at')
+    .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
+    .order('created_at',{ascending:false});
+  if (error) throw error;
+  const rows = data || [];
+  const otherIds = rows.map((row) => row.requester_id === userId ? row.addressee_id : row.requester_id);
+  const profiles = await fetchCommunityProfiles(otherIds);
+  const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
+  communityState.friends = rows.filter((row) => row.status === 'accepted').map((row) => {
+    const otherId = row.requester_id === userId ? row.addressee_id : row.requester_id;
+    return { ...row, userId: otherId, profile: profileMap.get(otherId) || { display_name: 'Пользователь' } };
+  });
+  communityState.requests = rows.filter((row) => row.status === 'pending' && row.addressee_id === userId).map((row) => ({
+    ...row,
+    userId: row.requester_id,
+    profile: profileMap.get(row.requester_id) || { display_name: 'Пользователь' }
+  }));
+  renderFriendLists();
+  renderGroupMemberChoices();
+}
+
+function renderFriendLists() {
+  const searchResults = $('#friendSearchResults');
+  if (searchResults && !searchResults.dataset.keep) searchResults.replaceChildren();
+  const requestList = $('#friendRequestsList');
+  requestList.replaceChildren();
+  if (!communityState.requests.length) {
+    requestList.append(communityNode('p','community-empty-note','Новых заявок пока нет.'));
+  } else {
+    communityState.requests.forEach((request) => {
+      const item = communityNode('div','community-person-item');
+      const copy = communityNode('div','community-person-copy');
+      copy.append(communityNode('strong','',request.profile.display_name || 'Пользователь'));
+      copy.append(communityNode('small','',request.profile.username ? '@'+request.profile.username : 'Хочет добавить тебя в друзья'));
+      const actions = communityNode('div','community-person-actions');
+      const accept = communityNode('button','community-small-action is-primary','Принять');
+      accept.type='button';
+      accept.addEventListener('click',()=>respondToFriendRequest(request.id,'accepted'));
+      const decline = communityNode('button','community-small-action','Отклонить');
+      decline.type='button';
+      decline.addEventListener('click',()=>respondToFriendRequest(request.id,'declined'));
+      actions.append(accept,decline); item.append(copy,actions); requestList.append(item);
+    });
+  }
+  const friendList = $('#friendList');
+  friendList.replaceChildren();
+  if (!communityState.friends.length) {
+    friendList.append(communityNode('p','community-empty-note','Здесь появятся принятые друзья.'));
+  } else {
+    communityState.friends.forEach((friend) => {
+      const item=communityNode('div','community-person-item');
+      const copy=communityNode('div','community-person-copy');
+      copy.append(communityNode('strong','',friend.profile.display_name || 'Пользователь'));
+      copy.append(communityNode('small','',friend.profile.username ? '@'+friend.profile.username : 'Друг'));
+      const button=communityNode('button','community-small-action is-primary','Написать');
+      button.type='button';
+      button.addEventListener('click',()=>openDirectConversation(friend.userId));
+      item.append(copy,button); friendList.append(item);
+    });
+  }
+}
+
+async function searchCommunityUsers(value) {
+  const results=$('#friendSearchResults');
+  results.replaceChildren();
+  const query=String(value||'').trim().replace(/^@/,'').replace(/[^a-zA-Z0-9_а-яА-ЯёЁ -]/g,'').slice(0,32);
+  if (query.length < 2) return;
+  renderCommunityLoading(results,'Ищем пользователей…');
+  const safe=query.replace(/[%_,().]/g,' ').trim();
+  const {data,error}=await supabaseClient.from('profiles')
+    .select('id,username,display_name')
+    .neq('id',communityUserId())
+    .or(`username.ilike.%${safe}%,display_name.ilike.%${safe}%`)
+    .limit(12);
+  results.replaceChildren();
+  if(error) { results.append(communityNode('p','community-empty-note','Не удалось выполнить поиск: '+error.message)); return; }
+  const known=new Map();
+  communityState.friends.forEach((f)=>known.set(f.userId,'accepted'));
+  communityState.requests.forEach((f)=>known.set(f.userId,'incoming'));
+  if(!data?.length) { results.append(communityNode('p','community-empty-note','Никого не нашли. Проверь имя или username.')); return; }
+  data.forEach((profile)=>{
+    const item=communityNode('div','community-person-item');
+    const copy=communityNode('div','community-person-copy');
+    copy.append(communityNode('strong','',profile.display_name||'Пользователь'));
+    copy.append(communityNode('small','',profile.username?'@'+profile.username:'Пользователь KOTOMASTER'));
+    const knownStatus=known.get(profile.id);
+    const button=communityNode('button','community-small-action',knownStatus==='accepted'?'Друг':knownStatus==='incoming'?'Заявка получена':'Добавить');
+    button.type='button';
+    button.disabled=Boolean(knownStatus);
+    if(!knownStatus) button.addEventListener('click',()=>sendFriendRequest(profile.id,button));
+    item.append(copy,button); results.append(item);
+  });
+}
+
+async function sendFriendRequest(friendId,button) {
+  if(!communityUserId() || !friendId || friendId===communityUserId()) return;
+  button.disabled=true;
+  try {
+    const {error}=await supabaseClient.from('friendships').insert({
+      requester_id:communityUserId(),addressee_id:friendId,status:'pending'
+    });
+    if(error) throw error;
+    button.textContent='Заявка отправлена';
+    showToast('Заявка в друзья отправлена.');
+  } catch(error) {
+    button.disabled=false;
+    showToast('Не удалось отправить заявку: '+error.message);
+  }
+}
+
+async function respondToFriendRequest(requestId,status) {
+  try {
+    const {data,error}=await supabaseClient.from('friendships')
+      .update({status,updated_at:new Date().toISOString()})
+      .eq('id',requestId).eq('addressee_id',communityUserId()).eq('status','pending')
+      .select('id');
+    if(error) throw error;
+    if(!data?.length) throw new Error('Заявка уже обработана.');
+    await loadCommunityFriends();
+    await loadCommunityConversations();
+    showToast(status==='accepted'?'Заявка принята.':'Заявка отклонена.');
+  } catch(error) { showToast('Не удалось обработать заявку: '+error.message); }
+}
+
+async function loadCommunityConversations() {
+  const userId=communityUserId();
+  if(!userId) return;
+  const {data:members,error:memberError}=await supabaseClient.from('conversation_members')
+    .select('conversation_id,role,last_read_at,joined_at')
+    .eq('user_id',userId);
+  if(memberError) throw memberError;
+  const ids=(members||[]).map((m)=>m.conversation_id);
+  if(!ids.length) {
+    communityState.conversations=[];
+    renderCommunityConversations();
+    return;
+  }
+  const [convResult,memberResult,messageResult]=await Promise.all([
+    supabaseClient.from('conversations').select('id,kind,title,created_at,updated_at').in('id',ids),
+    supabaseClient.from('conversation_members').select('conversation_id,user_id,role').in('conversation_id',ids).neq('user_id',userId),
+    supabaseClient.from('messages').select('id,conversation_id,body,sender_id,created_at').in('conversation_id',ids).order('created_at',{ascending:false}).limit(250)
+  ]);
+  if(convResult.error) throw convResult.error;
+  if(memberResult.error) throw memberResult.error;
+  if(messageResult.error) throw messageResult.error;
+  const others=memberResult.data||[];
+  const profiles=await fetchCommunityProfiles(others.map((m)=>m.user_id));
+  const profileMap=new Map(profiles.map((p)=>[p.id,p]));
+  const convMap=new Map((convResult.data||[]).map((c)=>[c.id,c]));
+  const lastMessages=new Map();
+  (messageResult.data||[]).forEach((m)=>{
+    if(!lastMessages.has(m.conversation_id)) lastMessages.set(m.conversation_id,m);
+  });
+  communityState.conversations=(members||[]).map((member)=>{
+    const conv=convMap.get(member.conversation_id);
+    if(!conv) return null;
+    const otherMembers=others.filter((m)=>m.conversation_id===conv.id);
+    const names=otherMembers.map((m)=>profileMap.get(m.user_id)?.display_name||'Пользователь');
+    const title=conv.kind==='group'?(conv.title||'Группа'):(names[0]||'Личный чат');
+    const last=lastMessages.get(conv.id);
+    return {...conv,title,otherMembers,lastMessage:last||null,sortAt:last?.created_at||conv.updated_at};
+  }).filter(Boolean).sort((a,b)=>Date.parse(b.sortAt||0)-Date.parse(a.sortAt||0));
+  renderCommunityConversations();
+}
+
+function renderCommunityConversations() {
+  const chats=$('#communityConversationList');
+  const groups=$('#communityGroupsList');
+  chats.replaceChildren();
+  groups.replaceChildren();
+  const conversations=communityState.conversations;
+  if(!conversations.length) chats.append(communityNode('p','community-empty-note','Пока нет переписок. Добавь друга, чтобы начать.'));
+  conversations.forEach((conversation)=>{
+    const isSelected=conversation.id===communityState.currentConversationId;
+    const item=communityNode('button','community-conversation-item'+(isSelected?' is-selected':''));
+    item.type='button';
+    item.addEventListener('click',()=>openCommunityConversation(conversation.id));
+    const icon=communityNode('span','community-conversation-avatar',conversation.kind==='group'?'#':(conversation.title||'К').slice(0,1).toUpperCase());
+    const content=communityNode('span','community-conversation-copy');
+    content.append(communityNode('strong','',conversation.title));
+    const last=conversation.lastMessage;
+    content.append(communityNode('small','',last?(last.body||'Вложение').slice(0,70):'Начни общение'));
+    item.append(icon,content);
+    chats.append(item);
+    if(conversation.kind==='group') groups.append(item.cloneNode(true));
+  });
+  if(!groups.children.length) groups.append(communityNode('p','community-empty-note','Групповых чатов пока нет.'));
+}
+
+function renderCommunityMessages(rows,profiles) {
+  const list=$('#communityMessages');
+  list.replaceChildren();
+  if(!rows.length) {
+    list.append(communityNode('p','community-empty-note','Сообщений пока нет. Напиши первым.'));
+    return;
+  }
+  const names=new Map((profiles||[]).map((p)=>[p.id,p.display_name||'Пользователь']));
+  rows.forEach((message)=>{
+    const own=message.sender_id===communityUserId();
+    const item=communityNode('article','community-message'+(own?' is-own':''));
+    const header=communityNode('div','community-message-header');
+    header.append(communityNode('strong','',own?'Ты':(names.get(message.sender_id)||'Пользователь')));
+    const date=new Date(message.created_at);
+    header.append(communityNode('time','',date.toLocaleString('ru-RU',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})));
+    const body=communityNode('p','',message.deleted_at?'Сообщение удалено':message.body);
+    if(message.edited_at && !message.deleted_at) body.append(communityNode('small','community-edited',' · изменено'));
+    item.append(header,body);
+    list.append(item);
+  });
+  list.scrollTop=list.scrollHeight;
+}
+
+async function loadCommunityMessages(conversationId) {
+  const {data,error}=await supabaseClient.from('messages')
+    .select('id,sender_id,body,reply_to,edited_at,deleted_at,created_at')
+    .eq('conversation_id',conversationId)
+    .order('created_at',{ascending:true})
+    .limit(150);
+  if(error) throw error;
+  const rows=data||[];
+  const profiles=await fetchCommunityProfiles(rows.map((m)=>m.sender_id));
+  renderCommunityMessages(rows,profiles);
+}
+
+async function openCommunityConversation(conversationId) {
+  const conversation=communityState.conversations.find((c)=>c.id===conversationId);
+  if(!conversation) return;
+  communityState.currentConversationId=conversationId;
+  communityState.currentConversation=conversation;
+  $('#communityEmpty').hidden=true;
+  $('#communityActiveChat').hidden=false;
+  $('#communityChatTitle').textContent=conversation.title;
+  $('#communityChatSubtitle').textContent=conversation.kind==='group'?'Групповая переписка':'Личные сообщения';
+  renderCommunityConversations();
+  renderCommunityLoading($('#communityMessages'),'Загружаем историю переписки…');
+  if(communityState.realtimeChannel) await supabaseClient.removeChannel(communityState.realtimeChannel);
+  try {
+    await loadCommunityMessages(conversationId);
+    communityState.realtimeChannel=supabaseClient.channel('kotomaster-conversation-'+conversationId)
+      .on('postgres_changes',{event:'*',schema:'public',table:'messages',filter:`conversation_id=eq.${conversationId}`},async()=> {
+        try {
+          await loadCommunityMessages(conversationId);
+          await loadCommunityConversations();
+        } catch(error) { console.warn('Realtime chat refresh failed:',error); }
+      }).subscribe();
+    await supabaseClient.from('conversation_members')
+      .update({last_read_at:new Date().toISOString()})
+      .eq('conversation_id',conversationId).eq('user_id',communityUserId());
+  } catch(error) {
+    renderCommunityLoading($('#communityMessages'),'Не удалось загрузить чат: '+error.message);
+  }
+}
+
+async function openDirectConversation(friendId) {
+  try {
+    const {data,error}=await supabaseClient.rpc('create_direct_conversation',{p_friend_id:friendId});
+    if(error) throw error;
+    await loadCommunityConversations();
+    setCommunityTab('chats');
+    await openCommunityConversation(data);
+  } catch(error) {
+    showToast('Не удалось открыть чат: '+error.message);
+  }
+}
+
+function renderGroupMemberChoices() {
+  const list=$('#newGroupMembers');
+  if(!list) return;
+  list.replaceChildren();
+  if(!communityState.friends.length) {
+    list.append(communityNode('p','community-empty-note','Сначала добавь друзей.'));
+    return;
+  }
+  communityState.friends.forEach((friend)=>{
+    const label=communityNode('label','community-group-member');
+    const checkbox=document.createElement('input');
+    checkbox.type='checkbox'; checkbox.value=friend.userId;
+    label.append(checkbox,communityNode('span','',friend.profile.display_name||'Пользователь'));
+    list.append(label);
+  });
+}
+
+async function createCommunityGroup(event) {
+  event.preventDefault();
+  const title=$('#newGroupTitle').value.trim();
+  const memberIds=[...$('#newGroupMembers').querySelectorAll('input:checked')].map((input)=>input.value);
+  if(memberIds.length===0) { $('#newGroupError').textContent='Выбери хотя бы одного друга.'; return; }
+  const button=$('#newGroupForm').querySelector('button[type="submit"]');
+  setBusy(button,true,'Создаём группу…');
+  try {
+    const {data,error}=await supabaseClient.rpc('create_group_conversation',{p_title:title,p_member_ids:memberIds});
+    if(error) throw error;
+    $('#newGroupModal').hidden=true;
+    $('#newGroupForm').reset();
+    await loadCommunityConversations();
+    setCommunityTab('groups');
+    await openCommunityConversation(data);
+    showToast('Группа создана.');
+  } catch(error) {
+    $('#newGroupError').textContent=error.message||'Не удалось создать группу.';
+  } finally { setBusy(button,false); }
+}
+
+async function sendCommunityMessage(event) {
+  event.preventDefault();
+  const input=$('#communityMessageInput');
+  const body=input.value.trim();
+  const conversationId=communityState.currentConversationId;
+  if(!body||!conversationId||!communityUserId()) return;
+  input.disabled=true;
+  try {
+    const {error}=await supabaseClient.from('messages').insert({
+      conversation_id:conversationId,
+      sender_id:communityUserId(),
+      body
+    });
+    if(error) throw error;
+    input.value='';
+    await loadCommunityMessages(conversationId);
+    await loadCommunityConversations();
+  } catch(error) {
+    showToast('Сообщение не отправлено: '+error.message);
+  } finally { input.disabled=false; input.focus(); }
+}
+
+async function refreshCommunity() {
+  if(!supabaseClient||!authSession?.user) return;
+  try {
+    if(communityState.tab==='friends') await loadCommunityFriends();
+    else {
+      await loadCommunityConversations();
+      if(communityState.tab==='groups') {
+        const groups=$('#communityGroupsList');
+        if(!groups.children.length) groups.append(communityNode('p','community-empty-note','Групповых чатов пока нет.'));
+      }
+    }
+  } catch(error) {
+    showToast('Не удалось обновить список: '+error.message);
+  }
+}
+
 function switchPanel(panel) {
+  activePanel = ['call','community'].includes(panel) ? panel : 'chat';
+  panel = activePanel;
+  const isCall = panel === 'call';
+  const isCommunity = panel === 'community';
+  chatPanel.hidden = isCall || isCommunity;
+  callPanel.hidden = !isCall;
+  $('#communityPanel').hidden = !isCommunity;
+  document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.panel === panel));
+  $('#topbarTitle').textContent = isCall ? 'Видеокомната' : isCommunity ? 'Сообщения и друзья' : 'Общий чат';
+  if (isCommunity) refreshCommunity();
+  updateCallStage();
+}
+
+function updateCallDescription() {
+  const inCallCount = Array.from(participants.values()).filter((member) => member.inCall).length;
+  if (isInCall) {
+    callDescription.textContent = inCallCount <= 1 ? 'Ты в звонке. Друзья могут присоединиться в любой момент.' : `Сейчас в звонке: ${inCallCount} ${pluralize(inCallCount, 'участник', 'участника', 'участников')}.`;
+  } else if (inCallCount > 0) {
+    callDescription.textContent = `${inCallCount} ${pluralize(inCallCount, 'участник уже в звонке', 'участника уже в звонке', 'участников уже в звонке')}. Нажми кнопку, чтобы присоединиться.`;
+  } else {
+    callDescription.textContent = 'Подключись, чтобы увидеть друзей и начать разговор.';
+  }
+  $('#callNavBadge').hidden = inCallCount === 0;
+}
+
+function updateCallStage() {
+  const remoteInCall = Array.from(participants.values()).some((member) => member.id !== (socket && socket.id) && member.inCall);
+  callEmptyState.hidden = isInCall || remoteInCall;
+  if (!isInCall && remoteInCall) {
+    callEmptyState.hidden = false;
+    callEmptyState.querySelector('h4').textContent = 'Друзья уже здесь';
+    callEmptyState.querySelector('p').textContent = 'Присоединяйся к видеозвонку, чтобы общаться вместе.';
+  } else {
+    callEmptyState.querySelector('h4').textContent = 'Здесь пока тихо';
+    callEmptyState.querySelector('p').textContent = 'Включи камеру и микрофон, чтобы войти в звонок.';
+  }
+  const startButton = $('#startCallBtn');
+  startButton.hidden = isInCall;
+  startButton.innerHTML = resumeCallAfterRestore
+    ? '<span>↻</span> Вернуться в видеозвонок'
+    : '<span>▶</span> Войти в видеозвонок';
+}
+
+function makeVideoTile(id, name, local = false) {
+  let tile = videoGrid.querySelector(`[data-peer-id="${CSS.escape(id)}"]`);
+  if (tile) {
+    const label = tile.querySelector('.tile-label span');
+    if (label) label.textContent = local ? `${name} · ты` : name;
+    return tile;
+  }
+  tile = document.createElement('div');
+  tile.className = `video-tile${local ? ' local' : ''}`;
+  tile.dataset.peerId = id;
+  const video = document.createElement('video');
+  video.autoplay = true;
+  video.playsInline = true;
+  video.muted = local;
+  video.volume = 1;
+  video.addEventListener('click', () => {
+    if (local) return;
+    video.play().catch(() => {});
+    const audioElements = remoteAudioElements.get(id) || [];
+    audioElements.forEach((audio) => audio.play().catch(() => {}));
+  });
+  const avatar = document.createElement('div');
+  avatar.className = 'tile-avatar';
+  avatar.textContent = firstLetter(name);
+  const label = document.createElement('div');
+  label.className = 'tile-label';
+  const labelName = document.createElement('span');
+  labelName.textContent = local ? `${name} · ты` : name;
+  const mic = document.createElement('b');
+  mic.className = 'tile-mic';
+  mic.textContent = '●';
+  label.append(labelName, mic);
+
+  const expand = document.createElement('button');
+  expand.type = 'button';
+  expand.className = 'tile-expand';
+  expand.title = 'Увеличить видео';
+  expand.setAttribute('aria-label', 'Увеличить видео');
+  expand.textContent = '⛶';
+  expand.addEventListener('click', (event) => {
+    event.stopPropagation();
+    openVideoViewer(tile);
+  });
+  video.addEventListener('dblclick', () => openVideoViewer(tile));
+
+  tile.append(video, avatar, label, expand);
+  videoGrid.append(tile);
+  return tile;
+}
+
+function updateTileState(id, member) {
+  const tile = videoGrid.querySelector(`[data-peer-id="${CSS.escape(id)}"]`);
+  if (!tile) return;
+  const mic = tile.querySelector('.tile-mic');
+  if (mic) {
+    mic.classList.toggle('on', Boolean(member.audio));
+    mic.title = member.audio ? 'Микрофон включён' : 'Микрофон выключен';
+  }
+  tile.classList.toggle('has-video', Boolean(member.video) || (id === (socket && socket.id) && isSharing));
+  tile.classList.toggle('sharing', Boolean(member.sharing) || (id === (socket && socket.id) && isSharing));
+}
+
+function getSpeechAudioConstraints(deviceId = '') {
+  const supported = navigator.mediaDevices.getSupportedConstraints
+    ? navigator.mediaDevices.getSupportedConstraints()
+    : {};
+  const constraints = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true
+  };
+  if (deviceId) constraints.deviceId = { exact: deviceId };
+  if (supported.channelCount) constraints.channelCount = { ideal: 1 };
+  if (supported.sampleRate) constraints.sampleRate = { ideal: 48000 };
+  if (supported.latency) constraints.latency = { ideal: 0.01 };
+  return constraints;
+}
+
+async function captureAudioInput(deviceId = '') {
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: getSpeechAudioConstraints(deviceId), video: false });
+  } catch (error) {
+    if (deviceId && ['NotFoundError', 'OverconstrainedError'].includes(error && error.name)) {
+      console.warn('Selected microphone is no longer available; falling back to the system microphone.', error);
+      return navigator.mediaDevices.getUserMedia({ audio: getSpeechAudioConstraints(), video: false });
+    }
+    if (error && error.name === 'OverconstrainedError') {
+      console.warn('Advanced microphone constraints are unsupported; retrying with basic audio capture.', error);
+      return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    }
+    throw error;
+  }
+}
+
+async function refreshAudioInputDevices(preferredDeviceId = '') {
+  const select = $('#audioInputSelect');
+  if (!select) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices || !navigator.mediaDevices.getUserMedia) {
+    select.disabled = true;
+    select.title = 'Браузер не предоставляет доступ к микрофонам. Открой KOTOMASTER по HTTPS в поддерживаемом браузере.';
+    return;
+  }
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const microphones = devices.filter((device) => device.kind === 'audioinput');
+    const activeStream = localStream || previewAudioStream;
+    const activeTrack = activeStream && activeStream.getAudioTracks()[0];
+    const activeDeviceId = preferredDeviceId || selectedAudioDeviceId ||
+      (activeTrack && activeTrack.getSettings ? activeTrack.getSettings().deviceId : '') || select.value || '';
+    select.replaceChildren();
+    const automatic = document.createElement('option');
+    automatic.value = '';
+    automatic.textContent = 'Системный микрофон';
+    select.append(automatic);
+    microphones.forEach((device, index) => {
+      const option = document.createElement('option');
+      option.value = device.deviceId;
+      option.textContent = device.label || `Микрофон ${index + 1}`;
+      select.append(option);
+    });
+    select.value = microphones.some((device) => device.deviceId === activeDeviceId) ? activeDeviceId : '';
+    select.disabled = microphones.length === 0 || isSwitchingAudioInput;
+    select.title = microphones.length
+      ? (isInCall ? 'Выбери микрофон, с которого собеседник будет слышать тебя' : 'Выбери микрофон и проверь уровень сигнала до начала звонка')
+      : 'Браузер пока не обнаружил доступные микрофоны';
+  } catch (error) {
+    console.warn('Could not enumerate microphones:', error);
+    select.disabled = true;
+    select.title = 'Не удалось получить список микрофонов. Проверь разрешение на микрофон в браузере.';
+  }
+}
+
+function stopMicInputMeter() {
+  if (micMeterTimer) clearInterval(micMeterTimer);
+  micMeterTimer = null;
+  if (micMeterSource) {
+    try { micMeterSource.disconnect(); } catch (_error) {}
+  }
+  micMeterSource = null;
+  micMeterAnalyser = null;
+  if (micMeterContext) micMeterContext.close().catch(() => {});
+  micMeterContext = null;
+  const meter = $('#micInputLevel');
+  if (meter) meter.style.width = '0%';
+}
+
+function startMicInputMeter(track) {
+  stopMicInputMeter();
+  if (!track || track.readyState !== 'live') return;
+
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+
+  try {
+    micMeterContext = new AudioContextClass();
+    micMeterAnalyser = micMeterContext.createAnalyser();
+    micMeterAnalyser.fftSize = 512;
+    micMeterAnalyser.smoothingTimeConstant = 0.72;
+    micMeterSource = micMeterContext.createMediaStreamSource(new MediaStream([track]));
+    micMeterSource.connect(micMeterAnalyser);
+
+    const samples = new Uint8Array(micMeterAnalyser.fftSize);
+    micMeterTimer = setInterval(() => {
+      if (!micMeterAnalyser) return;
+      micMeterAnalyser.getByteTimeDomainData(samples);
+      let sum = 0;
+      for (let i = 0; i < samples.length; i += 1) {
+        const sample = (samples[i] - 128) / 128;
+        sum += sample * sample;
+      }
+      const rms = Math.sqrt(sum / samples.length);
+      const level = Math.max(0, Math.min(100, Math.round(rms * 260)));
+      const meter = $('#micInputLevel');
+      if (meter) meter.style.width = `${level}%`;
+      if (micMeterContext && micMeterContext.state === 'suspended') {
+        micMeterContext.resume().catch(() => {});
+      }
+    }, 100);
+  } catch (error) {
+    console.warn('Microphone meter unavailable:', error);
+    stopMicInputMeter();
+  }
+}
+
+function attachLocalAudioTrackLifecycle(track) {
+  if (!track) return;
+  markSpeechTrack(track);
+  track.onended = () => {
+    if (!isInCall || !localStream || !localStream.getAudioTracks().includes(track)) return;
+    wasMicInterrupted = isMicOn;
+    isMicOn = false;
+    updateCallButtons();
+    publishMediaState();
+    showToast('Микрофон прервался. При возвращении в KOTOMASTER попробуем восстановить его.');
+  };
+}
+
+function attachLocalVideoTrackLifecycle(track) {
+  if (!track) return;
+  track.onended = () => {
+    if (!isInCall || !localStream || !localStream.getVideoTracks().includes(track)) return;
+    wasCameraInterrupted = isCameraOn;
+    isCameraOn = false;
+    updateCallButtons();
+    publishMediaState();
+    showToast('Камера прервалась. При возвращении в KOTOMASTER попробуем восстановить её.');
+  };
+}
+
+async function recoverInterruptedMedia() {
+  if (!isInCall || !localStream || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+  const profile = getSelectedVideoProfile();
+
+  if (wasMicInterrupted) {
+    try {
+      const stream = await captureAudioInput(selectedAudioDeviceId);
+      const track = stream.getAudioTracks()[0];
+      if (!track) throw new Error('Браузер не вернул микрофон.');
+      track.enabled = true;
+      attachLocalAudioTrackLifecycle(track);
+      const previous = localStream.getAudioTracks();
+      previous.forEach((item) => localStream.removeTrack(item));
+      localStream.addTrack(track);
+      await addLocalTrackToPeers(track, 'audio');
+      previous.forEach((item) => { item.onended = null; item.stop(); });
+      selectedAudioDeviceId = track.getSettings ? track.getSettings().deviceId || selectedAudioDeviceId : selectedAudioDeviceId;
+      isMicOn = true;
+      wasMicInterrupted = false;
+      startMicInputMeter(track);
+      await refreshAudioInputDevices(selectedAudioDeviceId);
+      updateTileState(socket.id, { audio: true, video: isCameraOn });
+      publishMediaState();
+      showToast('Микрофон восстановлен.');
+    } catch (error) {
+      console.warn('Could not restore microphone after mobile resume:', error);
+      showToast('Микрофон не восстановился автоматически. Нажми кнопку микрофона.');
+    }
+  }
+
+  if (wasCameraInterrupted) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          width: { ideal: profile.width },
+          height: { ideal: profile.height },
+          frameRate: { ideal: profile.frameRate, max: profile.frameRate }
+        }
+      });
+      const track = stream.getVideoTracks()[0];
+      if (!track) throw new Error('Браузер не вернул камеру.');
+      try { track.contentHint = 'motion'; } catch (_error) {}
+      attachLocalVideoTrackLifecycle(track);
+      const previous = localStream.getVideoTracks();
+      previous.forEach((item) => localStream.removeTrack(item));
+      localStream.addTrack(track);
+      await addLocalTrackToPeers(track, 'video');
+      previous.forEach((item) => { item.onended = null; item.stop(); });
+      isCameraOn = true;
+      wasCameraInterrupted = false;
+      const tile = makeVideoTile(socket.id, myName, true);
+      tile.querySelector('video').srcObject = localStream;
+      updateTileState(socket.id, { audio: isMicOn, video: true });
+      publishMediaState();
+      showToast('Камера восстановлена.');
+    } catch (error) {
+      console.warn('Could not restore camera after mobile resume:', error);
+      showToast('Камера не восстановилась автоматически. Нажми кнопку камеры.');
+    }
+  }
+}
+
+async function selectAudioInput() {
+  if (isSwitchingAudioInput) return;
+  const select = $('#audioInputSelect');
+  if (!select || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showToast('Браузер не поддерживает доступ к микрофону. Открой KOTOMASTER по HTTPS.');
+    return;
+  }
+  isSwitchingAudioInput = true;
+  select.disabled = true;
+  const requestedDeviceId = select.value;
+  const isLiveCall = Boolean(isInCall && localStream);
+  let captured = null;
+  const changedSenders = [];
+  try {
+    captured = await captureAudioInput(requestedDeviceId);
+    const nextTrack = captured.getAudioTracks()[0];
+    if (!nextTrack) throw new Error('Браузер не вернул аудиодорожку микрофона.');
+    nextTrack.enabled = true;
+    attachLocalAudioTrackLifecycle(nextTrack);
+    if (isLiveCall) {
+      for (const pc of peerConnections.values()) {
+        if (pc.signalingState === 'closed') continue;
+        let sender = findAudioSender(pc);
+        if (sender) {
+          const previousTrack = sender.track;
+          await sender.replaceTrack(nextTrack);
+          changedSenders.push({ pc, sender, previousTrack });
+          await tuneAudioSender(sender);
+        } else {
+          sender = pc.addTrack(nextTrack, localStream);
+          changedSenders.push({ pc, sender, previousTrack: null, added: true });
+          await tuneAudioSender(sender);
+          preferOpusAudioCodec(pc, sender);
+        }
+      }
+      const previousTracks = localStream.getAudioTracks();
+      previousTracks.forEach((track) => localStream.removeTrack(track));
+      localStream.addTrack(nextTrack);
+      captured = null;
+      previousTracks.forEach((track) => { track.onended = null; track.stop(); });
+      isMicOn = true;
+      updateTileState(socket.id, { audio: true, video: isCameraOn });
+      updateCallButtons();
+      publishMediaState();
+    } else {
+      stopMicInputMeter();
+      if (previewAudioStream) previewAudioStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
+      previewAudioStream = captured;
+      captured = null;
+    }
+    const activeStream = isLiveCall ? localStream : previewAudioStream;
+    const activeTrack = activeStream && activeStream.getAudioTracks()[0];
+    const settings = activeTrack && activeTrack.getSettings ? activeTrack.getSettings() : {};
+    selectedAudioDeviceId = settings.deviceId || requestedDeviceId || '';
+    startMicInputMeter(activeTrack);
+    await refreshAudioInputDevices(selectedAudioDeviceId);
+    const selectedOption = select.selectedOptions[0];
+    const deviceName = selectedOption && selectedOption.textContent ? selectedOption.textContent : 'системный микрофон';
+    showToast(isLiveCall
+      ? `Микрофон переключён: ${deviceName}. Проверь индикатор уровня.`
+      : `Микрофон готов: ${deviceName}. Говори и проверь индикатор уровня до звонка.`);
+  } catch (error) {
+    console.error('Microphone selection failed:', error);
+    for (const entry of changedSenders.reverse()) {
+      try {
+        if (entry.added) entry.pc.removeTrack(entry.sender);
+        else await entry.sender.replaceTrack(entry.previousTrack || null);
+      } catch (rollbackError) { console.warn('Microphone rollback failed:', rollbackError); }
+    }
+    if (captured) captured.getTracks().forEach((track) => track.stop());
+    await refreshAudioInputDevices();
+    let message = 'Не удалось включить выбранный микрофон. Попробуй системный микрофон.';
+    if (error && (error.name === 'NotAllowedError' || error.name === 'SecurityError')) message = 'Браузеру запрещён доступ к микрофону. Разреши его для KOTOMASTER в настройках сайта.';
+    else if (error && error.name === 'NotFoundError') message = 'Выбранный микрофон больше не найден. Выбери системный микрофон.';
+    else if (error && error.name === 'NotReadableError') message = 'Микрофон занят другим приложением. Закрой его и попробуй снова.';
+    showToast(message);
+  } finally {
+    isSwitchingAudioInput = false;
+    await refreshAudioInputDevices(selectedAudioDeviceId);
+  }
+}
+
+function markSpeechTrack(track) {
+  if (!track) return;
+  try { track.contentHint = 'speech'; } catch (_error) {}
+}
+
+async function startCall() {
+  if (isInCall) return;
+  resumeCallAfterRestore = false;
+  if (isSwitchingAudioInput) { showToast('Дождись завершения проверки микрофона.'); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showToast('Для видеозвонка открой KOTOMASTER через HTTPS или localhost.');
+    return;
+  }
+
+  const button = $('#startCallBtn');
+  button.disabled = true;
+  button.textContent = 'Подключаем голос…';
+  let audioStream = null;
+  let usedAudioPreview = false;
+
+  try {
+    const profile = getSelectedVideoProfile();
+    try {
+      const previewTrack = previewAudioStream && previewAudioStream.getAudioTracks().find((track) => track.readyState === 'live');
+      if (previewTrack) {
+        previewTrack.enabled = true;
+        audioStream = previewAudioStream;
+        usedAudioPreview = true;
+      } else {
+        audioStream = await captureAudioInput(selectedAudioDeviceId);
+      }
+    } catch (error) {
+      console.warn('Microphone unavailable; continuing without microphone:', error);
+      showToast(error && error.name === 'NotAllowedError'
+        ? 'Нет доступа к микрофону. Звонок попробует запуститься без него.'
+        : 'Микрофон пока не подключился. Камеру запускаем отдельно.');
+    }
+
+    // Start the call as soon as audio is ready. Camera capture must not delay speech.
+    localStream = new MediaStream(audioStream ? audioStream.getAudioTracks() : []);
+    if (usedAudioPreview) previewAudioStream = null;
+    const activeAudioTrack = localStream.getAudioTracks()[0];
+    if (activeAudioTrack && activeAudioTrack.getSettings) {
+      selectedAudioDeviceId = activeAudioTrack.getSettings().deviceId || selectedAudioDeviceId;
+    }
+    localStream.getAudioTracks().forEach(attachLocalAudioTrackLifecycle);
+
+    isInCall = true;
+    activeCallStartedAt = Date.now();
+    isMicOn = localStream.getAudioTracks().length > 0;
+    isCameraOn = false;
+    wasMicInterrupted = false;
+    wasCameraInterrupted = false;
+    isSharing = false;
+
+    const localTile = makeVideoTile(socket.id, myName, true);
+    const localVideo = localTile.querySelector('video');
+    localVideo.srcObject = localStream;
+    updateTileState(socket.id, { audio: isMicOn, video: false });
+    updateCallButtons();
+    socket.emit('media:state', { inCall: true, audio: isMicOn, video: false, sharing: false });
+    participants.set(socket.id, { id: socket.id, name: myName, inCall: true, audio: isMicOn, video: false, sharing: false });
+    renderParticipants();
+    updateCallDescription();
+    updateCallStage();
+
+    if (activeAudioTrack) {
+      startMicInputMeter(activeAudioTrack);
+      await refreshAudioInputDevices(activeAudioTrack.getSettings ? activeAudioTrack.getSettings().deviceId : '');
+    } else {
+      await refreshAudioInputDevices();
+    }
+
+    for (const member of participants.values()) {
+      if (member.id !== socket.id && member.inCall) {
+        createPeerConnection(member.id).catch((error) => showToast(error.message));
+      }
+    }
+
+    showToast(isMicOn ? 'Голос подключён. Запускаем камеру…' : 'Звонок запущен. Подключаем камеру и ждём микрофон…');
+    enableCameraAfterAudio(profile).catch((error) => {
+      console.warn('Camera startup failed:', error);
+    });
+  } catch (error) {
+    console.error('Call startup error:', error);
+    if (isInCall) stopCall();
+    else if (audioStream && !usedAudioPreview) audioStream.getTracks().forEach((track) => track.stop());
+    let message = 'Не удалось запустить видеозвонок.';
+    if (error && error.name === 'NotAllowedError') message = 'Разреши доступ к микрофону в настройках браузера.';
+    else if (error && error.name === 'NotFoundError') message = 'На устройстве не найден микрофон.';
+    else if (error && error.name === 'NotReadableError') message = 'Микрофон занят другим приложением.';
+    showToast(message);
+  } finally {
+    button.disabled = false;
+    button.innerHTML = '<span>▶</span> Войти в видеозвонок';
+  }
+}
+
+async function enableCameraAfterAudio(profile) {
+  if (!isInCall || !localStream || isCameraOn || isSharing) return;
+  let videoStream = null;
+  try {
+    videoStream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        width: { ideal: profile.width },
+        height: { ideal: profile.height },
+        frameRate: { ideal: profile.frameRate, max: profile.frameRate }
+      }
+    });
+    const videoTrack = videoStream.getVideoTracks()[0];
+    if (!videoTrack) throw new Error('Браузер не вернул видеодорожку камеры.');
+    if (!isInCall || !localStream) {
+      videoStream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    try { videoTrack.contentHint = 'motion'; } catch (_error) {}
+    attachLocalVideoTrackLifecycle(videoTrack);
+    localStream.addTrack(videoTrack);
+    wasCameraInterrupted = false;
+    isCameraOn = true;
+    const localTile = makeVideoTile(socket.id, myName, true);
+    const localVideo = localTile.querySelector('video');
+    localVideo.srcObject = localStream;
+    await addLocalTrackToPeers(videoTrack, 'video');
+    updateTileState(socket.id, { audio: isMicOn, video: true });
+    updateCallButtons();
+    publishMediaState();
+    showToast('Камера подключена. Голос уже передавался, не дожидаясь её запуска.');
+  } catch (error) {
+    console.warn('Camera unavailable:', error);
+    let message = 'Камера не подключилась. Звонок продолжится со звуком.';
+    if (error && error.name === 'NotAllowedError') message = 'Браузеру запрещён доступ к камере. Звонок продолжится со звуком.';
+    else if (error && error.name === 'NotFoundError') message = 'Камера не найдена. Звонок продолжится со звуком.';
+    else if (error && error.name === 'NotReadableError') message = 'Камера занята другим приложением. Звонок продолжится со звуком.';
+    showToast(message);
+    if (!isMicOn && isInCall) {
+      showToast('Не удалось подключить ни микрофон, ни камеру. Проверь разрешения браузера.');
+      stopCall();
+    }
+  }
+}
+
+function currentOutgoingVideoSettings() {
+  const profile = getSelectedVideoProfile();
+  const sharing = Boolean(isSharing && screenStream && screenStream.getVideoTracks().length);
+  return {
+    bitrate: sharing ? profile.shareBitrate : profile.bitrate,
+    frameRate: sharing ? profile.shareFrameRate : profile.frameRate,
+    keepTextSharp: sharing
+  };
+}
+
+function scheduleIceRestart(peerId, pc) {
+  if (!pc || pc.signalingState === 'closed' || !isInCall) return;
+  if (pc._iceRestartTimer) return;
+
+  const delay = pc.iceConnectionState === 'failed' ? 0 : 4500;
+  pc._iceRestartTimer = setTimeout(() => {
+    pc._iceRestartTimer = null;
+    if (!isInCall || pc.signalingState === 'closed') return;
+    if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') return;
+
+    if ((pc._iceRestartAttempts || 0) >= 2) {
+      const member = participants.get(peerId);
+      showToast(`Связь с ${member && member.name ? member.name : 'участником'} не восстановилась. Возможно, этой сети нужен TURN-сервер.`);
+      return;
+    }
+
+    pc._iceRestartAttempts = (pc._iceRestartAttempts || 0) + 1;
+    try {
+      pc.restartIce();
+      showToast('Восстанавливаем сетевое соединение…');
+    } catch (error) {
+      console.warn('ICE restart failed:', error);
+    }
+  }, delay);
+}
+
+function startPeerQualityMonitor(peerId, pc) {
+  if (pc._qualityTimer) clearInterval(pc._qualityTimer);
+  pc._qualityBusy = false;
+  pc._lastAdaptiveBitrate = 0;
+  pc._lastScaleDown = 1;
+  pc._lastAdaptiveFrameRate = 0;
+  pc._outboundSamples = new Map();
+
+  pc._qualityTimer = setInterval(async () => {
+    if (pc._qualityBusy || pc.signalingState === 'closed' || !isInCall) return;
+    pc._qualityBusy = true;
+    try {
+      const stats = await pc.getStats();
+      const now = performance.now();
+      let selectedPairId = null;
+      let selectedPair = null;
+      let videoPacketLoss = 0;
+      let audioPacketLoss = 0;
+      let audioJitterMs = NaN;
+      let encoderLimit = 'none';
+      let measuredVideoBps = NaN;
+      let encodedFps = NaN;
+      let droppedFrameRatio = 0;
+      let encodeLoad = 0;
+
+      stats.forEach((report) => {
+        if (report.type === 'transport' && report.selectedCandidatePairId) {
+          selectedPairId = report.selectedCandidatePairId;
+        }
+
+        if (report.type === 'remote-inbound-rtp') {
+          const loss = Math.max(0, Number(report.fractionLost) || 0);
+          if (report.kind === 'audio' || report.mediaType === 'audio') audioPacketLoss = Math.max(audioPacketLoss, loss);
+          else if (report.kind === 'video' || report.mediaType === 'video') videoPacketLoss = Math.max(videoPacketLoss, loss);
+        }
+
+        if (report.type === 'inbound-rtp' && (report.kind === 'audio' || report.mediaType === 'audio') &&
+            Number.isFinite(report.jitter)) {
+          audioJitterMs = Math.max(Number.isFinite(audioJitterMs) ? audioJitterMs : 0, report.jitter * 1000);
+        }
+
+        if (report.type === 'outbound-rtp' && (report.kind === 'video' || report.mediaType === 'video') && !report.isRemote) {
+          const previous = pc._outboundSamples.get(report.id);
+          if (previous) {
+            const elapsedMs = now - previous.time;
+            if (elapsedMs > 500) {
+              const bytesDelta = Math.max(0, (Number(report.bytesSent) || 0) - previous.bytes);
+              const encodedDelta = Math.max(0, (Number(report.framesEncoded) || 0) - previous.encoded);
+              const droppedDelta = Math.max(0, (Number(report.framesDropped) || 0) - previous.dropped);
+              const encodeTimeDelta = Math.max(0, (Number(report.totalEncodeTime) || 0) - previous.encodeTime);
+
+              measuredVideoBps = (bytesDelta * 8 * 1000) / elapsedMs;
+              encodedFps = encodedDelta * 1000 / elapsedMs;
+              droppedFrameRatio = droppedDelta / Math.max(1, droppedDelta + encodedDelta);
+              encodeLoad = encodeTimeDelta * 1000 / elapsedMs;
+            }
+          }
+          pc._outboundSamples.set(report.id, {
+            time: now,
+            bytes: Number(report.bytesSent) || 0,
+            encoded: Number(report.framesEncoded) || 0,
+            dropped: Number(report.framesDropped) || 0,
+            encodeTime: Number(report.totalEncodeTime) || 0
+          });
+          if (report.qualityLimitationReason && report.qualityLimitationReason !== 'none') {
+            encoderLimit = report.qualityLimitationReason;
+          }
+        }
+      });
+
+      stats.forEach((report) => {
+        if (report.type !== 'candidate-pair' || report.state !== 'succeeded') return;
+        if ((selectedPairId && report.id === selectedPairId) || (!selectedPairId && (report.selected || report.nominated))) {
+          selectedPair = report;
+        }
+      });
+
+      const rttMs = selectedPair && Number.isFinite(selectedPair.currentRoundTripTime)
+        ? Math.round(selectedPair.currentRoundTripTime * 1000)
+        : NaN;
+
+      let path = '';
+      if (selectedPair && typeof stats.get === 'function') {
+        const localCandidate = stats.get(selectedPair.localCandidateId);
+        path = localCandidate && localCandidate.candidateType === 'relay' ? 'TURN' : 'P2P';
+      }
+
+      const sender = findVideoSender(pc);
+      const current = currentOutgoingVideoSettings();
+      let desiredBitrate = current.bitrate;
+
+      if (selectedPair && Number.isFinite(selectedPair.availableOutgoingBitrate) && selectedPair.availableOutgoingBitrate > 0) {
+        desiredBitrate = Math.min(desiredBitrate, selectedPair.availableOutgoingBitrate * 0.68);
+      }
+
+      if (videoPacketLoss > 0.18) desiredBitrate *= 0.48;
+      else if (videoPacketLoss > 0.10) desiredBitrate *= 0.68;
+      else if (videoPacketLoss > 0.06) desiredBitrate *= 0.84;
+      if (encoderLimit === 'bandwidth') desiredBitrate *= 0.68;
+      if (encoderLimit === 'cpu' || encodeLoad > 0.78) desiredBitrate *= 0.76;
+      if (droppedFrameRatio > 0.10) desiredBitrate *= 0.76;
+      if (Number.isFinite(measuredVideoBps) && measuredVideoBps < desiredBitrate * 0.45 &&
+          (encoderLimit === 'bandwidth' || droppedFrameRatio > 0.08)) {
+        desiredBitrate = Math.min(desiredBitrate, measuredVideoBps * 1.15);
+      }
+
+      desiredBitrate = Math.max(100000, Math.round(desiredBitrate));
+      const previousBitrate = pc._lastAdaptiveBitrate || 0;
+      const targetBitrate = previousBitrate
+        ? Math.round(desiredBitrate < previousBitrate
+          ? previousBitrate * 0.48 + desiredBitrate * 0.52
+          : previousBitrate * 0.86 + desiredBitrate * 0.14)
+        : desiredBitrate;
+
+      const ratio = targetBitrate / Math.max(current.bitrate, 1);
+      let scale = 1;
+      let fpsFactor = 1;
+
+      if (ratio < 0.22 || droppedFrameRatio > 0.22 || encoderLimit === 'cpu' && encodeLoad > 0.85) {
+        scale = current.keepTextSharp ? 1.8 : (videoQualityBoostEnabled ? 2.35 : 1.85);
+        fpsFactor = videoQualityBoostEnabled && !current.keepTextSharp ? 0.72 : 0.56;
+      } else if (ratio < 0.40 || videoPacketLoss > 0.14 || droppedFrameRatio > 0.12 || encoderLimit === 'bandwidth') {
+        scale = current.keepTextSharp ? 1.5 : (videoQualityBoostEnabled ? 1.85 : 1.5);
+        fpsFactor = videoQualityBoostEnabled && !current.keepTextSharp ? 0.82 : 0.72;
+      } else if (ratio < 0.66 || videoPacketLoss > 0.07 || droppedFrameRatio > 0.06 || encodeLoad > 0.68) {
+        scale = current.keepTextSharp ? 1.15 : (videoQualityBoostEnabled ? 1.35 : 1.2);
+        fpsFactor = videoQualityBoostEnabled && !current.keepTextSharp ? 0.92 : 0.86;
+      }
+
+      const minimumFrameRate = videoQualityBoostEnabled
+        ? (current.keepTextSharp ? 12 : 20)
+        : (current.keepTextSharp ? 8 : 10);
+      const targetFrameRate = Math.max(minimumFrameRate, Math.round(current.frameRate * fpsFactor));
+
+      if (sender) {
+        const previousScale = pc._lastScaleDown || 1;
+        const bitrateChanged = !previousBitrate || Math.abs(targetBitrate - previousBitrate) > Math.max(50000, previousBitrate * 0.09);
+        const scaleChanged = scale !== previousScale;
+        const frameRateChanged = targetFrameRate !== pc._lastAdaptiveFrameRate;
+        if (bitrateChanged || scaleChanged || frameRateChanged) {
+          await tuneVideoSender(sender, targetBitrate, targetFrameRate, current.keepTextSharp, scale);
+          pc._lastAdaptiveBitrate = targetBitrate;
+          pc._lastScaleDown = scale;
+          pc._lastAdaptiveFrameRate = targetFrameRate;
+        }
+      }
+
+      let level = 'good';
+      if (
+        audioPacketLoss > 0.12 ||
+        (Number.isFinite(audioJitterMs) && audioJitterMs > 80) ||
+        videoPacketLoss > 0.18 ||
+        droppedFrameRatio > 0.22 ||
+        (Number.isFinite(rttMs) && rttMs > 550) ||
+        (encoderLimit === 'cpu' && encodeLoad > 0.85)
+      ) level = 'poor';
+      else if (
+        audioPacketLoss > 0.05 ||
+        (Number.isFinite(audioJitterMs) && audioJitterMs > 35) ||
+        videoPacketLoss > 0.07 ||
+        droppedFrameRatio > 0.08 ||
+        (Number.isFinite(rttMs) && rttMs > 280) ||
+        ratio < 0.72 ||
+        encoderLimit !== 'none'
+      ) level = 'medium';
+
+      updateRtcQualityIndicator(
+        level, path, rttMs, videoPacketLoss,
+        (participants.get(peerId) || {}).name,
+        audioJitterMs, audioPacketLoss
+      );
+      const bars = $('#rtcQualityBars');
+      if (bars) {
+        const extra = [
+          Number.isFinite(measuredVideoBps) ? `Фактическая отправка видео: ${Math.round(measuredVideoBps / 1000)} Кбит/с` : '',
+          Number.isFinite(encodedFps) ? `Кодирование: ${encodedFps.toFixed(1)} FPS` : '',
+          Number.isFinite(droppedFrameRatio) ? `Пропущено кадров: ${Math.round(droppedFrameRatio * 100)}%` : '',
+          encoderLimit !== 'none' ? `Ограничение: ${encoderLimit}` : ''
+        ].filter(Boolean);
+        if (extra.length) bars.title += ` · ${extra.join(' · ')}`;
+      }
+    } catch (error) {
+      console.warn('WebRTC quality monitor skipped:', error);
+    } finally {
+      pc._qualityBusy = false;
+    }
+  }, 2000);
+}
+
+async function createPeerConnection(peerId) {
+  if (!isInCall || !localStream) throw new Error('Сначала войди в звонок.');
+  if (peerConnections.has(peerId)) return peerConnections.get(peerId);
+  if (peerConnectionPromises.has(peerId)) return peerConnectionPromises.get(peerId);
+
+  const creation = (async () => {
+    if (rtcConfigPromise) {
+      try { await rtcConfigPromise; } catch (_error) {}
+    }
+    if (!isInCall || !localStream) throw new Error('Звонок уже завершён.');
+    if (peerConnections.has(peerId)) return peerConnections.get(peerId);
+
+    const member = participants.get(peerId) || { name: 'Участник' };
+    const pc = new RTCPeerConnection({
+      iceServers: appConfig.iceServers || [],
+      iceTransportPolicy: appConfig.iceTransportPolicy || 'all',
+      iceCandidatePoolSize: 4,
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require'
+    });
+    pc._polite = Boolean(socket && socket.id.localeCompare(peerId) > 0);
+    pc._makingOffer = false;
+    pc._ignoreOffer = false;
+    pc._isSettingRemoteAnswerPending = false;
+    pc._iceRestartAttempts = 0;
+    peerConnections.set(peerId, pc);
+
+    pc.onnegotiationneeded = async () => {
+      if (pc._makingOffer || pc.signalingState !== 'stable' || !socket || !socket.connected) return;
+      pc._makingOffer = true;
+      try {
+        // Perfect Negotiation: both peers may offer; polite/impolite roles resolve collisions.
+        await pc.setLocalDescription();
+        if (socket && socket.connected) {
+          socket.emit('rtc:signal', { to: peerId, signal: pc.localDescription });
+        }
+      } catch (error) {
+        console.error('WebRTC negotiation error:', error);
+        showToast(`Не удалось согласовать соединение с ${member.name || 'участником'}.`);
+      } finally {
+        pc._makingOffer = false;
+      }
+    };
+
+    localStream.getAudioTracks().forEach((track) => {
+      attachLocalAudioTrackLifecycle(track);
+      const audioSender = pc.addTrack(track, localStream);
+      tuneAudioSender(audioSender);
+      preferOpusAudioCodec(pc, audioSender);
+    });
+    const outgoingVideoTrack = isSharing && screenStream
+      ? screenStream.getVideoTracks()[0]
+      : localStream.getVideoTracks()[0];
+    if (outgoingVideoTrack) {
+      pc.addTrack(outgoingVideoTrack, isSharing && screenStream ? screenStream : localStream);
+      const settings = currentOutgoingVideoSettings();
+      const sender = pc.getSenders().find((item) => item.track === outgoingVideoTrack);
+      if (sender) tuneVideoSender(sender, settings.bitrate, settings.frameRate, settings.keepTextSharp);
+    }
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate && socket && socket.connected) {
+        socket.emit('rtc:signal', { to: peerId, signal: { candidate: event.candidate } });
+      }
+    };
+
+    pc.ontrack = (event) => {
+      const currentMember = participants.get(peerId) || member;
+
+      if (event.track.kind === 'audio') {
+        // Prefer a short voice jitter buffer where the browser exposes this control.
+        try {
+          if (event.receiver && 'jitterBufferTarget' in event.receiver) event.receiver.jitterBufferTarget = 80;
+        } catch (error) {
+          console.warn('Could not set low-latency audio playout:', error);
+        }
+        let audioElements = remoteAudioElements.get(peerId);
+        if (!audioElements) {
+          audioElements = [];
+          remoteAudioElements.set(peerId, audioElements);
+        }
+        const existing = audioElements.find((item) => item.dataset.trackId === event.track.id);
+        if (existing) {
+          existing.srcObject = new MediaStream([event.track]);
+          existing.play().catch(() => {});
+          return;
+        }
+
+        const audio = document.createElement('audio');
+        audio.autoplay = true;
+        audio.playsInline = true;
+        audio.muted = false;
+        audio.volume = 1;
+        audio.className = 'remote-audio-only';
+        audio.dataset.peerId = peerId;
+        audio.dataset.trackId = event.track.id;
+        audio.setAttribute('autoplay', '');
+        audio.srcObject = new MediaStream([event.track]);
+        document.body.append(audio);
+        audioElements.push(audio);
+
+        const tryPlayback = () => {
+          audio.play().catch(() => showToast('Нажми в видеокомнате, чтобы разрешить звук собеседника.'));
+        };
+        event.track.onunmute = tryPlayback;
+        event.track.onended = () => {
+          audio.pause();
+          audio.srcObject = null;
+          audio.remove();
+          const current = remoteAudioElements.get(peerId) || [];
+          remoteAudioElements.set(peerId, current.filter((item) => item !== audio));
+        };
+        tryPlayback();
+        return;
+      }
+
+      const tile = makeVideoTile(peerId, currentMember.name || 'Участник');
+      const video = tile.querySelector('video');
+      let remoteStream = event.streams && event.streams[0];
+      if (!remoteStream) remoteStream = new MediaStream([event.track]);
+      video.srcObject = remoteStream;
+      video.muted = true;
+      video.playsInline = true;
+      event.track.onunmute = () => video.play().catch(() => {});
+      video.play().catch(() => {});
+      tile.classList.toggle('has-video', event.track.readyState === 'live' && event.track.enabled);
+      tile.classList.toggle('sharing', Boolean(currentMember.sharing));
+      updateTileState(peerId, currentMember);
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'connected') {
+        if (pc._iceRestartTimer) clearTimeout(pc._iceRestartTimer);
+        pc._iceRestartTimer = null;
+        pc._iceRestartAttempts = 0;
+      } else if (pc.connectionState === 'failed') {
+        scheduleIceRestart(peerId, pc);
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        if (pc._iceRestartTimer) clearTimeout(pc._iceRestartTimer);
+        pc._iceRestartTimer = null;
+        pc._iceRestartAttempts = 0;
+      } else if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+        scheduleIceRestart(peerId, pc);
+      }
+    };
+
+    startPeerQualityMonitor(peerId, pc);
+    return pc;
+  })();
+
+  peerConnectionPromises.set(peerId, creation);
+  try {
+    return await creation;
+  } finally {
+    peerConnectionPromises.delete(peerId);
+  }
+}
+
+async function flushPendingIce(peerId, pc) {
+  const queued = pendingIce.get(peerId) || [];
+  pendingIce.delete(peerId);
+  for (const candidate of queued) {
+    try { await pc.addIceCandidate(candidate); } catch (error) { console.warn('ICE candidate skipped:', error); }
+  }
+}
+
+function closePeer(peerId) {
+  const pc = peerConnections.get(peerId);
+  if (pc) {
+    pc.ontrack = null;
+    pc.onicecandidate = null;
+    pc.onconnectionstatechange = null;
+    pc.oniceconnectionstatechange = null;
+    pc.onnegotiationneeded = null;
+    if (pc._iceRestartTimer) clearTimeout(pc._iceRestartTimer);
+    if (pc._qualityTimer) clearInterval(pc._qualityTimer);
+    pc.getReceivers().forEach((receiver) => { if (receiver.track) receiver.track.stop(); });
+    const audioElements = remoteAudioElements.get(peerId) || [];
+    audioElements.forEach((audio) => { audio.pause(); audio.srcObject = null; audio.remove(); });
+    remoteAudioElements.delete(peerId);
+    pc.close();
+    peerConnections.delete(peerId);
+  }
+  pendingIce.delete(peerId);
+  peerConnectionPromises.delete(peerId);
+}
+
+function removeVideoTile(peerId) {
+  const tile = videoGrid.querySelector(`[data-peer-id="${CSS.escape(peerId)}"]`);
+  if (tile) {
+    const video = tile.querySelector('video');
+    if (video && video.srcObject) video.srcObject = null;
+    tile.remove();
+  }
+}
+
+function updateCallButtons() {
+  const mic = $('#micBtn');
+  const camera = $('#cameraBtn');
+  const share = $('#shareBtn');
+  const leave = $('#leaveCallBtn');
+  [mic, camera, share, leave].forEach((button) => { button.disabled = !isInCall; });
+  mic.classList.toggle('active', isInCall && isMicOn);
+  camera.classList.toggle('active', isInCall && isCameraOn);
+  share.classList.toggle('active', isInCall && isSharing);
+  mic.title = isMicOn ? 'Выключить микрофон' : 'Включить микрофон';
+  camera.title = isCameraOn ? 'Выключить камеру' : 'Включить камеру';
+  share.title = isSharing ? 'Остановить показ экрана' : 'Показать экран';
+  $('#callStatusDot').classList.toggle('live', isInCall);
+  $('#callStatusText').textContent = isInCall ? 'Ты в звонке' : 'Ты не в звонке';
+}
+
+function publishMediaState() {
+  if (!socket || !socket.connected) return;
+  socket.emit('media:state', { inCall: isInCall, audio: isMicOn, video: isCameraOn, sharing: isSharing });
+  const me = participants.get(socket.id);
+  if (me) {
+    me.inCall = isInCall;
+    me.audio = isMicOn;
+    me.video = isCameraOn;
+    me.sharing = isSharing;
+    participants.set(socket.id, me);
+  }
+  renderParticipants();
+  updateCallDescription();
+}
+
+function findAudioSender(pc) {
+  if (!pc) return null;
+  const active = pc.getSenders().find((sender) => sender.track && sender.track.kind === 'audio');
+  if (active) return active;
+  const transceiver = pc.getTransceivers().find((item) =>
+    item.receiver && item.receiver.track && item.receiver.track.kind === 'audio'
+  );
+  return transceiver ? transceiver.sender : null;
+}
+
+function findVideoSender(pc) {
+  if (!pc) return null;
+  const active = pc.getSenders().find((sender) => sender.track && sender.track.kind === 'video');
+  if (active) return active;
+  const transceiver = pc.getTransceivers().find((item) =>
+    item.receiver && item.receiver.track && item.receiver.track.kind === 'video'
+  );
+  return transceiver ? transceiver.sender : null;
+}
+
+async function addLocalTrackToPeers(track, kind) {
+  for (const pc of peerConnections.values()) {
+    if (pc.signalingState === 'closed') continue;
+
+    const sender = kind === 'video' ? findVideoSender(pc) : findAudioSender(pc);
+    try {
+      if (sender) {
+        // While sharing the screen, keep the screen track published until sharing ends.
+        if (kind === 'video' && isSharing) continue;
+        await sender.replaceTrack(track);
+        if (kind === 'audio') await tuneAudioSender(sender);
+        else {
+          const settings = currentOutgoingVideoSettings();
+          await tuneVideoSender(sender, settings.bitrate, settings.frameRate, settings.keepTextSharp);
+        }
+      } else {
+        const addedSender = pc.addTrack(track, localStream);
+        if (kind === 'audio') {
+          await tuneAudioSender(addedSender);
+          preferOpusAudioCodec(pc, addedSender);
+        } else {
+          const settings = currentOutgoingVideoSettings();
+          await tuneVideoSender(addedSender, settings.bitrate, settings.frameRate, settings.keepTextSharp);
+        }
+      }
+    } catch (error) {
+      console.warn(`Could not add local ${kind} track:`, error);
+      showToast(kind === 'audio'
+        ? 'Не удалось подключить микрофон к текущему звонку.'
+        : 'Не удалось подключить камеру к текущему звонку.');
+    }
+  }
+}
+
+async function toggleMic() {
+  if (!isInCall || !localStream) return;
+
+  let tracks = localStream.getAudioTracks();
+  if (!tracks.length) {
+    try {
+      const stream = await captureAudioInput(selectedAudioDeviceId);
+      tracks = stream.getAudioTracks();
+      tracks.forEach((track) => {
+        track.enabled = true;
+        attachLocalAudioTrackLifecycle(track);
+        localStream.addTrack(track);
+      });
+      if (tracks[0]) {
+        await addLocalTrackToPeers(tracks[0], 'audio');
+        startMicInputMeter(tracks[0]);
+        await refreshAudioInputDevices(tracks[0].getSettings ? tracks[0].getSettings().deviceId : '');
+      }
+    } catch (error) {
+      console.warn('Could not enable microphone:', error);
+      showToast(error && error.name === 'NotAllowedError'
+        ? 'Разреши микрофон в настройках браузера.'
+        : 'Не удалось включить микрофон.');
+      return;
+    }
+    isMicOn = tracks.length > 0;
+  } else {
+    isMicOn = !isMicOn;
+    tracks.forEach((track) => { track.enabled = isMicOn; });
+  }
+
+  updateTileState(socket.id, { audio: isMicOn, video: isCameraOn });
+  updateCallButtons();
+  publishMediaState();
+}
+
+async function toggleCamera() {
+  if (!isInCall || !localStream) return;
+
+  let tracks = localStream.getVideoTracks();
+  if (!tracks.length) {
+    try {
+      const profile = getSelectedVideoProfile();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          width: { ideal: profile.width },
+          height: { ideal: profile.height },
+          frameRate: { ideal: profile.frameRate, max: profile.frameRate }
+        }
+      });
+      tracks = stream.getVideoTracks();
+      tracks.forEach((track) => {
+        try { track.contentHint = 'motion'; } catch (_error) {}
+        track.enabled = true;
+        attachLocalVideoTrackLifecycle(track);
+        localStream.addTrack(track);
+      });
+      if (tracks[0]) {
+        await addLocalTrackToPeers(tracks[0], 'video');
+        const senderSettings = currentOutgoingVideoSettings();
+        for (const pc of peerConnections.values()) {
+          const sender = findVideoSender(pc);
+          if (sender && sender.track === tracks[0]) {
+            await tuneVideoSender(sender, senderSettings.bitrate, senderSettings.frameRate, senderSettings.keepTextSharp);
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Could not enable camera:', error);
+      let message = 'Не удалось включить камеру.';
+      if (error && error.name === 'NotAllowedError') message = 'Разреши камеру в настройках браузера.';
+      else if (error && error.name === 'NotReadableError') message = 'Камера занята другим приложением.';
+      else if (error && error.name === 'OverconstrainedError') message = 'Устройство не поддерживает выбранное разрешение. Выбери 480p или 360p.';
+      showToast(message);
+      return;
+    }
+    isCameraOn = tracks.length > 0;
+  } else {
+    isCameraOn = !isCameraOn;
+    tracks.forEach((track) => { track.enabled = isCameraOn; });
+  }
+
+  const localTile = makeVideoTile(socket.id, myName, true);
+  const localVideo = localTile.querySelector('video');
+  if (localVideo.srcObject !== localStream) localVideo.srcObject = localStream;
+  updateTileState(socket.id, { audio: isMicOn, video: isCameraOn });
+  updateCallButtons();
+  publishMediaState();
+}
+
+function unlockRemoteAudioPlayback() {
+  let attempted = 0;
+  for (const audioElements of remoteAudioElements.values()) {
+    for (const audio of audioElements) {
+      if (audio.paused) {
+        attempted += 1;
+        audio.play().catch(() => {});
+      }
+    }
+  }
+  if (attempted) showToast('Пробуем включить звук участников.');
+}
+
+function preferOpusAudioCodec(pc, sender) {
+  try {
+    if (!pc || !sender || typeof RTCRtpSender.getCapabilities !== 'function') return;
+    const capabilities = RTCRtpSender.getCapabilities('audio');
+    if (!capabilities || !Array.isArray(capabilities.codecs)) return;
+    const transceiver = pc.getTransceivers().find((item) => item.sender === sender);
+    if (!transceiver || typeof transceiver.setCodecPreferences !== 'function') return;
+
+    const opus = capabilities.codecs.filter((codec) =>
+      String(codec.mimeType || '').toLowerCase() === 'audio/opus'
+    );
+    if (!opus.length) return;
+    const otherCodecs = capabilities.codecs.filter((codec) =>
+      String(codec.mimeType || '').toLowerCase() !== 'audio/opus'
+    );
+    transceiver.setCodecPreferences([...opus, ...otherCodecs]);
+  } catch (error) {
+    // Codec preference is optional; browser defaults remain available.
+    console.warn('Could not prefer Opus codec:', error);
+  }
+}
+
+async function withSenderParameterLock(sender, update) {
+  const previous = senderParameterQueues.get(sender) || Promise.resolve();
+  const next = previous.catch(() => {}).then(update);
+  senderParameterQueues.set(sender, next);
+  try {
+    return await next;
+  } finally {
+    if (senderParameterQueues.get(sender) === next) senderParameterQueues.delete(sender);
+  }
+}
+
+async function tuneAudioSender(sender) {
+  if (!sender || typeof sender.getParameters !== 'function') return;
+  return withSenderParameterLock(sender, async () => {
+    const params = sender.getParameters();
+    if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+    const encoding = params.encodings[0];
+    encoding.maxBitrate = 96000;
+    if ('priority' in encoding || !Object.prototype.hasOwnProperty.call(encoding, 'priority')) {
+      encoding.priority = 'high';
+    }
+    try {
+      await sender.setParameters(params);
+    } catch (error) {
+      // Retry without priority for browsers that do not implement encoding priority.
+      try {
+        const fallback = sender.getParameters();
+        if (!fallback.encodings || !fallback.encodings.length) fallback.encodings = [{}];
+        fallback.encodings[0].maxBitrate = 96000;
+        await sender.setParameters(fallback);
+      } catch (fallbackError) {
+        console.warn('Could not tune speech sender:', fallbackError || error);
+      }
+    }
+  });
+}
+
+async function tuneVideoSender(sender, bitrate, frameRate, keepTextSharp = false, scaleResolutionDownBy = 1) {
+  if (!sender || typeof sender.getParameters !== 'function') return;
+  return withSenderParameterLock(sender, async () => {
+    const apply = async (includeScale) => {
+      const params = sender.getParameters();
+      if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+      const encoding = params.encodings[0];
+      encoding.maxBitrate = Math.max(120000, Math.round(bitrate));
+      encoding.maxFramerate = Math.max(6, Math.round(frameRate));
+      // Audio is configured as high priority; video yields bandwidth to speech.
+      encoding.priority = 'low';
+      if (includeScale) encoding.scaleResolutionDownBy = Math.max(1, scaleResolutionDownBy);
+      // For screen shares, preserve frame delivery and reduce resolution before allowing visible freezes.
+      params.degradationPreference = 'maintain-framerate';
+      await sender.setParameters(params);
+    };
+
+    try {
+      await apply(true);
+    } catch (error) {
+      // Older mobile browsers may reject scale/degradation hints. Keep bitrate and FPS tuning.
+      try {
+        await apply(false);
+      } catch (fallbackError) {
+        console.warn('Could not tune outgoing video:', fallbackError || error);
+      }
+    }
+  });
+}
+
+function updateRtcQualityIndicator(level, path, rttMs, videoPacketLoss, peerName, audioJitterMs = NaN, audioPacketLoss = 0) {
+  const bars = $('#rtcQualityBars');
+  const label = $('#rtcQualityText');
+  if (!bars || !label) return;
+
+  bars.classList.remove('quality-good', 'quality-medium', 'quality-poor');
+  bars.classList.add(`quality-${level}`);
+  label.textContent = path ? `WEBRTC · ${path}` : 'WEBRTC';
+
+  const details = [
+    peerName ? `Участник: ${peerName}` : '',
+    path ? `Маршрут: ${path}` : '',
+    Number.isFinite(rttMs) ? `RTT: ${rttMs} мс` : '',
+    `Потери видео: ${Math.round(Math.max(0, videoPacketLoss || 0) * 100)}%`,
+    `Потери голоса: ${Math.round(Math.max(0, audioPacketLoss || 0) * 100)}%`,
+    Number.isFinite(audioJitterMs) ? `Джиттер голоса: ${Math.round(audioJitterMs)} мс` : '',
+    `Качество: ${level === 'good' ? 'хорошее' : level === 'medium' ? 'среднее' : 'слабое'}`
+  ].filter(Boolean);
+  bars.title = details.join(' · ');
+}
+
+
+async function startScreenShare() {
+  if (!isInCall) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+    showToast(isMobile
+      ? 'Этот мобильный браузер не поддерживает передачу экрана из веб-страницы. Можно смотреть демонстрацию с компьютера.'
+      : 'Браузер не поддерживает передачу экрана. Открой KOTOMASTER в актуальном браузере по HTTPS.');
+    return;
+  }
+
+  const profile = getSelectedVideoProfile();
+  const frameRate = profile.shareFrameRate || 15;
+  let capturedStream = null;
+  const changedSenders = [];
+
+  try {
+    capturedStream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        width: { ideal: profile.width },
+        height: { ideal: profile.height },
+        frameRate: { ideal: frameRate, max: frameRate },
+        cursor: 'always'
+      },
+      audio: false
+    });
+
+    const screenTrack = capturedStream.getVideoTracks()[0];
+    if (!screenTrack) throw new Error('Браузер не вернул видеопоток экрана.');
+    try { screenTrack.contentHint = 'detail'; } catch (_error) {}
+    try {
+      await screenTrack.applyConstraints({
+        width: { ideal: profile.width, max: 1920 },
+        height: { ideal: profile.height, max: 1080 },
+        frameRate: { ideal: frameRate, max: frameRate }
+      });
+    } catch (_error) {
+      // Some display-capture sources expose fixed constraints. Keep the browser-selected settings.
+    }
+
+    for (const pc of peerConnections.values()) {
+      if (pc.signalingState === 'closed') continue;
+      let sender = findVideoSender(pc);
+      let createdTransceiver = false;
+
+      if (sender) {
+        const previousTrack = sender.track;
+        await sender.replaceTrack(screenTrack);
+        changedSenders.push({ pc, sender, previousTrack, createdTransceiver });
+      } else {
+        sender = pc.addTrack(screenTrack, capturedStream);
+        createdTransceiver = true;
+        changedSenders.push({ pc, sender, previousTrack: null, createdTransceiver });
+      }
+      await tuneVideoSender(sender, profile.shareBitrate || 1200000, frameRate, true);
+    }
+
+    screenStream = capturedStream;
+    attachLocalVideoTrackLifecycle(screenTrack);
+    isSharing = true;
+    screenTrack.onended = () => stopScreenShare();
+
+    const localTile = makeVideoTile(socket.id, myName, true);
+    const localVideo = localTile.querySelector('video');
+    localVideo.srcObject = new MediaStream([screenTrack, ...localStream.getAudioTracks()]);
+    localVideo.muted = true;
+    localTile.classList.remove('local');
+    localTile.classList.add('has-video', 'sharing');
+    updateTileState(socket.id, { audio: isMicOn, video: true, sharing: true });
+    updateCallButtons();
+    publishMediaState();
+
+    const actual = screenTrack.getSettings ? screenTrack.getSettings() : {};
+    const actualSize = actual.width && actual.height ? `${actual.width}×${actual.height}` : 'автоматическое разрешение';
+    showToast(`Демонстрация экрана началась: ${actualSize}, до ${frameRate} FPS.`);
+  } catch (error) {
+    console.error('Screen share error:', error);
+
+    // Roll back any tracks already replaced so a partial failure cannot leave peers without camera video.
+    for (const entry of changedSenders.reverse()) {
+      try {
+        if (entry.createdTransceiver) {
+          entry.pc.removeTrack(entry.sender);
+        } else {
+          await entry.sender.replaceTrack(entry.previousTrack || null);
+        }
+      } catch (rollbackError) {
+        console.warn('Screen-share rollback failed:', rollbackError);
+      }
+    }
+
+    if (capturedStream) {
+      capturedStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
+    }
+    screenStream = null;
+    isSharing = false;
+
+    const isAndroid = /Android/i.test(navigator.userAgent || '');
+    if (isAndroid && error && ['NotAllowedError', 'NotSupportedError'].includes(error.name)) {
+      showToast('Этот браузер Android не разрешает сайту захватывать экран. На телефоне можно смотреть демонстрацию, а начать её — с компьютера.');
+    } else if (error && error.name === 'NotAllowedError') showToast('Доступ к экрану отменён или запрещён браузером. Проверь разрешения и попробуй снова.');
+    else if (error && error.name === 'NotFoundError') showToast('Браузер не нашёл источник экрана для передачи.');
+    else if (error && error.name === 'NotSupportedError') showToast('Передача экрана не поддерживается этим браузером.');
+    else showToast(error.message || 'Не удалось показать экран.');
+  }
+}
+
+async function stopScreenShare() {
+  if (!isSharing) return;
+  isSharing = false;
+  const cameraTrack = localStream && localStream.getVideoTracks()[0];
+  const profile = getSelectedVideoProfile();
+  for (const pc of peerConnections.values()) {
+    const sender = findVideoSender(pc);
+    if (sender) {
+      try {
+        await sender.replaceTrack(cameraTrack || null);
+        await tuneVideoSender(sender, profile.bitrate, profile.frameRate, false);
+      } catch (error) { console.warn('Could not restore camera track:', error); }
+    }
+  }
+  if (screenStream) {
+    screenStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
+    screenStream = null;
+  }
+  const localTile = videoGrid.querySelector(`[data-peer-id="${CSS.escape(socket.id)}"]`);
+  if (localTile) {
+    const video = localTile.querySelector('video');
+    video.srcObject = localStream;
+    localTile.classList.add('local');
+    localTile.classList.remove('sharing');
+    localTile.classList.toggle('has-video', isCameraOn);
+  }
+  updateCallButtons();
+  publishMediaState();
+  showToast('Демонстрация экрана остановлена.');
+}
+
+const CALL_HISTORY_KEY = 'kotomaster-call-history-v1';
+
+function loadCallHistory() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(CALL_HISTORY_KEY) || '[]');
+    return Array.isArray(stored) ? stored.slice(0, 20) : [];
+  } catch (_error) {
+    return [];
+  }
+}
+
+function saveCallHistoryEntry(entry) {
+  const history = loadCallHistory();
+  history.unshift({
+    id: window.crypto && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+    roomId: String(entry.roomId || ''),
+    name: String(entry.name || 'Котик'),
+    startedAt: Number(entry.startedAt) || Date.now(),
+    endedAt: Number(entry.endedAt) || Date.now(),
+    type: entry.type === 'Видео' ? 'Видео' : 'Аудио'
+  });
+  try {
+    localStorage.setItem(CALL_HISTORY_KEY, JSON.stringify(history.slice(0, 20)));
+  } catch (_error) {}
+  renderCallHistory();
+}
+
+function renderCallHistory() {
+  const list = $('#callHistoryList');
+  if (!list) return;
+  list.replaceChildren();
+  const history = loadCallHistory();
+  if (!history.length) {
+    const empty = document.createElement('p');
+    empty.className = 'call-history-empty';
+    empty.textContent = 'Здесь появятся завершённые звонки.';
+    list.append(empty);
+    return;
+  }
+  history.slice(0, 8).forEach((call) => {
+    const item = document.createElement('div');
+    item.className = 'call-history-item';
+    const icon = document.createElement('span');
+    icon.className = 'call-history-icon';
+    icon.textContent = call.type === 'Видео' ? '▣' : '☎';
+    const copy = document.createElement('div');
+    copy.className = 'call-history-copy';
+    const title = document.createElement('strong');
+    title.textContent = call.type + ' · ' + (call.name || 'Котик');
+    const date = new Date(call.endedAt || call.startedAt);
+    const duration = Math.max(0, Math.round(((call.endedAt || call.startedAt) - call.startedAt) / 1000));
+    const mins = Math.floor(duration / 60);
+    const secs = duration % 60;
+    const meta = document.createElement('small');
+    meta.textContent = date.toLocaleDateString('ru-RU', { day:'2-digit', month:'short' }) + ' · ' +
+      date.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit' }) + ' · ' +
+      (mins ? mins + ' мин ' : '') + secs + ' сек · ' + (call.roomId || 'Комната');
+    copy.append(title, meta);
+    item.append(icon, copy);
+    list.append(item);
+  });
+}
+
+function stopCall() {
+  if (!isInCall) {
+    for (const peerId of Array.from(peerConnections.keys())) {
+      closePeer(peerId);
+      removeVideoTile(peerId);
+    }
+    return;
+  }
+  if (screenStream) {
+    screenStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
+    screenStream = null;
+  }
+  isSharing = false;
+  for (const peerId of Array.from(peerConnections.keys())) {
+    closePeer(peerId);
+    removeVideoTile(peerId);
+  }
+  stopMicInputMeter();
+  if (activeCallStartedAt) {
+    saveCallHistoryEntry({
+      roomId,
+      name: myName,
+      startedAt: activeCallStartedAt,
+      endedAt: Date.now(),
+      type: isCameraOn ? 'Видео' : 'Аудио'
+    });
+    activeCallStartedAt = 0;
+  }
+  if (localStream) {
+    localStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
+    localStream = null;
+  }
+  isInCall = false;
+  isMicOn = false;
+  isCameraOn = false;
+  resumeCallAfterRestore = false;
+  wasMicInterrupted = false;
+  wasCameraInterrupted = false;
+  removeVideoTile(socket && socket.id);
+  videoGrid.replaceChildren();
+  publishMediaState();
+  updateCallButtons();
+  updateCallStage();
+  const audioSelect = $('#audioInputSelect');
+  if (audioSelect) audioSelect.disabled = true;
+  const meter = $('#micInputLevel');
+  if (meter) meter.style.width = '0%';
+  saveRoomSessionBeforePageExit();
+  showToast('Ты вышел из видеозвонка.');
+}
+
+
+function openVideoViewer(tile) {
+  const sourceVideo = tile && tile.querySelector('video');
+  if (!sourceVideo || !sourceVideo.srcObject) {
+    showToast('Видеопоток пока не появился.');
+    return;
+  }
+  const modal = $('#videoViewerModal');
+  const viewerVideo = $('#videoViewerVideo');
+  const title = $('#videoViewerTitle');
+  const label = tile.querySelector('.tile-label span');
+  viewerStream = sourceVideo.srcObject;
+  viewerVideo.srcObject = viewerStream;
+  viewerVideo.muted = true;
+  title.textContent = label ? label.textContent : 'Видео участника';
+  modal.hidden = false;
+  modal.classList.remove('zoomed');
+  $('#videoViewerZoom').textContent = 'Увеличить';
+  viewerVideo.play().catch(() => {});
+}
+
+function closeVideoViewer() {
+  const modal = $('#videoViewerModal');
+  const viewerVideo = $('#videoViewerVideo');
+  viewerVideo.pause();
+  viewerVideo.srcObject = null;
+  viewerStream = null;
+  modal.hidden = true;
+  modal.classList.remove('zoomed');
+}
+
+const VIDEO_PROFILES = {
+  auto: { width: 1280, height: 720, frameRate: 24, bitrate: 900000, shareFrameRate: 15, shareBitrate: 950000 },
+  '360': { width: 640, height: 360, frameRate: 24, bitrate: 450000, shareFrameRate: 10, shareBitrate: 420000 },
+  '480': { width: 854, height: 480, frameRate: 24, bitrate: 750000, shareFrameRate: 12, shareBitrate: 780000 },
+  '720': { width: 1280, height: 720, frameRate: 24, bitrate: 1150000, shareFrameRate: 15, shareBitrate: 1150000 },
+  '1080': { width: 1920, height: 1080, frameRate: 30, bitrate: 2500000, shareFrameRate: 15, shareBitrate: 2200000 }
+};
+
+function getSelectedVideoProfile() {
+  const selected = $('#videoResolutionSelect');
+  const key = selected && VIDEO_PROFILES[selected.value] ? selected.value : 'auto';
+  const base = VIDEO_PROFILES[key];
+  if (!videoQualityBoostEnabled) return base;
+
+  const bitrateByProfile = {
+    auto: 2600000,
+    '360': 700000,
+    '480': 1250000,
+    '720': 1950000,
+    '1080': 3200000
+  };
+  const shareBitrateByProfile = {
+    auto: 1800000,
+    '360': 520000,
+    '480': 900000,
+    '720': 1450000,
+    '1080': 2600000
+  };
+  return {
+    ...base,
+    width: key === 'auto' ? 1920 : base.width,
+    height: key === 'auto' ? 1080 : base.height,
+    frameRate: 30,
+    bitrate: Math.max(base.bitrate, bitrateByProfile[key]),
+    shareFrameRate: 20,
+    shareBitrate: Math.max(base.shareBitrate, shareBitrateByProfile[key])
+  };
+}
+
+function updateVideoQualityBoostButton() {
+  const button = $('#videoQualityBoostBtn');
+  if (!button) return;
+  button.classList.toggle('active', videoQualityBoostEnabled);
+  button.setAttribute('aria-pressed', videoQualityBoostEnabled ? 'true' : 'false');
+  button.textContent = videoQualityBoostEnabled ? 'ЧЁТЧЕ · ВКЛ' : 'ЧЁТЧЕ · ВЫКЛ';
+  button.title = videoQualityBoostEnabled
+    ? 'Повышенное качество: до 30 FPS. Нажми, чтобы выключить'
+    : 'Повысить качество и частоту кадров до 30 FPS';
+}
+
+async function changeVideoResolution() {
+  const select = $('#videoResolutionSelect');
+  const profile = getSelectedVideoProfile();
+  const sharingTrack = isSharing && screenStream ? screenStream.getVideoTracks()[0] : null;
+  const cameraTrack = localStream && localStream.getVideoTracks()[0];
+  const track = sharingTrack || cameraTrack;
+  if (!track || !isInCall) {
+    showToast(videoQualityBoostEnabled
+      ? 'Режим «Чётче» сохранён и применится при следующем звонке.'
+      : 'Качество сохранено и применится при следующем звонке.');
+    return;
+  }
+
+  const frameRate = sharingTrack ? profile.shareFrameRate : profile.frameRate;
+  const bitrate = sharingTrack ? profile.shareBitrate : profile.bitrate;
+  try {
+    await track.applyConstraints({
+      width: { ideal: profile.width },
+      height: { ideal: profile.height },
+      frameRate: { ideal: frameRate, max: frameRate }
+    });
+    for (const pc of peerConnections.values()) {
+      const sender = findVideoSender(pc);
+      if (sender) await tuneVideoSender(sender, bitrate, frameRate, Boolean(sharingTrack));
+    }
+    const mode = videoQualityBoostEnabled ? 'Повышенное качество' :
+      (select.value === 'auto' ? 'Автоматическое качество' : `Качество до ${select.value}p`);
+    showToast(sharingTrack ? `${mode} демонстрации применено.` : `${mode} камеры применено.`);
+  } catch (error) {
+    console.warn('Resolution change failed:', error);
+    showToast('Источник не поддерживает этот режим. Попробуй 720p или выключи «Чётче».');
+  }
+}
+
+async function toggleVideoQualityBoost() {
+  videoQualityBoostEnabled = !videoQualityBoostEnabled;
+  try {
+    localStorage.setItem('kotomaster-video-quality-boost', videoQualityBoostEnabled ? '1' : '0');
+  } catch (_error) {}
+  updateVideoQualityBoostButton();
+  await changeVideoResolution();
+}
+
+
+async function copyText(value) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(value);
+    else {
+      const textarea = document.createElement('textarea');
+      textarea.value = value;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.append(textarea);
+      textarea.select();
+      const copied = document.execCommand('copy');
+      textarea.remove();
+      if (!copied) throw new Error('copy failed');
+    }
+    showToast('Код комнаты скопирован.');
+  } catch (_error) {
+    showToast(`Код комнаты: ${value}`);
+  }
+}
+
+function leaveRoom() {
+  try { localStorage.removeItem(ROOM_SESSION_KEY); } catch (_error) {}
+  if (previewAudioStream) {
+    previewAudioStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
+    previewAudioStream = null;
+  }
+  stopMicInputMeter();
+  stopCall();
+  // stopCall persists call state; leaving the room is an explicit opt-out.
+  try { localStorage.removeItem(ROOM_SESSION_KEY); } catch (_error) {}
+  if (socket) {
+    socket.emit('room:leave');
+    socket.disconnect();
+    socket = null;
+  }
+  roomId = '';
+  myName = '';
+  participants.clear();
+  seenMessages.clear();
+  messagesList.replaceChildren();
+  $('#roomInput').value = '';
+  $('#messageInput').value = '';
+  showJoinError('');
+  appScreen.hidden = true;
+  joinScreen.hidden = false;
+  inviteModal.hidden = true;
+  showToast('Ты вышел из комнаты.');
+}
+
+$('#authForm').addEventListener('submit', handleAuthSubmit);
+$('#authModeToggle').addEventListener('click', () => setAuthMode(authMode === 'signin' ? 'signup' : 'signin'));
+$('#signOutBtn').addEventListener('click', signOutAccount);
+$('#forgotPasswordBtn').addEventListener('click', handlePasswordRecovery);
+
+joinForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button = $('#createRoomBtn');
+  const name = nameInput.value.trim();
+  if (!name) return showJoinError('Напиши имя, чтобы создать комнату.');
+  showJoinError('');
+  setBusy(button, true, 'Создаём комнату…');
+  try {
+    myName = name;
+    await connectSocket();
+    await createRoom(name);
+  } catch (error) {
+    showJoinError(error.message);
+    if (socket && !roomId) { socket.disconnect(); socket = null; }
+  } finally {
+    setBusy(button, false);
+  }
+});
+
+joinRoomForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button = $('#joinRoomBtn');
+  const name = nameInput.value.trim();
+  const code = roomInput.value.trim().toUpperCase();
+  if (!name) return showJoinError('Сначала напиши своё имя.');
+  if (code.length !== 6) return showJoinError('Код комнаты должен состоять из 6 символов.');
+  showJoinError('');
+  setBusy(button, true, 'Входим…');
+  try {
+    myName = name;
+    await connectSocket();
+    await joinRoom(name, code);
+  } catch (error) {
+    showJoinError(error.message);
+    if (socket && !roomId) { socket.disconnect(); socket = null; }
+  } finally {
+    setBusy(button, false);
+  }
+});
+
+roomInput.addEventListener('input', () => { roomInput.value = roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6); });
+
+document.querySelectorAll('.nav-item').forEach((item) => item.addEventListener('click', () => switchPanel(item.dataset.panel)));
+document.querySelectorAll('.community-tab').forEach((button)=>button.addEventListener('click',()=>setCommunityTab(button.dataset.communityTab)));
+$('#friendSearchInput').addEventListener('input',(event)=>{
+  clearTimeout(communityState.searchTimer);
+  communityState.searchTimer=setTimeout(()=>searchCommunityUsers(event.target.value).catch((error)=>showToast(error.message)),220);
+});
+$('#refreshCommunityBtn').addEventListener('click',refreshCommunity);
+$('#communityRefreshMessages').addEventListener('click',()=>communityState.currentConversationId&&loadCommunityMessages(communityState.currentConversationId).catch((error)=>showToast(error.message)));
+$('#communityMessageForm').addEventListener('submit',sendCommunityMessage);
+$('#newGroupBtn').addEventListener('click',()=>{
+  $('#newGroupError').textContent='';
+  renderGroupMemberChoices();
+  $('#newGroupModal').hidden=false;
+});
+$('#closeNewGroupBtn').addEventListener('click',()=>$('#newGroupModal').hidden=true);
+$('#newGroupModal').addEventListener('click',(event)=>{if(event.target===$('#newGroupModal'))$('#newGroupModal').hidden=true;});
+$('#newGroupForm').addEventListener('submit',createCommunityGroup);
+
+
+$('#messageForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const input = $('#messageInput');
+  const text = input.value.trim();
+  if (!text || !socket || !socket.connected) return;
+  input.value = '';
+  if (typingStopTimer) clearTimeout(typingStopTimer);
+  socket.emit('chat:typing', { typing: false });
+  try {
+    const response = await emitWithAck('chat:send', {
+      text,
+      replyTo: replyTarget ? replyTarget.id : null
+    });
+    if (!response.ok) showToast('Сообщение не отправлено.');
+    else {
+      replyTarget = null;
+      renderReplyPreview();
+    }
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+$('#messageInput').addEventListener('input', () => {
+  if (!socket || !socket.connected || !roomId) return;
+  const now = Date.now();
+  if (now - lastTypingEmitAt >= 300) {
+    socket.emit('chat:typing', { typing: true });
+    lastTypingEmitAt = now;
+  }
+  if (typingStopTimer) clearTimeout(typingStopTimer);
+  typingStopTimer = setTimeout(() => {
+    if (socket && socket.connected) socket.emit('chat:typing', { typing: false });
+  }, 1300);
+});
+
+$('#messageInput').addEventListener('blur', () => {
+  if (typingStopTimer) clearTimeout(typingStopTimer);
+  if (socket && socket.connected) socket.emit('chat:typing', { typing: false });
+});
+
+$('#chatSearchInput')?.addEventListener('input', (event) => {
+  messageSearchQuery = event.target.value || '';
+  applyMessageSearch();
+});
+
+$('#notificationsBtn')?.addEventListener('click', async () => {
+  if (!('Notification' in window)) {
+    showToast('Этот браузер не поддерживает уведомления.');
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    showToast('Уведомления заблокированы в настройках браузера.');
+    return;
+  }
+  if (Notification.permission === 'default') {
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      showToast('Разрешение на уведомления не выдано.');
+      return;
+    }
+  }
+  notificationsEnabled = !notificationsEnabled;
+  const button = $('#notificationsBtn');
+  button.classList.toggle('enabled', notificationsEnabled);
+  button.setAttribute('aria-pressed', String(notificationsEnabled));
+  button.title = notificationsEnabled ? 'Отключить уведомления' : 'Включить уведомления';
+  showToast(notificationsEnabled ? 'Уведомления включены, пока сайт открыт.' : 'Уведомления отключены.');
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && roomId && activePanel === 'chat') {
+    markMessagesRead([...messageRecords.values()].filter((message) => message.from !== (socket && socket.id)).map((message) => message.id));
+  }
+});
+
+$('#startCallBtn').addEventListener('click', startCall);
+$('#clearCallHistoryBtn')?.addEventListener('click', () => {
+  if (!window.confirm('Очистить историю звонков на этом устройстве?')) return;
+  try { localStorage.removeItem(CALL_HISTORY_KEY); } catch (_error) {}
+  renderCallHistory();
+});
+renderCallHistory();
+$('#micBtn').addEventListener('click', toggleMic);
+$('#cameraBtn').addEventListener('click', toggleCamera);
+$('#shareBtn').addEventListener('click', () => isSharing ? stopScreenShare() : startScreenShare());
+$('#leaveCallBtn').addEventListener('click', stopCall);
+$('#videoViewerClose').addEventListener('click', closeVideoViewer);
+$('#videoViewerZoom').addEventListener('click', () => {
+  const modal = $('#videoViewerModal');
+  const zoomed = modal.classList.toggle('zoomed');
+  $('#videoViewerZoom').textContent = zoomed ? 'Уместить' : 'Увеличить';
+});
+$('#videoViewerModal').addEventListener('click', (event) => {
+  if (event.target === $('#videoViewerModal')) closeVideoViewer();
+});
+$('#videoResolutionSelect').addEventListener('change', changeVideoResolution);
+$('#videoQualityBoostBtn').addEventListener('click', toggleVideoQualityBoost);
+$('#audioInputSelect').addEventListener('change', selectAudioInput);
+$('#micPreviewBtn').addEventListener('click', selectAudioInput);
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+  navigator.mediaDevices.addEventListener('devicechange', () => {
+    refreshAudioInputDevices();
+  });
+}
+callPanel.addEventListener('click', unlockRemoteAudioPlayback);
+$('#copyRoomBtn').addEventListener('click', () => roomId && copyText(roomId));
+$('#welcomeCopyBtn').addEventListener('click', () => roomId && copyText(roomId));
+$('#inviteBtn').addEventListener('click', () => { $('#modalRoomCode').textContent = roomId; inviteModal.hidden = false; });
+$('#closeInviteBtn').addEventListener('click', () => { inviteModal.hidden = true; });
+$('#modalCopyBtn').addEventListener('click', () => roomId && copyText(roomId));
+$('#leaveRoomBtn').addEventListener('click', leaveRoom);
+inviteModal.addEventListener('click', (event) => { if (event.target === inviteModal) inviteModal.hidden = true; });
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { inviteModal.hidden = true; if (!$('#videoViewerModal').hidden) closeVideoViewer(); } });
+
+function saveRoomSessionBeforePageExit() {
+  if (!roomId || !myName) return;
+  try {
+    localStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({
+      roomId,
+      name: myName,
+      savedAt: Date.now(),
+      wasInCall: isInCall || resumeCallAfterRestore
+    }));
+  } catch (_error) {}
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) saveRoomSessionBeforePageExit();
+  else handlePageResume();
+});
+window.addEventListener('pagehide', saveRoomSessionBeforePageExit);
+window.addEventListener('pageshow', handlePageResume);
+window.addEventListener('online', handlePageResume);
+
+rtcConfigPromise = (async function loadConfig() {
+  try {
+    const response = await fetch('/api/config', { cache: 'no-store' });
+    if (response.ok) appConfig = { ...appConfig, ...await response.json() };
+    else console.warn('Using default WebRTC ICE configuration:', response.status);
+  } catch (error) {
+    console.warn('Using default WebRTC ICE configuration:', error);
+  }
+})();
+
+refreshAudioInputDevices();
+updateCallButtons();
+updateVideoQualityBoostButton();
+initializeSupabase().then(async () => {
+  if (authSession?.user) {
+    await loadMyProfile();
+    restoreSavedRoom();
+  }
+}).catch((error) => {
+  console.error('KOTOMASTER auth initialization failed:', error);
+  $('#authError').textContent = error.message || 'Не удалось подключить авторизацию.';
+});
+
   activePanel = panel === 'call' ? 'call' : 'chat';
   panel = activePanel;
   const isCall = panel === 'call';
