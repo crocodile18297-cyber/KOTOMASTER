@@ -72,6 +72,14 @@ let micMeterTimer = null;
 let isSwitchingAudioInput = false;
 let toastTimer = null;
 let viewerStream = null;
+let messageRecords = new Map();
+let replyTarget = null;
+let typingStopTimer = null;
+let lastTypingEmitAt = 0;
+let typingMembers = new Map();
+let pinnedMessage = null;
+let notificationsEnabled = false;
+let messageSearchQuery = '';
 
 function showToast(message) {
   toastNode.textContent = message;
@@ -140,7 +148,72 @@ function bindSocketEvents() {
     showToast('Старое подключение заменено новым. Повторно войди в комнату.');
   });
 
-  socket.on('chat:message', (message) => appendMessage(message));
+  socket.on('chat:message', (message) => {
+    appendMessage(message);
+    if (message && message.from !== socket.id) {
+      notifyIncomingMessage(message);
+      if (!document.hidden && activePanel === 'chat') markMessagesRead([message.id]);
+    }
+  });
+
+  socket.on('chat:edited', (message) => {
+    if (!message || !message.id) return;
+    messageRecords.set(message.id, message);
+    refreshMessageNode(message);
+    applyMessageSearch();
+  });
+
+  socket.on('chat:deleted', ({ messageId }) => {
+    const message = messageRecords.get(messageId);
+    if (!message) return;
+    message.deleted = true;
+    message.text = '';
+    message.reactions = {};
+    messageRecords.set(messageId, message);
+    refreshMessageNode(message);
+    if (pinnedMessage && pinnedMessage.id === messageId) {
+      pinnedMessage = null;
+      renderPinnedMessage();
+    }
+  });
+
+  socket.on('chat:reaction', ({ messageId, reactions }) => {
+    const message = messageRecords.get(messageId);
+    if (!message) return;
+    message.reactions = reactions || {};
+    messageRecords.set(messageId, message);
+    refreshMessageNode(message);
+  });
+
+  socket.on('chat:pinned', (message) => {
+    pinnedMessage = message || null;
+    renderPinnedMessage();
+    if (pinnedMessage) showToast('Сообщение закреплено');
+  });
+
+  socket.on('chat:typing', ({ id, name, typing }) => {
+    if (!id || id === socket.id) return;
+    const previous = typingMembers.get(id);
+    if (previous && previous.timer) clearTimeout(previous.timer);
+    if (!typing) {
+      typingMembers.delete(id);
+    } else {
+      const entry = { name: name || 'Кто-то', timer: setTimeout(() => {
+        typingMembers.delete(id);
+        renderTypingIndicator();
+      }, 4200) };
+      typingMembers.set(id, entry);
+    }
+    renderTypingIndicator();
+  });
+
+  socket.on('chat:read-receipt', ({ messageId, readerId }) => {
+    const message = messageRecords.get(messageId);
+    if (!message || !readerId) return;
+    if (!Array.isArray(message.readBy)) message.readBy = [];
+    if (!message.readBy.includes(readerId)) message.readBy.push(readerId);
+    refreshMessageNode(message);
+  });
 
   socket.on('room:peer-joined', (member) => {
     participants.set(member.id, member);
@@ -403,7 +476,13 @@ function enterWorkspace(data, preservePanel = false) {
   } catch (_error) {}
   participants.clear();
   seenMessages.clear();
+  messageRecords.clear();
+  typingMembers.forEach((entry) => { if (entry.timer) clearTimeout(entry.timer); });
+  typingMembers.clear();
+  replyTarget = null;
+  renderReplyPreview();
   participants.set(data.self.id, data.self);
+  pinnedMessage = data.pinnedMessage || null;
   (data.participants || []).forEach((member) => participants.set(member.id, member));
 
   $('#sidebarRoomCode').textContent = roomId;
@@ -415,6 +494,11 @@ function enterWorkspace(data, preservePanel = false) {
   messagesList.replaceChildren();
   $('.chat-welcome').hidden = false;
   (data.messages || []).forEach((message) => appendMessage(message, false));
+  renderPinnedMessage();
+  renderTypingIndicator();
+  if (activePanel === 'chat' && !document.hidden) {
+    markMessagesRead((data.messages || []).filter((message) => message.from !== data.self.id).map((message) => message.id));
+  }
   renderParticipants();
   updateCallDescription();
 
@@ -482,9 +566,30 @@ function pluralize(number, one, few, many) {
 function appendMessage(message, shouldScroll = true) {
   if (!message || !message.id || seenMessages.has(message.id)) return;
   seenMessages.add(message.id);
-  const mine = socket && message.from === socket.id;
+  messageRecords.set(message.id, message);
+  const row = createMessageNode(message);
+  messagesList.append(row);
+  $('.chat-welcome').hidden = true;
+  if (shouldScroll) requestAnimationFrame(() => { chatScroll.scrollTop = chatScroll.scrollHeight; });
+}
+
+function createActionButton(label, title, action, messageId) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'message-action';
+  button.textContent = label;
+  button.title = title;
+  button.setAttribute('aria-label', title);
+  button.dataset.action = action;
+  button.dataset.messageId = messageId;
+  return button;
+}
+
+function createMessageNode(message) {
+  const mine = Boolean(socket && message.from === socket.id);
   const row = document.createElement('div');
-  row.className = `message-row${mine ? ' mine' : ''}`;
+  row.className = \`message-row\${mine ? ' mine' : ''}\`;
+  row.dataset.messageId = message.id;
 
   const avatar = document.createElement('div');
   avatar.className = 'message-avatar';
@@ -500,15 +605,244 @@ function appendMessage(message, shouldScroll = true) {
   const date = new Date(message.time || Date.now());
   time.textContent = date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   meta.append(name, time);
+  if (message.editedAt) {
+    const edited = document.createElement('span');
+    edited.className = 'message-edited-label';
+    edited.textContent = 'изменено';
+    meta.append(edited);
+  }
+  if (mine && Array.isArray(message.readBy) && message.readBy.length > 0) {
+    const read = document.createElement('span');
+    read.className = 'message-read-mark';
+    read.textContent = '✓✓';
+    read.title = 'Прочитано участником комнаты';
+    meta.append(read);
+  }
+  if (pinnedMessage && pinnedMessage.id === message.id) {
+    const pin = document.createElement('span');
+    pin.className = 'message-pinned-label';
+    pin.textContent = 'Закреплено';
+    meta.append(pin);
+  }
 
   const bubble = document.createElement('div');
   bubble.className = 'message-bubble';
-  bubble.textContent = message.text || '';
-  content.append(meta, bubble);
+  if (message.deleted) {
+    bubble.classList.add('message-deleted');
+    bubble.textContent = 'Сообщение удалено';
+  } else {
+    bubble.textContent = message.text || '';
+  }
+  content.append(meta);
+
+  if (message.replyTo && !message.deleted) {
+    const quote = document.createElement('div');
+    quote.className = 'message-reply-quote';
+    const quoteName = document.createElement('strong');
+    quoteName.textContent = message.replyTo.name || 'Участник';
+    const quoteText = document.createElement('span');
+    quoteText.textContent = message.replyTo.text || 'Сообщение';
+    quote.append(quoteName, quoteText);
+    content.append(quote);
+  }
+  content.append(bubble);
+
+  if (!message.deleted) {
+    const actions = document.createElement('div');
+    actions.className = 'message-actions';
+    actions.append(
+      createActionButton('↩', 'Ответить', 'reply', message.id),
+      createActionButton('☺', 'Добавить реакцию', 'toggle-reactions', message.id),
+      createActionButton(pinnedMessage && pinnedMessage.id === message.id ? '▣' : '⌑',
+        pinnedMessage && pinnedMessage.id === message.id ? 'Открепить' : 'Закрепить',
+        'pin', message.id)
+    );
+    if (mine) {
+      actions.append(
+        createActionButton('✎', 'Изменить сообщение', 'edit', message.id),
+        createActionButton('×', 'Удалить сообщение', 'delete', message.id)
+      );
+    }
+
+    const reactionPicker = document.createElement('div');
+    reactionPicker.className = 'message-reaction-picker';
+    reactionPicker.hidden = true;
+    ['❤️', '👍', '😂', '🔥', '🐱', '🎉'].forEach((emoji) => {
+      const reactionButton = document.createElement('button');
+      reactionButton.type = 'button';
+      reactionButton.className = 'message-reaction-choice';
+      reactionButton.textContent = emoji;
+      reactionButton.setAttribute('aria-label', 'Поставить реакцию ' + emoji);
+      reactionButton.addEventListener('click', () => {
+        emitWithAck('chat:react', { messageId: message.id, emoji })
+          .then((response) => { if (!response.ok) showToast('Не удалось добавить реакцию.'); })
+          .catch((error) => showToast(error.message));
+      });
+      reactionPicker.append(reactionButton);
+    });
+
+    actions.querySelectorAll('button').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const action = button.dataset.action;
+        if (action === 'reply') {
+          replyTarget = message;
+          renderReplyPreview();
+          $('#messageInput').focus();
+          return;
+        }
+        if (action === 'toggle-reactions') {
+          reactionPicker.hidden = !reactionPicker.hidden;
+          return;
+        }
+        if (action === 'pin') {
+          const target = pinnedMessage && pinnedMessage.id === message.id ? '' : message.id;
+          try {
+            const response = await emitWithAck('chat:pin', { messageId: target });
+            if (!response.ok) showToast(response.error || 'Не удалось закрепить сообщение.');
+          } catch (error) { showToast(error.message); }
+          return;
+        }
+        if (action === 'edit') {
+          const editedText = window.prompt('Измени сообщение:', message.text || '');
+          if (editedText === null || !editedText.trim()) return;
+          try {
+            const response = await emitWithAck('chat:edit', { messageId: message.id, text: editedText });
+            if (!response.ok) showToast(response.error || 'Не удалось изменить сообщение.');
+          } catch (error) { showToast(error.message); }
+          return;
+        }
+        if (action === 'delete') {
+          if (!window.confirm('Удалить это сообщение у всех участников комнаты?')) return;
+          try {
+            const response = await emitWithAck('chat:delete', { messageId: message.id });
+            if (!response.ok) showToast(response.error || 'Не удалось удалить сообщение.');
+          } catch (error) { showToast(error.message); }
+        }
+      });
+    });
+
+    const reactions = document.createElement('div');
+    reactions.className = 'message-reactions';
+    Object.entries(message.reactions || {}).forEach(([emoji, users]) => {
+      const count = Array.isArray(users) ? users.length : 0;
+      if (!count) return;
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'message-reaction-chip' +
+        (Array.isArray(users) && socket && users.includes(socket.id) ? ' is-mine' : '');
+      chip.textContent = emoji + ' ' + count;
+      chip.title = 'Изменить свою реакцию';
+      chip.addEventListener('click', () => {
+        emitWithAck('chat:react', { messageId: message.id, emoji }).catch((error) => showToast(error.message));
+      });
+      reactions.append(chip);
+    });
+    content.append(actions, reactionPicker);
+    if (reactions.childElementCount) content.append(reactions);
+  }
   row.append(avatar, content);
-  messagesList.append(row);
-  $('.chat-welcome').hidden = true;
-  if (shouldScroll) requestAnimationFrame(() => { chatScroll.scrollTop = chatScroll.scrollHeight; });
+  return row;
+}
+
+function refreshMessageNode(message) {
+  const current = messagesList.querySelector(\`[data-message-id="\${CSS.escape(message.id)}"]\`);
+  if (!current) return;
+  current.replaceWith(createMessageNode(message));
+}
+
+function renderReplyPreview() {
+  const preview = $('#replyPreview');
+  if (!preview) return;
+  preview.replaceChildren();
+  if (!replyTarget) {
+    preview.hidden = true;
+    return;
+  }
+  const copy = document.createElement('div');
+  copy.className = 'reply-preview-copy';
+  const title = document.createElement('strong');
+  title.textContent = 'Ответ: ' + (replyTarget.name || 'участник');
+  const text = document.createElement('span');
+  text.textContent = replyTarget.text || 'Сообщение';
+  copy.append(title, text);
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'reply-preview-close';
+  cancel.textContent = '×';
+  cancel.setAttribute('aria-label', 'Отменить ответ');
+  cancel.addEventListener('click', () => { replyTarget = null; renderReplyPreview(); });
+  preview.append(copy, cancel);
+  preview.hidden = false;
+}
+
+function renderPinnedMessage() {
+  const banner = $('#pinnedMessageBanner');
+  if (!banner) return;
+  banner.replaceChildren();
+  if (!pinnedMessage || pinnedMessage.deleted) {
+    banner.hidden = true;
+    return;
+  }
+  const marker = document.createElement('span');
+  marker.className = 'pinned-message-marker';
+  marker.textContent = '⌑';
+  const copy = document.createElement('div');
+  copy.className = 'pinned-message-copy';
+  const label = document.createElement('strong');
+  label.textContent = 'Закреплённое сообщение';
+  const text = document.createElement('span');
+  text.textContent = (pinnedMessage.name || 'Участник') + ': ' + (pinnedMessage.text || '');
+  copy.append(label, text);
+  const jump = document.createElement('button');
+  jump.type = 'button';
+  jump.className = 'pinned-message-jump';
+  jump.textContent = '↓';
+  jump.title = 'Перейти к сообщению';
+  jump.addEventListener('click', () => {
+    const node = messagesList.querySelector(\`[data-message-id="\${CSS.escape(pinnedMessage.id)}"]\`);
+    if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+  banner.append(marker, copy, jump);
+  banner.hidden = false;
+}
+
+function renderTypingIndicator() {
+  const indicator = $('#typingIndicator');
+  if (!indicator) return;
+  const names = [...typingMembers.values()].map((entry) => entry.name);
+  indicator.hidden = names.length === 0;
+  if (!names.length) return;
+  indicator.textContent = names.length === 1
+    ? names[0] + ' печатает…'
+    : names.slice(0, 2).join(' и ') + (names.length > 2 ? ' и ещё ' + (names.length - 2) : '') + ' печатают…';
+}
+
+function markMessagesRead(ids) {
+  if (!socket || !socket.connected || !Array.isArray(ids) || !ids.length) return;
+  socket.emit('chat:read', { messageIds: ids.slice(0, 50) });
+}
+
+function applyMessageSearch() {
+  const query = messageSearchQuery.trim().toLocaleLowerCase('ru-RU');
+  messagesList.querySelectorAll('.message-row').forEach((row) => {
+    const message = messageRecords.get(row.dataset.messageId);
+    const searchable = message ? [message.name, message.text].join(' ').toLocaleLowerCase('ru-RU') : '';
+    row.hidden = Boolean(query && !searchable.includes(query));
+  });
+}
+
+function notifyIncomingMessage(message) {
+  if (!notificationsEnabled || !('Notification' in window) ||
+      Notification.permission !== 'granted' || !document.hidden ||
+      !message || message.from === (socket && socket.id)) return;
+  const notification = new Notification(message.name || 'Новое сообщение', {
+    body: String(message.text || 'Отправил сообщение').slice(0, 180),
+    tag: 'kotomaster-' + message.id
+  });
+  notification.onclick = () => {
+    window.focus();
+    notification.close();
+  };
 }
 
 function switchPanel(panel) {
@@ -2175,11 +2509,73 @@ $('#messageForm').addEventListener('submit', async (event) => {
   const text = input.value.trim();
   if (!text || !socket || !socket.connected) return;
   input.value = '';
+  if (typingStopTimer) clearTimeout(typingStopTimer);
+  socket.emit('chat:typing', { typing: false });
   try {
-    const response = await emitWithAck('chat:send', { text });
+    const response = await emitWithAck('chat:send', {
+      text,
+      replyTo: replyTarget ? replyTarget.id : null
+    });
     if (!response.ok) showToast('Сообщение не отправлено.');
+    else {
+      replyTarget = null;
+      renderReplyPreview();
+    }
   } catch (error) {
     showToast(error.message);
+  }
+});
+
+$('#messageInput').addEventListener('input', () => {
+  if (!socket || !socket.connected || !roomId) return;
+  const now = Date.now();
+  if (now - lastTypingEmitAt >= 300) {
+    socket.emit('chat:typing', { typing: true });
+    lastTypingEmitAt = now;
+  }
+  if (typingStopTimer) clearTimeout(typingStopTimer);
+  typingStopTimer = setTimeout(() => {
+    if (socket && socket.connected) socket.emit('chat:typing', { typing: false });
+  }, 1300);
+});
+
+$('#messageInput').addEventListener('blur', () => {
+  if (typingStopTimer) clearTimeout(typingStopTimer);
+  if (socket && socket.connected) socket.emit('chat:typing', { typing: false });
+});
+
+$('#chatSearchInput')?.addEventListener('input', (event) => {
+  messageSearchQuery = event.target.value || '';
+  applyMessageSearch();
+});
+
+$('#notificationsBtn')?.addEventListener('click', async () => {
+  if (!('Notification' in window)) {
+    showToast('Этот браузер не поддерживает уведомления.');
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    showToast('Уведомления заблокированы в настройках браузера.');
+    return;
+  }
+  if (Notification.permission === 'default') {
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      showToast('Разрешение на уведомления не выдано.');
+      return;
+    }
+  }
+  notificationsEnabled = !notificationsEnabled;
+  const button = $('#notificationsBtn');
+  button.classList.toggle('enabled', notificationsEnabled);
+  button.setAttribute('aria-pressed', String(notificationsEnabled));
+  button.title = notificationsEnabled ? 'Отключить уведомления' : 'Включить уведомления';
+  showToast(notificationsEnabled ? 'Уведомления включены, пока сайт открыт.' : 'Уведомления отключены.');
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && roomId && activePanel === 'chat') {
+    markMessagesRead([...messageRecords.values()].filter((message) => message.from !== (socket && socket.id)).map((message) => message.id));
   }
 });
 
