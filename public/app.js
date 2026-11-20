@@ -186,6 +186,17 @@ function bindSocketEvents() {
       }
       if (response.ok) {
         enterWorkspace(response);
+        if (isInCall && localStream) {
+          const localTile = videoGrid.querySelector('.video-tile.local, .video-tile.sharing');
+          if (localTile) {
+            localTile.dataset.peerId = socket.id;
+            const label = localTile.querySelector('.tile-label span');
+            if (label) label.textContent = `${myName} · ты`;
+            localTile.classList.toggle('local', !isSharing);
+            localTile.classList.toggle('sharing', isSharing);
+            updateTileState(socket.id, { audio: isMicOn, video: isCameraOn || isSharing, sharing: isSharing });
+          }
+        }
         if (isInCall) {
           const self = {
             id: socket.id, name: myName, inCall: true,
