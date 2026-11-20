@@ -58,6 +58,7 @@ let isRoomSyncing = false;
 let wasMicInterrupted = false;
 let wasCameraInterrupted = false;
 let videoQualityBoostEnabled = (() => { try { return localStorage.getItem('kotomaster-video-quality-boost') === '1'; } catch (_error) { return false; } })();
+let resumeCallAfterRestore = false;
 let appConfig = { iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }], iceTransportPolicy: 'all', maxRoomSize: 6 };
 let rtcConfigPromise = null;
 let peerConnectionPromises = new Map();
@@ -356,12 +357,15 @@ async function restoreSavedRoom() {
   }
   nameInput.value = String(saved.name).slice(0, 24);
   roomInput.value = String(saved.roomId).slice(0, 6);
+  resumeCallAfterRestore = Boolean(saved.wasInCall);
   showJoinError('Восстанавливаем последнюю комнату…');
   try {
     await connectSocket();
     await joinRoom(nameInput.value, roomInput.value);
     showJoinError('');
-    showToast('Последняя комната восстановлена.');
+    showToast(resumeCallAfterRestore
+      ? 'Комната восстановлена. Нажми «Вернуться в видеозвонок», чтобы снова включить микрофон и камеру.'
+      : 'Последняя комната восстановлена.');
   } catch (error) {
     console.warn('Saved room could not be restored:', error);
     if (String(error.message || '').includes('Комната не найдена')) {
@@ -393,7 +397,7 @@ function enterWorkspace(data, preservePanel = false) {
   roomId = data.roomId;
   myName = data.self.name;
   try {
-    localStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({ roomId, name: myName, savedAt: Date.now() }));
+    localStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({ roomId, name: myName, savedAt: Date.now(), wasInCall: isInCall || resumeCallAfterRestore }));
   } catch (_error) {}
   participants.clear();
   seenMessages.clear();
@@ -539,7 +543,11 @@ function updateCallStage() {
     callEmptyState.querySelector('h4').textContent = 'Здесь пока тихо';
     callEmptyState.querySelector('p').textContent = 'Включи камеру и микрофон, чтобы войти в звонок.';
   }
-  $('#startCallBtn').hidden = isInCall;
+  const startButton = $('#startCallBtn');
+  startButton.hidden = isInCall;
+  startButton.innerHTML = resumeCallAfterRestore
+    ? '<span>↻</span> Вернуться в видеозвонок'
+    : '<span>▶</span> Войти в видеозвонок';
 }
 
 function makeVideoTile(id, name, local = false) {
@@ -903,6 +911,7 @@ function markSpeechTrack(track) {
 
 async function startCall() {
   if (isInCall) return;
+  resumeCallAfterRestore = false;
   if (isSwitchingAudioInput) { showToast('Дождись завершения проверки микрофона.'); return; }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     showToast('Для видеозвонка открой KOTOMASTER через HTTPS или localhost.');
@@ -1924,6 +1933,7 @@ function stopCall() {
   isInCall = false;
   isMicOn = false;
   isCameraOn = false;
+  resumeCallAfterRestore = false;
   wasMicInterrupted = false;
   wasCameraInterrupted = false;
   removeVideoTile(socket && socket.id);
@@ -2201,9 +2211,23 @@ $('#leaveRoomBtn').addEventListener('click', leaveRoom);
 inviteModal.addEventListener('click', (event) => { if (event.target === inviteModal) inviteModal.hidden = true; });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { inviteModal.hidden = true; if (!$('#videoViewerModal').hidden) closeVideoViewer(); } });
 
+function saveRoomSessionBeforePageExit() {
+  if (!roomId || !myName) return;
+  try {
+    localStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({
+      roomId,
+      name: myName,
+      savedAt: Date.now(),
+      wasInCall: isInCall || resumeCallAfterRestore
+    }));
+  } catch (_error) {}
+}
+
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) handlePageResume();
+  if (document.hidden) saveRoomSessionBeforePageExit();
+  else handlePageResume();
 });
+window.addEventListener('pagehide', saveRoomSessionBeforePageExit);
 window.addEventListener('pageshow', handlePageResume);
 window.addEventListener('online', handlePageResume);
 
