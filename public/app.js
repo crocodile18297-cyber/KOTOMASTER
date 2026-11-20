@@ -41,6 +41,7 @@ const tabClientId = (() => {
 
 let socket = null;
 let roomId = '';
+let roomConversationId = null;
 let activePanel = 'chat';
 let myName = '';
 let participants = new Map();
@@ -664,6 +665,7 @@ async function joinRoom(name, code) {
 
 function enterWorkspace(data, preservePanel = false) {
   roomId = data.roomId;
+  roomConversationId = data.conversationId || roomConversationId || null;
   myName = data.self.name;
   try {
     localStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({ roomId, name: myName, savedAt: Date.now(), wasInCall: isInCall || resumeCallAfterRestore }));
@@ -3210,13 +3212,45 @@ function saveCallHistoryEntry(entry) {
     localStorage.setItem(CALL_HISTORY_KEY, JSON.stringify(history.slice(0, 20)));
   } catch (_error) {}
   renderCallHistory();
+  persistCallHistoryEntry(entry).catch((error)=>console.warn('Call history sync failed:',error));
+}
+
+let remoteCallHistory = [];
+
+async function persistCallHistoryEntry(entry) {
+  if(!supabaseClient||!authSession?.user) return;
+  const {error}=await supabaseClient.from('call_history').insert({
+    user_id:authSession.user.id,
+    conversation_id:roomConversationId,
+    call_type:entry.type==='Видео'?'video':'audio',
+    started_at:new Date(entry.startedAt).toISOString(),
+    ended_at:new Date(entry.endedAt).toISOString()
+  });
+  if(error) throw error;
+  await loadRemoteCallHistory();
+}
+
+async function loadRemoteCallHistory() {
+  if(!supabaseClient||!authSession?.user) return;
+  const {data,error}=await supabaseClient.from('call_history')
+    .select('id,call_type,conversation_id,started_at,ended_at')
+    .eq('user_id',authSession.user.id)
+    .order('ended_at',{ascending:false}).limit(20);
+  if(error) throw error;
+  remoteCallHistory=(data||[]).map((item)=>({
+    id:item.id,roomId:item.conversation_id?'Чат':'Комната',name:myName||'KOTOMASTER',
+    startedAt:Date.parse(item.started_at)||Date.now(),endedAt:Date.parse(item.ended_at)||Date.now(),
+    type:item.call_type==='video'?'Видео':'Аудио'
+  }));
+  renderCallHistory();
 }
 
 function renderCallHistory() {
   const list = $('#callHistoryList');
   if (!list) return;
   list.replaceChildren();
-  const history = loadCallHistory();
+  const localHistory = loadCallHistory();
+  const history = [...remoteCallHistory,...localHistory].sort((a,b)=>(b.endedAt||0)-(a.endedAt||0));
   if (!history.length) {
     const empty = document.createElement('p');
     empty.className = 'call-history-empty';
@@ -3460,6 +3494,7 @@ function leaveRoom() {
     socket = null;
   }
   roomId = '';
+  roomConversationId = null;
   myName = '';
   participants.clear();
   seenMessages.clear();
@@ -3626,6 +3661,11 @@ $('#startCallBtn').addEventListener('click', startCall);
 $('#clearCallHistoryBtn')?.addEventListener('click', () => {
   if (!window.confirm('Очистить историю звонков на этом устройстве?')) return;
   try { localStorage.removeItem(CALL_HISTORY_KEY); } catch (_error) {}
+  remoteCallHistory=[];
+  if(supabaseClient&&communityUserId()) {
+    const {error}=await supabaseClient.from('call_history').delete().eq('user_id',communityUserId());
+    if(error) { showToast('Не удалось очистить историю на сервере: '+error.message); return; }
+  }
   renderCallHistory();
 });
 renderCallHistory();
@@ -3697,6 +3737,7 @@ updateVideoQualityBoostButton();
 initializeSupabase().then(async () => {
   if (authSession?.user) {
     await loadMyProfile();
+    await loadRemoteCallHistory().catch((error)=>console.warn('Could not load remote call history:',error));
     restoreSavedRoom();
   }
 }).catch((error) => {
