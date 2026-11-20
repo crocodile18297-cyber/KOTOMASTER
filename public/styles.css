@@ -2166,3 +2166,108 @@ button:focus-visible, input:focus-visible {
   .community-composer { gap:5px; padding:8px; }
   .community-composer > button { width:34px; height:36px; }
 }
+
+
+.community-message-actions {
+  display:flex;
+  flex-wrap:wrap;
+  gap:4px;
+  margin-top:7px;
+  opacity:.78;
+}
+.community-message-action {
+  padding:4px 6px;
+  border:1px solid #f0e0d7;
+  border-radius:7px;
+  color:#8e7062;
+  background:#fff9f5;
+  font:600 8px 'DM Sans',sans-serif;
+  cursor:pointer;
+}
+.community-message-action:hover {
+  border-color:#dfb8a4;
+  color:#724f44;
+  background:#fbe8df;
+}
+.community-message-action.is-danger:hover {
+  border-color:#e6c5bd;
+  color:#a14f43;
+  background:#fff0ec;
+}
+.community-message-reply {
+  margin:0 0 7px;
+  padding:6px 8px;
+  border-left:2px solid #eb966f;
+  border-radius:0 7px 7px 0;
+  color:#96796a;
+  background:#fff5ef;
+  font-size:9px;
+  overflow-wrap:anywhere;
+}
+.community-message-reply strong { display:block; margin-bottom:3px; color:#724f44; font-size:8px; }
+.community-reactions { display:flex; gap:4px; margin-top:6px; }
+.community-reaction-chip {
+  padding:3px 7px;
+  border:1px solid #efd8ca;
+  border-radius:99px;
+  color:#805b49;
+  background:#fff7f1;
+  font-size:9px;
+}
+.community-pinned-banner {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin:9px 12px 0;
+  padding:8px 10px;
+  border:1px solid #efd8ca;
+  border-radius:9px;
+  color:#8a6655;
+  background:#fff3eb;
+  cursor:pointer;
+}
+.community-pinned-banner[hidden] { display:none!important; }
+.community-pinned-banner strong { flex:none; color:#724f44; font-size:9px; }
+.community-pinned-banner span {
+  min-width:0;
+  overflow:hidden;
+  font-size:9px;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.community-reply-preview {
+  display:flex;
+  align-items:center;
+  gap:9px;
+  padding:8px 12px;
+  border-top:1px solid #f0e3db;
+  background:#fff4ed;
+}
+.community-reply-preview[hidden] { display:none!important; }
+.community-reply-copy {
+  min-width:0;
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  padding-left:8px;
+  border-left:2px solid #eb966f;
+}
+.community-reply-copy strong { color:#724f44; font-size:9px; }
+.community-reply-copy span {
+  overflow:hidden;
+  color:#987e72;
+  font-size:9px;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.community-reply-close {
+  width:27px;
+  height:27px;
+  border:0;
+  border-radius:8px;
+  color:#8e7366;
+  background:#fbe8df;
+  font-size:17px;
+  cursor:pointer;
+}
