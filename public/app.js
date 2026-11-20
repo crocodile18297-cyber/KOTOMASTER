@@ -1051,7 +1051,10 @@ const communityState = {
   currentConversationId: null,
   currentConversation: null,
   realtimeChannel: null,
-  searchTimer: null
+  searchTimer: null,
+  voiceRecorder: null,
+  voiceStream: null,
+  voiceChunks: []
 };
 
 function communityUserId() {
@@ -1288,7 +1291,7 @@ function renderCommunityConversations() {
   if(!groups.children.length) groups.append(communityNode('p','community-empty-note','Групповых чатов пока нет.'));
 }
 
-function renderCommunityMessages(rows,profiles) {
+function renderCommunityMessages(rows,profiles,attachments=[]) {
   const list=$('#communityMessages');
   list.replaceChildren();
   if(!rows.length) {
@@ -1306,6 +1309,29 @@ function renderCommunityMessages(rows,profiles) {
     const body=communityNode('p','',message.deleted_at?'Сообщение удалено':message.body);
     if(message.edited_at && !message.deleted_at) body.append(communityNode('small','community-edited',' · изменено'));
     item.append(header,body);
+    const messageAttachments=(attachments||[]).filter((attachment)=>attachment.message_id===message.id);
+    messageAttachments.forEach((attachment)=>{
+      if(!attachment.signedUrl) return;
+      const mime=attachment.mime_type||'';
+      if(mime.startsWith('image/')) {
+        const link=communityNode('a','community-attachment-link');
+        link.href=attachment.signedUrl; link.target='_blank'; link.rel='noopener noreferrer';
+        const image=document.createElement('img');
+        image.src=attachment.signedUrl; image.alt=attachment.file_name||'Изображение'; image.loading='lazy';
+        link.append(image); item.append(link);
+      } else if(mime.startsWith('audio/')) {
+        const audio=document.createElement('audio');
+        audio.controls=true; audio.preload='metadata'; audio.src=attachment.signedUrl;
+        audio.className='community-attachment-audio'; item.append(audio);
+      } else if(mime.startsWith('video/')) {
+        const video=document.createElement('video');
+        video.controls=true; video.preload='metadata'; video.src=attachment.signedUrl;
+        video.className='community-attachment-video'; item.append(video);
+      }
+      const link=communityNode('a','community-file-link',attachment.file_name||'Скачать файл');
+      link.href=attachment.signedUrl; link.target='_blank'; link.rel='noopener noreferrer';
+      item.append(link);
+    });
     list.append(item);
   });
   list.scrollTop=list.scrollHeight;
@@ -1320,7 +1346,20 @@ async function loadCommunityMessages(conversationId) {
   if(error) throw error;
   const rows=data||[];
   const profiles=await fetchCommunityProfiles(rows.map((m)=>m.sender_id));
-  renderCommunityMessages(rows,profiles);
+  let attachments=[];
+  if(rows.length) {
+    const {data:attachmentRows,error:attachmentError}=await supabaseClient.from('conversation_attachments')
+      .select('id,message_id,bucket_id,object_path,file_name,mime_type,size_bytes')
+      .eq('conversation_id',conversationId)
+      .in('message_id',rows.map((m)=>m.id));
+    if(attachmentError) throw attachmentError;
+    attachments=await Promise.all((attachmentRows||[]).map(async(attachment)=>{
+      const {data:signed,error:signedError}=await supabaseClient.storage
+        .from(attachment.bucket_id).createSignedUrl(attachment.object_path,3600);
+      return {...attachment,signedUrl:signedError?null:signed?.signedUrl||null};
+    }));
+  }
+  renderCommunityMessages(rows,profiles,attachments);
 }
 
 async function openCommunityConversation(conversationId) {
@@ -1400,6 +1439,125 @@ async function createCommunityGroup(event) {
   } catch(error) {
     $('#newGroupError').textContent=error.message||'Не удалось создать группу.';
   } finally { setBusy(button,false); }
+}
+
+async function uploadCommunityFile(file) {
+  const conversationId=communityState.currentConversationId;
+  const userId=communityUserId();
+  if(!conversationId||!userId||!file) throw new Error('Сначала открой переписку.');
+  const maxBytes=50*1024*1024;
+  if(file.size>maxBytes) throw new Error('Файл больше 50 МБ. Выбери файл поменьше.');
+  const safeName=String(file.name||'file').replace(/[^\\p{L}\\p{N}._-]/gu,'_').slice(-90)||'file';
+  const unique=(window.crypto?.randomUUID?.()||String(Date.now()));
+  const objectPath=`${conversationId}/${userId}/${unique}-${safeName}`;
+  let uploaded=false;
+  let messageId=null;
+  try {
+    const contentType=file.type||'application/octet-stream';
+    const {error:uploadError}=await supabaseClient.storage.from('chat-files').upload(objectPath,file,{
+      cacheControl:'3600',contentType,upsert:false
+    });
+    if(uploadError) throw uploadError;
+    uploaded=true;
+    const {data:message,error:messageError}=await supabaseClient.from('messages')
+      .insert({conversation_id:conversationId,sender_id:userId,body:`Файл: ${file.name||safeName}`})
+      .select('id').single();
+    if(messageError) throw messageError;
+    messageId=message.id;
+    const {error:metadataError}=await supabaseClient.from('conversation_attachments').insert({
+      conversation_id:conversationId,message_id:messageId,uploader_id:userId,
+      bucket_id:'chat-files',object_path:objectPath,file_name:String(file.name||safeName).slice(0,180),
+      mime_type:contentType,size_bytes:file.size
+    });
+    if(metadataError) throw metadataError;
+    await loadCommunityMessages(conversationId);
+    await loadCommunityConversations();
+  } catch(error) {
+    if(uploaded) {
+      try { await supabaseClient.storage.from('chat-files').remove([objectPath]); } catch(_cleanupError) {}
+    }
+    if(messageId) {
+      try { await supabaseClient.from('messages').delete().eq('id',messageId).eq('sender_id',userId); } catch(_cleanupError) {}
+    }
+    throw error;
+  }
+}
+
+async function handleCommunityFiles(files) {
+  if(!files?.length) return;
+  const list=[...files];
+  for(const file of list) {
+    try {
+      showToast(`Загружаю: ${file.name}`);
+      await uploadCommunityFile(file);
+    } catch(error) {
+      showToast(`Не удалось отправить ${file.name}: ${error.message}`);
+      break;
+    }
+  }
+}
+
+async function toggleCommunityVoiceRecording() {
+  const button=$('#communityVoiceBtn');
+  if(communityState.voiceRecorder && communityState.voiceRecorder.state==='recording') {
+    button.disabled=true;
+    button.textContent='…';
+    communityState.voiceRecorder.stop();
+    return;
+  }
+  if(!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder==='undefined') {
+    showToast('Запись голоса не поддерживается этим браузером.');
+    return;
+  }
+  if(!communityState.currentConversationId) {
+    showToast('Сначала открой личный или групповой чат.');
+    return;
+  }
+  try {
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{
+      echoCancellation:true,noiseSuppression:true,autoGainControl:true
+    }});
+    communityState.voiceStream=stream;
+    communityState.voiceChunks=[];
+    const candidates=['audio/webm;codecs=opus','audio/webm','audio/mp4'];
+    const mimeType=candidates.find((type)=>MediaRecorder.isTypeSupported(type));
+    const recorder=new MediaRecorder(stream,mimeType?{mimeType}:undefined);
+    communityState.voiceRecorder=recorder;
+    recorder.addEventListener('dataavailable',(event)=>{
+      if(event.data&&event.data.size) communityState.voiceChunks.push(event.data);
+    });
+    recorder.addEventListener('stop',async()=>{
+      const blob=new Blob(communityState.voiceChunks,{type:recorder.mimeType||'audio/webm'});
+      stream.getTracks().forEach((track)=>track.stop());
+      communityState.voiceStream=null;
+      communityState.voiceRecorder=null;
+      communityState.voiceChunks=[];
+      button.disabled=false;
+      button.classList.remove('is-recording');
+      button.textContent='🎙';
+      button.setAttribute('aria-pressed','false');
+      if(blob.size) {
+        const extension=(recorder.mimeType||'audio/webm').includes('mp4')?'m4a':'webm';
+        const file=new File([blob],`voice-${Date.now()}.${extension}`,{type:recorder.mimeType||'audio/webm'});
+        try { await uploadCommunityFile(file); showToast('Голосовое сообщение отправлено.'); }
+        catch(error) { showToast('Голосовое сообщение не отправлено: '+error.message); }
+      }
+    });
+    recorder.addEventListener('error',(event)=>{
+      console.error('Voice recording failed:',event.error);
+      showToast('Не удалось записать голосовое сообщение.');
+    });
+    recorder.start(250);
+    button.classList.add('is-recording');
+    button.textContent='■';
+    button.title='Остановить и отправить запись';
+    button.setAttribute('aria-pressed','true');
+    showToast('Запись идёт. Нажми ■, чтобы отправить голосовое сообщение.');
+  } catch(error) {
+    if(communityState.voiceStream) communityState.voiceStream.getTracks().forEach((track)=>track.stop());
+    communityState.voiceStream=null;
+    showToast(error.name==='NotAllowedError'?'Разреши доступ к микрофону в браузере.':'Не удалось начать запись: '+error.message);
+  }
 }
 
 async function sendCommunityMessage(event) {
@@ -3187,6 +3345,12 @@ $('#friendSearchInput').addEventListener('input',(event)=>{
 $('#refreshCommunityBtn').addEventListener('click',refreshCommunity);
 $('#communityRefreshMessages').addEventListener('click',()=>communityState.currentConversationId&&loadCommunityMessages(communityState.currentConversationId).catch((error)=>showToast(error.message)));
 $('#communityMessageForm').addEventListener('submit',sendCommunityMessage);
+$('#communityAttachBtn').addEventListener('click',()=>$('#communityFileInput').click());
+$('#communityFileInput').addEventListener('change',(event)=>{
+  handleCommunityFiles(event.target.files).finally(()=>{event.target.value='';});
+});
+$('#communityVoiceBtn').addEventListener('click',toggleCommunityVoiceRecording);
+
 $('#newGroupBtn').addEventListener('click',async()=>{
   $('#newGroupError').textContent='';
   $('#newGroupModal').hidden=false;
