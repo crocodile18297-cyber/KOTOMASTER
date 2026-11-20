@@ -80,6 +80,7 @@ let typingMembers = new Map();
 let pinnedMessage = null;
 let notificationsEnabled = false;
 let messageSearchQuery = '';
+let activeCallStartedAt = 0;
 
 function showToast(message) {
   toastNode.textContent = message;
@@ -1288,6 +1289,7 @@ async function startCall() {
     localStream.getAudioTracks().forEach(attachLocalAudioTrackLifecycle);
 
     isInCall = true;
+    activeCallStartedAt = Date.now();
     isMicOn = localStream.getAudioTracks().length > 0;
     isCameraOn = false;
     wasMicInterrupted = false;
@@ -2244,6 +2246,69 @@ async function stopScreenShare() {
   showToast('Демонстрация экрана остановлена.');
 }
 
+const CALL_HISTORY_KEY = 'kotomaster-call-history-v1';
+
+function loadCallHistory() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(CALL_HISTORY_KEY) || '[]');
+    return Array.isArray(stored) ? stored.slice(0, 20) : [];
+  } catch (_error) {
+    return [];
+  }
+}
+
+function saveCallHistoryEntry(entry) {
+  const history = loadCallHistory();
+  history.unshift({
+    id: window.crypto && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+    roomId: String(entry.roomId || ''),
+    name: String(entry.name || 'Котик'),
+    startedAt: Number(entry.startedAt) || Date.now(),
+    endedAt: Number(entry.endedAt) || Date.now(),
+    type: entry.type === 'Видео' ? 'Видео' : 'Аудио'
+  });
+  try {
+    localStorage.setItem(CALL_HISTORY_KEY, JSON.stringify(history.slice(0, 20)));
+  } catch (_error) {}
+  renderCallHistory();
+}
+
+function renderCallHistory() {
+  const list = $('#callHistoryList');
+  if (!list) return;
+  list.replaceChildren();
+  const history = loadCallHistory();
+  if (!history.length) {
+    const empty = document.createElement('p');
+    empty.className = 'call-history-empty';
+    empty.textContent = 'Здесь появятся завершённые звонки.';
+    list.append(empty);
+    return;
+  }
+  history.slice(0, 8).forEach((call) => {
+    const item = document.createElement('div');
+    item.className = 'call-history-item';
+    const icon = document.createElement('span');
+    icon.className = 'call-history-icon';
+    icon.textContent = call.type === 'Видео' ? '▣' : '☎';
+    const copy = document.createElement('div');
+    copy.className = 'call-history-copy';
+    const title = document.createElement('strong');
+    title.textContent = call.type + ' · ' + (call.name || 'Котик');
+    const date = new Date(call.endedAt || call.startedAt);
+    const duration = Math.max(0, Math.round(((call.endedAt || call.startedAt) - call.startedAt) / 1000));
+    const mins = Math.floor(duration / 60);
+    const secs = duration % 60;
+    const meta = document.createElement('small');
+    meta.textContent = date.toLocaleDateString('ru-RU', { day:'2-digit', month:'short' }) + ' · ' +
+      date.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit' }) + ' · ' +
+      (mins ? mins + ' мин ' : '') + secs + ' сек · ' + (call.roomId || 'Комната');
+    copy.append(title, meta);
+    item.append(icon, copy);
+    list.append(item);
+  });
+}
+
 function stopCall() {
   if (!isInCall) {
     for (const peerId of Array.from(peerConnections.keys())) {
@@ -2262,6 +2327,16 @@ function stopCall() {
     removeVideoTile(peerId);
   }
   stopMicInputMeter();
+  if (activeCallStartedAt) {
+    saveCallHistoryEntry({
+      roomId,
+      name: myName,
+      startedAt: activeCallStartedAt,
+      endedAt: Date.now(),
+      type: isCameraOn ? 'Видео' : 'Аудио'
+    });
+    activeCallStartedAt = 0;
+  }
   if (localStream) {
     localStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
     localStream = null;
@@ -2580,6 +2655,12 @@ document.addEventListener('visibilitychange', () => {
 });
 
 $('#startCallBtn').addEventListener('click', startCall);
+$('#clearCallHistoryBtn')?.addEventListener('click', () => {
+  if (!window.confirm('Очистить историю звонков на этом устройстве?')) return;
+  try { localStorage.removeItem(CALL_HISTORY_KEY); } catch (_error) {}
+  renderCallHistory();
+});
+renderCallHistory();
 $('#micBtn').addEventListener('click', toggleMic);
 $('#cameraBtn').addEventListener('click', toggleCamera);
 $('#shareBtn').addEventListener('click', () => isSharing ? stopScreenShare() : startScreenShare());
