@@ -1111,6 +1111,7 @@ const communityState = {
   conversations: [],
   friends: [],
   requests: [],
+  outgoingRequests: [],
   currentConversationId: null,
   currentConversation: null,
   realtimeChannel: null,
@@ -1180,6 +1181,11 @@ async function loadCommunityFriends() {
     userId: row.requester_id,
     profile: profileMap.get(row.requester_id) || { display_name: 'Пользователь' }
   }));
+  communityState.outgoingRequests = rows.filter((row) => row.status === 'pending' && row.requester_id === userId).map((row) => ({
+    ...row,
+    userId: row.addressee_id,
+    profile: profileMap.get(row.addressee_id) || { display_name: 'Пользователь' }
+  }));
   renderFriendLists();
   renderGroupMemberChoices();
 }
@@ -1242,6 +1248,7 @@ async function searchCommunityUsers(value) {
   const known=new Map();
   communityState.friends.forEach((f)=>known.set(f.userId,'accepted'));
   communityState.requests.forEach((f)=>known.set(f.userId,'incoming'));
+  communityState.outgoingRequests.forEach((f)=>known.set(f.userId,'outgoing'));
   if(!data?.length) { results.append(communityNode('p','community-empty-note','Никого не нашли. Проверь имя или username.')); return; }
   data.forEach((profile)=>{
     const item=communityNode('div','community-person-item');
@@ -1249,7 +1256,7 @@ async function searchCommunityUsers(value) {
     copy.append(communityNode('strong','',profile.display_name||'Пользователь'));
     copy.append(communityNode('small','',profile.username?'@'+profile.username:'Пользователь KOTOMASTER'));
     const knownStatus=known.get(profile.id);
-    const button=communityNode('button','community-small-action',knownStatus==='accepted'?'Друг':knownStatus==='incoming'?'Заявка получена':'Добавить');
+    const button=communityNode('button','community-small-action',knownStatus==='accepted'?'Друг':knownStatus==='incoming'?'Заявка получена':knownStatus==='outgoing'?'Заявка отправлена':'Добавить');
     button.type='button';
     button.disabled=Boolean(knownStatus);
     if(!knownStatus) button.addEventListener('click',()=>sendFriendRequest(profile.id,button));
@@ -1261,11 +1268,19 @@ async function sendFriendRequest(friendId,button) {
   if(!communityUserId() || !friendId || friendId===communityUserId()) return;
   button.disabled=true;
   try {
-    const {error}=await supabaseClient.from('friendships').insert({
-      requester_id:communityUserId(),addressee_id:friendId,status:'pending'
-    });
+    const {data,error}=await supabaseClient.rpc('request_friendship',{p_friend_id:friendId});
     if(error) throw error;
+    if(data==='accepted') {
+      button.textContent='Друг';
+      button.disabled=true;
+      showToast('Вы теперь друзья.');
+      await loadCommunityFriends();
+      await loadCommunityConversations();
+      return;
+    }
     button.textContent='Заявка отправлена';
+    button.disabled=true;
+    await loadCommunityFriends();
     showToast('Заявка в друзья отправлена.');
   } catch(error) {
     button.disabled=false;
