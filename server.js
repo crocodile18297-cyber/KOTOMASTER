@@ -81,6 +81,21 @@ async function verifyAccessToken(token) {
   }
 }
 
+async function fetchAuthenticatedProfile(token, userId) {
+  try {
+    const params = new URLSearchParams({ select: 'display_name,username', id: `eq.${userId}`, limit: '1' });
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/profiles?${params.toString()}`, {
+      headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(5000)
+    });
+    if (!response.ok) return null;
+    const rows = await response.json();
+    return Array.isArray(rows) && rows[0] ? rows[0] : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
 io.use(async (socket, next) => {
   if (!AUTH_REQUIRED) return next(new Error('Авторизация временно недоступна.'));
   const token = socket.handshake.auth && socket.handshake.auth.accessToken;
@@ -90,6 +105,8 @@ io.use(async (socket, next) => {
   socket.data.email = user.email;
   socket.data.authUser = user;
   socket.data.accessToken = token;
+  const profile = await fetchAuthenticatedProfile(token, user.id);
+  socket.data.profileName = cleanName(profile?.display_name || user.user_metadata?.display_name || user.email.split('@')[0]);
   next();
 });
 
@@ -282,7 +299,7 @@ function cleanClientId(value, fallback) {
 
 async function joinRoom(socket, payload, ack, createNew = false) {
   const callback = typeof ack === 'function' ? ack : () => {};
-  const name = cleanName(payload && payload.name);
+  const name = cleanName(socket.data.profileName || (payload && payload.name));
   let roomId = createNew ? '' : cleanRoomId(payload && payload.roomId);
   const clientId = cleanClientId(payload && payload.clientId, `socket-${socket.id}`);
 
@@ -456,12 +473,15 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('profile:update', (payload) => {
+  socket.on('profile:update', async () => {
     const roomId = socket.data.roomId;
     const room = roomId && rooms.get(roomId);
     const member = room && room.members.get(socket.id);
     if (!member) return;
-    const name = cleanName(payload && payload.name);
+    const profile = await fetchAuthenticatedProfile(socket.data.accessToken, socket.data.userId);
+    if (!profile?.display_name) return;
+    const name = cleanName(profile.display_name);
+    socket.data.profileName = name;
     member.name = name;
     socket.data.name = name;
     io.to(roomId).emit('room:peer-renamed', toPublicMember(member));
