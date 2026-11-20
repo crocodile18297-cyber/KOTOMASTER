@@ -39,6 +39,7 @@ const tabClientId = (() => {
 
 let socket = null;
 let roomId = '';
+let activePanel = 'chat';
 let myName = '';
 let participants = new Map();
 let seenMessages = new Set();
@@ -238,7 +239,7 @@ function bindSocketEvents() {
         return;
       }
       if (response.ok) {
-        enterWorkspace(response);
+        enterWorkspace(response, true);
         if (isInCall && localStream) {
           const localTile = videoGrid.querySelector('.video-tile.local, .video-tile.sharing');
           if (localTile) {
@@ -304,7 +305,7 @@ async function joinRoom(name, code) {
   enterWorkspace(response);
 }
 
-function enterWorkspace(data) {
+function enterWorkspace(data, preservePanel = false) {
   roomId = data.roomId;
   myName = data.self.name;
   participants.clear();
@@ -326,7 +327,7 @@ function enterWorkspace(data) {
 
   joinScreen.hidden = true;
   appScreen.hidden = false;
-  switchPanel('chat');
+  switchPanel(preservePanel ? activePanel : 'chat');
   $('#messageInput').focus();
 }
 
@@ -418,6 +419,8 @@ function appendMessage(message, shouldScroll = true) {
 }
 
 function switchPanel(panel) {
+  activePanel = panel === 'call' ? 'call' : 'chat';
+  panel = activePanel;
   const isCall = panel === 'call';
   chatPanel.hidden = isCall;
   callPanel.hidden = !isCall;
