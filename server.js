@@ -202,6 +202,24 @@ function leaveRoom(socket, reason = 'left') {
 io.on('connection', (socket) => {
   socket.on('room:create', (payload, ack) => joinRoom(socket, payload, ack, true));
   socket.on('room:join', (payload, ack) => joinRoom(socket, payload, ack, false));
+  socket.on('room:sync', (payload, ack) => {
+    const callback = typeof ack === 'function' ? ack : () => {};
+    const roomId = socket.data.roomId;
+    const room = roomId && rooms.get(roomId);
+    const member = room && room.members.get(socket.id);
+    if (!room || !member) {
+      return callback({ ok: false, error: 'Комната больше недоступна. Войди в неё заново.' });
+    }
+    callback({
+      ok: true,
+      roomId,
+      self: toPublicMember(member),
+      participants: getPublicMembers(room).filter((item) => item.id !== socket.id),
+      messages: room.messages.slice(-MAX_MESSAGES),
+      maxRoomSize: MAX_ROOM_SIZE
+    });
+  });
+
   socket.on('room:leave', () => leaveRoom(socket));
 
   socket.on('chat:send', (payload, ack) => {
