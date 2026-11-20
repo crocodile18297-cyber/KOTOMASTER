@@ -90,6 +90,10 @@
               <label class="field-label" for="authDisplayName">ИМЯ В KOTOMASTER</label>
               <div class="input-wrap"><span class="input-icon">✦</span><input id="authDisplayName" maxlength="24" autocomplete="nickname" placeholder="Например, Барсик"></div>
             </div>
+            <div id="authUsernameWrap" hidden>
+              <label class="field-label" for="authUsername">УНИКАЛЬНЫЙ USERNAME</label>
+              <div class="input-wrap"><span class="input-icon">@</span><input id="authUsername" maxlength="24" minlength="3" pattern="[A-Za-z0-9_]{3,24}" autocomplete="username" placeholder="Например, barsik_23"></div>
+            </div>
             <button id="authSubmitBtn" class="primary-button" type="submit"><span class="button-cat">✦</span><span>Войти</span><span class="button-arrow">↗</span></button>
           </form>
           <button id="authModeToggle" class="auth-mode-toggle" type="button">Нет аккаунта? Зарегистрироваться</button>
