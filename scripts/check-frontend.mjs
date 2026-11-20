@@ -25,6 +25,10 @@ const clientEvents = new Set([
 const missingHandlers = [...clientEvents].filter((event) => !socketHandlers.has(event));
 assert.equal(missingHandlers.length, 0, 'Client emits without server handlers: ' + missingHandlers.join(', '));
 
+for (const event of ['chat:typing', 'chat:edit', 'chat:delete', 'chat:react', 'chat:pin', 'chat:read']) {
+  assert.ok(socketHandlers.has(event), 'Required chat interaction handler is missing: ' + event);
+}
+
 const socketScriptIndex = html.indexOf('/socket.io/socket.io.js');
 const appScriptIndex = html.indexOf('/app.js?');
 assert.ok(socketScriptIndex >= 0, 'Socket.IO client script is missing.');
@@ -48,10 +52,42 @@ for (const requiredId of [
   'micPreviewBtn',
   'videoQualityBoostBtn',
   'videoResolutionSelect',
-  'mobileMemberStrip'
+  'mobileMemberStrip',
+  'chatSearchInput',
+  'notificationsBtn',
+  'pinnedMessageBanner',
+  'typingIndicator',
+  'replyPreview',
+  'callHistoryList',
+  'clearCallHistoryBtn',
+  'authForm',
+  'authEmail',
+  'authPassword',
+  'authUsername',
+  'signOutBtn',
+  'communityPanel',
+  'friendSearchInput',
+  'friendRequestsList',
+  'friendList',
+  'communityConversationList',
+  'communityMessages',
+  'communityMessageForm',
+  'communityFileInput',
+  'communityVoiceBtn',
+  'newGroupForm',
+  'editProfileForm'
 ]) {
   assert.ok(uniqueIds.has(requiredId), 'Required UI element is missing: #' + requiredId);
 }
+
+assert.match(html, /supabase-js@2\.119\.2/, 'Supabase browser SDK must be version-pinned.');
+assert.match(server, /io\.use\(async \(socket, next\)/, 'Socket.IO must validate Supabase sessions.');
+assert.match(server, /fetchAuthenticatedProfile/, 'Room identity must use the authenticated profile.');
+assert.match(app, /request_friendship/, 'Friend requests must use the guarded RPC.');
+assert.match(app, /create_direct_conversation/, 'Private chats must use the guarded RPC.');
+assert.match(app, /create_group_conversation/, 'Group creation must use the guarded RPC.');
+assert.match(app, /chat-files/, 'Private file uploads must use the configured storage bucket.');
+assert.match(app, /MediaRecorder/, 'Voice messages must use browser media recording.');
 
 console.log(
   'Frontend integrity OK: ' + uniqueIds.size + ' unique HTML ids, ' +

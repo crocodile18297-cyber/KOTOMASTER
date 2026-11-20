@@ -41,6 +41,7 @@ const tabClientId = (() => {
 
 let socket = null;
 let roomId = '';
+let roomConversationId = null;
 let activePanel = 'chat';
 let myName = '';
 let participants = new Map();
@@ -72,6 +73,260 @@ let micMeterTimer = null;
 let isSwitchingAudioInput = false;
 let toastTimer = null;
 let viewerStream = null;
+let messageRecords = new Map();
+let replyTarget = null;
+let typingStopTimer = null;
+let lastTypingEmitAt = 0;
+let typingMembers = new Map();
+let pinnedMessage = null;
+let notificationsEnabled = (() => { try { return localStorage.getItem('kotomaster-notifications') === '1'; } catch (_error) { return false; } })();
+let messageSearchQuery = '';
+let activeCallStartedAt = 0;
+
+let supabaseClient = null;
+let authSession = null;
+let authMode = 'signin';
+let authReady = false;
+let authProfile = null;
+let passwordRecoveryPending = false;
+
+async function initializeSupabase() {
+  const response = await fetch('/api/config', { cache: 'no-store' });
+  if (!response.ok) throw new Error('Не удалось загрузить настройки сервиса.');
+  const config = await response.json();
+  appConfig = { ...appConfig, ...config };
+  if (!config.supabaseUrl || !config.supabasePublishableKey || !window.supabase?.createClient) {
+    throw new Error('Авторизация не настроена. Обнови страницу позже.');
+  }
+  supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabasePublishableKey, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+  });
+  const { data, error } = await supabaseClient.auth.getSession();
+  if (error) throw error;
+  authSession = data.session;
+  supabaseClient.auth.onAuthStateChange((event, session) => {
+    const previousToken = authSession?.access_token;
+    authSession = session;
+    if (session?.user && (!previousToken || previousToken !== session.access_token)) {
+      loadRemoteCallHistory().catch((error)=>console.warn('Could not refresh remote call history:',error));
+      startCommunityRealtime().catch((error)=>console.warn('Could not start inbox updates:',error));
+    } else if (!session) {
+      stopCommunityRealtime().catch((error)=>console.warn('Could not stop inbox updates:',error));
+    }
+    if (event === 'PASSWORD_RECOVERY') {
+      passwordRecoveryPending = true;
+      authMode = 'recovery';
+      $('#authEmail').value = session?.user?.email || '';
+      $('#authEmail').readOnly = true;
+      $('#authPassword').value = '';
+      $('#authPassword').placeholder = 'Новый пароль';
+      $('#authModeToggle').hidden = true;
+      $('#forgotPasswordBtn').hidden = true;
+      $('#authSubmitBtn').querySelector('span:nth-child(2)').textContent = 'Сохранить пароль';
+    }
+    updateAuthInterface();
+    if (session?.access_token && socket) {
+      socket.auth = { accessToken: session.access_token };
+      if (previousToken && previousToken !== session.access_token && socket.connected) {
+        socket.disconnect();
+        socket.connect();
+      }
+    }
+    if (!session && socket) {
+      if (isInCall) stopCall();
+      if (roomId) leaveRoom();
+    }
+  });
+  authReady = true;
+  updateAuthInterface();
+}
+
+function updateAuthInterface() {
+  const signedIn = Boolean(authSession?.user) && !passwordRecoveryPending;
+  const authPanel = $('#authPanel');
+  const roomAccessPanel = $('#roomAccessPanel');
+  if (authPanel) authPanel.hidden = signedIn;
+  if (roomAccessPanel) roomAccessPanel.hidden = !signedIn;
+  const user = authSession?.user;
+  const displayName = authProfile?.display_name || user?.user_metadata?.display_name || user?.email?.split('@')[0] || '';
+  if (signedIn && displayName) {
+    nameInput.value = String(displayName).slice(0, 24);
+    myName = nameInput.value;
+  }
+  const usernameNode=$('#myUsername');
+  if(usernameNode) usernameNode.textContent=authProfile?.username?'@'+authProfile.username:'';
+
+}
+
+function setAuthMode(mode) {
+  authMode = mode === 'signup' ? 'signup' : 'signin';
+  const signup = authMode === 'signup';
+  $('#authDisplayNameWrap').hidden = !signup;
+  $('#authUsernameWrap').hidden = !signup;
+  $('#authPassword').autocomplete = signup ? 'new-password' : 'current-password';
+  $('#authSubmitBtn').querySelector('span:nth-child(2)').textContent = signup ? 'Создать аккаунт' : 'Войти';
+  $('#authModeToggle').textContent = signup ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Зарегистрироваться';
+  $('#authError').textContent = '';
+}
+
+async function loadMyProfile() {
+  if (!supabaseClient || !authSession?.user) return;
+  const { data, error } = await supabaseClient.from('profiles')
+    .select('id,username,display_name,avatar_path,bio')
+    .eq('id', authSession.user.id).maybeSingle();
+  if (error) { console.warn('Profile load failed:', error); return; }
+  authProfile = data;
+  updateAuthInterface();
+  const usernameNode=$('#myUsername');
+  if(usernameNode) usernameNode.textContent=data?.username?'@'+data.username:'';
+
+}
+
+async function handleAuthSubmit(event) {
+  event.preventDefault();
+  const button = $('#authSubmitBtn');
+  const email = $('#authEmail').value.trim().toLowerCase();
+  const password = $('#authPassword').value;
+  const displayName = $('#authDisplayName').value.trim().slice(0, 24);
+  const username = $('#authUsername').value.trim().toLowerCase();
+  const errorNode = $('#authError');
+  errorNode.textContent = '';
+  if (authMode === 'signup' && !displayName) { errorNode.textContent = 'Укажи имя для профиля.'; return; }
+  if (authMode === 'signup' && !/^[a-z0-9_]{3,24}$/.test(username)) { errorNode.textContent = 'Username: 3–24 символа, только латинские буквы, цифры и _. '; return; }
+  if (authMode === 'recovery' && password.length < 8) { errorNode.textContent = 'Новый пароль должен содержать не менее 8 символов.'; return; }
+  setBusy(button, true, authMode === 'signup' ? 'Создаём аккаунт…' : authMode === 'recovery' ? 'Сохраняем…' : 'Входим…');
+  try {
+    if (authMode === 'recovery') {
+      const { error } = await supabaseClient.auth.updateUser({ password });
+      if (error) throw error;
+      passwordRecoveryPending = false;
+      $('#authEmail').readOnly = false;
+      $('#authPassword').value = '';
+      $('#authPassword').placeholder = 'Не менее 8 символов';
+      $('#authModeToggle').hidden = false;
+      $('#forgotPasswordBtn').hidden = false;
+      authMode = 'signin';
+      updateAuthInterface();
+      showToast('Пароль успешно изменён.');
+    } else if (authMode === 'signup') {
+      const { data, error } = await supabaseClient.auth.signUp({
+        email, password,
+        options: { data: { display_name: displayName, username } }
+      });
+      if (error) throw error;
+      if (!data.session) {
+        errorNode.textContent = 'Почти готово. Подтверди электронную почту по письму от Supabase, затем войди.';
+        return;
+      }
+      authSession = data.session;
+      authProfile = null;
+      updateAuthInterface();
+      await loadMyProfile();
+      showToast('Аккаунт создан. Добро пожаловать в KOTOMASTER.');
+    } else {
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      authSession = data.session;
+      authProfile = null;
+      updateAuthInterface();
+      await loadMyProfile();
+      showToast('Вход выполнен.');
+    }
+  } catch (error) {
+    errorNode.textContent = authErrorMessage(error);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+function authErrorMessage(error) {
+  const message = String(error?.message || 'Не удалось выполнить запрос.');
+  if (/invalid login credentials/i.test(message)) return 'Неверная почта или пароль.';
+  if (/user already registered/i.test(message)) return 'Этот адрес уже зарегистрирован. Попробуй войти.';
+  if (/password should be at least/i.test(message)) return 'Пароль должен содержать не менее 8 символов.';
+  if (/email not confirmed/i.test(message)) return 'Сначала подтверди электронную почту.';
+  if (/rate limit/i.test(message)) return 'Слишком много попыток. Подожди немного и повтори.';
+  return message;
+}
+
+async function openProfileEditor() {
+  if(!authProfile) await loadMyProfile();
+  $('#profileDisplayName').value=authProfile?.display_name||myName||'';
+  $('#profileUsername').value=authProfile?.username||'';
+  $('#profileBio').value=authProfile?.bio||'';
+  $('#profileEditError').textContent='';
+  $('#editProfileModal').hidden=false;
+}
+
+async function saveProfileChanges(event) {
+  event.preventDefault();
+  const displayName=$('#profileDisplayName').value.trim().slice(0,24);
+  const username=$('#profileUsername').value.trim().toLowerCase();
+  const bio=$('#profileBio').value.trim().slice(0,160);
+  const errorNode=$('#profileEditError');
+  if(!displayName) { errorNode.textContent='Укажи имя.'; return; }
+  if(!/^[a-z0-9_]{3,24}$/.test(username)) {
+    errorNode.textContent='Username должен содержать 3–24 символа: латинские буквы, цифры и _.';
+    return;
+  }
+  const button=$('#editProfileForm').querySelector('button[type="submit"]');
+  setBusy(button,true,'Сохраняем…');
+  try {
+    const {data,error}=await supabaseClient.from('profiles')
+      .update({display_name:displayName,username,bio,updated_at:new Date().toISOString()})
+      .eq('id',communityUserId())
+      .select('id,username,display_name,avatar_path,bio').single();
+    if(error) throw error;
+    authProfile=data;
+    myName=displayName;
+    nameInput.value=displayName;
+    $('#myName').textContent=displayName;
+    $('#myAvatar').textContent=firstLetter(displayName);
+    $('#myUsername').textContent='@'+username;
+    $('#editProfileModal').hidden=true;
+    if(socket && socket.connected) socket.emit('profile:update',{name:displayName});
+    showToast('Профиль обновлён.');
+  } catch(error) {
+    if(error.code==='23505') errorNode.textContent='Этот username уже занят. Выбери другой.';
+    else errorNode.textContent=error.message||'Не удалось сохранить профиль.';
+  } finally { setBusy(button,false); }
+}
+
+async function handlePasswordRecovery() {
+  const email = $('#authEmail').value.trim().toLowerCase();
+  if (!email) {
+    $('#authError').textContent = 'Сначала введи электронную почту.';
+    $('#authEmail').focus();
+    return;
+  }
+  const button = $('#forgotPasswordBtn');
+  button.disabled = true;
+  try {
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin
+    });
+    if (error) throw error;
+    $('#authError').textContent = 'Если аккаунт с этой почтой существует, письмо для сброса пароля отправлено.';
+  } catch (error) {
+    $('#authError').textContent = authErrorMessage(error);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function signOutAccount() {
+  if (!supabaseClient) return;
+  if (isInCall) stopCall();
+  if (roomId) leaveRoom();
+  const { error } = await supabaseClient.auth.signOut();
+  if (error) showToast('Не удалось выйти: ' + error.message);
+  else {
+    authSession = null;
+    authProfile = null;
+    updateAuthInterface();
+    showToast('Ты вышел из аккаунта.');
+  }
+}
 
 function showToast(message) {
   toastNode.textContent = message;
@@ -97,10 +352,11 @@ function setBusy(button, busy, label) {
 }
 
 async function connectSocket() {
+  if (!authSession?.access_token) throw new Error('Сначала войди в аккаунт.');
   if (socket && socket.connected) return;
   if (!window.io) throw new Error('Не загрузился модуль связи. Обнови страницу.');
   if (!socket) {
-    socket = window.io({ autoConnect: false, reconnection: true, reconnectionAttempts: Infinity, reconnectionDelay: 700, reconnectionDelayMax: 9000, randomizationFactor: 0.35, timeout: 12000 });
+    socket = window.io({ auth: { accessToken: authSession.access_token }, autoConnect: false, reconnection: true, reconnectionAttempts: Infinity, reconnectionDelay: 700, reconnectionDelayMax: 9000, randomizationFactor: 0.35, timeout: 12000 });
     bindSocketEvents();
   }
   await new Promise((resolve, reject) => {
@@ -140,7 +396,81 @@ function bindSocketEvents() {
     showToast('Старое подключение заменено новым. Повторно войди в комнату.');
   });
 
-  socket.on('chat:message', (message) => appendMessage(message));
+  socket.on('chat:message', (message) => {
+    appendMessage(message);
+    if (message && message.from !== socket.id) {
+      notifyIncomingMessage(message);
+      if (!document.hidden && activePanel === 'chat') markMessagesRead([message.id]);
+    }
+  });
+
+  socket.on('chat:edited', (message) => {
+    if (!message || !message.id) return;
+    messageRecords.set(message.id, message);
+    refreshMessageNode(message);
+    applyMessageSearch();
+  });
+
+  socket.on('chat:deleted', ({ messageId }) => {
+    const message = messageRecords.get(messageId);
+    if (!message) return;
+    message.deleted = true;
+    message.text = '';
+    message.reactions = {};
+    messageRecords.set(messageId, message);
+    refreshMessageNode(message);
+    if (pinnedMessage && pinnedMessage.id === messageId) {
+      pinnedMessage = null;
+      renderPinnedMessage();
+    }
+  });
+
+  socket.on('chat:reaction', ({ messageId, reactions }) => {
+    const message = messageRecords.get(messageId);
+    if (!message) return;
+    message.reactions = reactions || {};
+    messageRecords.set(messageId, message);
+    refreshMessageNode(message);
+  });
+
+  socket.on('chat:pinned', (message) => {
+    pinnedMessage = message || null;
+    renderPinnedMessage();
+    messageRecords.forEach((item) => refreshMessageNode(item));
+    showToast(pinnedMessage ? 'Сообщение закреплено' : 'Закрепление снято');
+  });
+
+  socket.on('chat:typing', ({ id, name, typing }) => {
+    if (!id || id === socket.id) return;
+    const previous = typingMembers.get(id);
+    if (previous && previous.timer) clearTimeout(previous.timer);
+    if (!typing) {
+      typingMembers.delete(id);
+    } else {
+      const entry = { name: name || 'Кто-то', timer: setTimeout(() => {
+        typingMembers.delete(id);
+        renderTypingIndicator();
+      }, 4200) };
+      typingMembers.set(id, entry);
+    }
+    renderTypingIndicator();
+  });
+
+  socket.on('chat:read-receipt', ({ messageId, readerId }) => {
+    const message = messageRecords.get(messageId);
+    if (!message || !readerId) return;
+    if (!Array.isArray(message.readBy)) message.readBy = [];
+    if (!message.readBy.includes(readerId)) message.readBy.push(readerId);
+    refreshMessageNode(message);
+  });
+
+  socket.on('room:peer-renamed', (member) => {
+    if (!member || !member.id) return;
+    const previous=participants.get(member.id)||{};
+    participants.set(member.id,{...previous,...member});
+    renderParticipants();
+    updateCallDescription();
+  });
 
   socket.on('room:peer-joined', (member) => {
     participants.set(member.id, member);
@@ -291,6 +621,7 @@ function resetAfterRoomRecoveryFailure(message) {
     previewAudioStream = null;
   }
   roomId = '';
+  roomConversationId = null;
   try { localStorage.removeItem(ROOM_SESSION_KEY); } catch (_error) {}
   participants.clear();
   seenMessages.clear();
@@ -346,6 +677,7 @@ function handlePageResume() {
 }
 
 async function restoreSavedRoom() {
+  if (!authSession?.user) return;
   let saved = null;
   try {
     saved = JSON.parse(localStorage.getItem(ROOM_SESSION_KEY) || 'null');
@@ -397,13 +729,20 @@ async function joinRoom(name, code) {
 
 function enterWorkspace(data, preservePanel = false) {
   roomId = data.roomId;
+  roomConversationId = data.conversationId || null;
   myName = data.self.name;
   try {
     localStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({ roomId, name: myName, savedAt: Date.now(), wasInCall: isInCall || resumeCallAfterRestore }));
   } catch (_error) {}
   participants.clear();
   seenMessages.clear();
+  messageRecords.clear();
+  typingMembers.forEach((entry) => { if (entry.timer) clearTimeout(entry.timer); });
+  typingMembers.clear();
+  replyTarget = null;
+  renderReplyPreview();
   participants.set(data.self.id, data.self);
+  pinnedMessage = data.pinnedMessage || null;
   (data.participants || []).forEach((member) => participants.set(member.id, member));
 
   $('#sidebarRoomCode').textContent = roomId;
@@ -415,6 +754,11 @@ function enterWorkspace(data, preservePanel = false) {
   messagesList.replaceChildren();
   $('.chat-welcome').hidden = false;
   (data.messages || []).forEach((message) => appendMessage(message, false));
+  renderPinnedMessage();
+  renderTypingIndicator();
+  if (activePanel === 'chat' && !document.hidden) {
+    markMessagesRead((data.messages || []).filter((message) => message.from !== data.self.id).map((message) => message.id));
+  }
   renderParticipants();
   updateCallDescription();
 
@@ -482,9 +826,31 @@ function pluralize(number, one, few, many) {
 function appendMessage(message, shouldScroll = true) {
   if (!message || !message.id || seenMessages.has(message.id)) return;
   seenMessages.add(message.id);
-  const mine = socket && message.from === socket.id;
+  messageRecords.set(message.id, message);
+  const row = createMessageNode(message);
+  messagesList.append(row);
+  $('.chat-welcome').hidden = true;
+  applyMessageSearch();
+  if (shouldScroll) requestAnimationFrame(() => { chatScroll.scrollTop = chatScroll.scrollHeight; });
+}
+
+function createActionButton(label, title, action, messageId) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'message-action';
+  button.textContent = label;
+  button.title = title;
+  button.setAttribute('aria-label', title);
+  button.dataset.action = action;
+  button.dataset.messageId = messageId;
+  return button;
+}
+
+function createMessageNode(message) {
+  const mine = Boolean(socket && message.from === socket.id);
   const row = document.createElement('div');
   row.className = `message-row${mine ? ' mine' : ''}`;
+  row.dataset.messageId = message.id;
 
   const avatar = document.createElement('div');
   avatar.className = 'message-avatar';
@@ -500,25 +866,1108 @@ function appendMessage(message, shouldScroll = true) {
   const date = new Date(message.time || Date.now());
   time.textContent = date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   meta.append(name, time);
+  if (message.editedAt) {
+    const edited = document.createElement('span');
+    edited.className = 'message-edited-label';
+    edited.textContent = 'изменено';
+    meta.append(edited);
+  }
+  if (mine && Array.isArray(message.readBy) && message.readBy.length > 0) {
+    const read = document.createElement('span');
+    read.className = 'message-read-mark';
+    read.textContent = '✓✓';
+    read.title = 'Прочитано участником комнаты';
+    meta.append(read);
+  }
+  if (pinnedMessage && pinnedMessage.id === message.id) {
+    const pin = document.createElement('span');
+    pin.className = 'message-pinned-label';
+    pin.textContent = 'Закреплено';
+    meta.append(pin);
+  }
 
   const bubble = document.createElement('div');
   bubble.className = 'message-bubble';
-  bubble.textContent = message.text || '';
-  content.append(meta, bubble);
+  if (message.deleted) {
+    bubble.classList.add('message-deleted');
+    bubble.textContent = 'Сообщение удалено';
+  } else {
+    bubble.textContent = message.text || '';
+  }
+  content.append(meta);
+
+  if (message.replyTo && !message.deleted) {
+    const quote = document.createElement('div');
+    quote.className = 'message-reply-quote';
+    const quoteName = document.createElement('strong');
+    quoteName.textContent = message.replyTo.name || 'Участник';
+    const quoteText = document.createElement('span');
+    quoteText.textContent = message.replyTo.text || 'Сообщение';
+    quote.append(quoteName, quoteText);
+    content.append(quote);
+  }
+  content.append(bubble);
+
+  if (!message.deleted) {
+    const actions = document.createElement('div');
+    actions.className = 'message-actions';
+    actions.append(
+      createActionButton('↩', 'Ответить', 'reply', message.id),
+      createActionButton('☺', 'Добавить реакцию', 'toggle-reactions', message.id),
+      createActionButton(pinnedMessage && pinnedMessage.id === message.id ? '▣' : '⌑',
+        pinnedMessage && pinnedMessage.id === message.id ? 'Открепить' : 'Закрепить',
+        'pin', message.id)
+    );
+    if (mine) {
+      actions.append(
+        createActionButton('✎', 'Изменить сообщение', 'edit', message.id),
+        createActionButton('×', 'Удалить сообщение', 'delete', message.id)
+      );
+    }
+
+    const reactionPicker = document.createElement('div');
+    reactionPicker.className = 'message-reaction-picker';
+    reactionPicker.hidden = true;
+    ['❤️', '👍', '😂', '🔥', '🐱', '🎉'].forEach((emoji) => {
+      const reactionButton = document.createElement('button');
+      reactionButton.type = 'button';
+      reactionButton.className = 'message-reaction-choice';
+      reactionButton.textContent = emoji;
+      reactionButton.setAttribute('aria-label', 'Поставить реакцию ' + emoji);
+      reactionButton.addEventListener('click', () => {
+        emitWithAck('chat:react', { messageId: message.id, emoji })
+          .then((response) => { if (!response.ok) showToast('Не удалось добавить реакцию.'); })
+          .catch((error) => showToast(error.message));
+      });
+      reactionPicker.append(reactionButton);
+    });
+
+    actions.querySelectorAll('button').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const action = button.dataset.action;
+        if (action === 'reply') {
+          replyTarget = message;
+          renderReplyPreview();
+          $('#messageInput').focus();
+          return;
+        }
+        if (action === 'toggle-reactions') {
+          reactionPicker.hidden = !reactionPicker.hidden;
+          return;
+        }
+        if (action === 'pin') {
+          const target = pinnedMessage && pinnedMessage.id === message.id ? '' : message.id;
+          try {
+            const response = await emitWithAck('chat:pin', { messageId: target });
+            if (!response.ok) showToast(response.error || 'Не удалось закрепить сообщение.');
+          } catch (error) { showToast(error.message); }
+          return;
+        }
+        if (action === 'edit') {
+          const editedText = window.prompt('Измени сообщение:', message.text || '');
+          if (editedText === null || !editedText.trim()) return;
+          try {
+            const response = await emitWithAck('chat:edit', { messageId: message.id, text: editedText });
+            if (!response.ok) showToast(response.error || 'Не удалось изменить сообщение.');
+          } catch (error) { showToast(error.message); }
+          return;
+        }
+        if (action === 'delete') {
+          if (!window.confirm('Удалить это сообщение у всех участников комнаты?')) return;
+          try {
+            const response = await emitWithAck('chat:delete', { messageId: message.id });
+            if (!response.ok) showToast(response.error || 'Не удалось удалить сообщение.');
+          } catch (error) { showToast(error.message); }
+        }
+      });
+    });
+
+    const reactions = document.createElement('div');
+    reactions.className = 'message-reactions';
+    Object.entries(message.reactions || {}).forEach(([emoji, users]) => {
+      const count = Array.isArray(users) ? users.length : 0;
+      if (!count) return;
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'message-reaction-chip' +
+        (Array.isArray(users) && socket && users.includes(socket.id) ? ' is-mine' : '');
+      chip.textContent = emoji + ' ' + count;
+      chip.title = 'Изменить свою реакцию';
+      chip.addEventListener('click', () => {
+        emitWithAck('chat:react', { messageId: message.id, emoji }).catch((error) => showToast(error.message));
+      });
+      reactions.append(chip);
+    });
+    content.append(actions, reactionPicker);
+    if (reactions.childElementCount) content.append(reactions);
+  }
   row.append(avatar, content);
-  messagesList.append(row);
-  $('.chat-welcome').hidden = true;
-  if (shouldScroll) requestAnimationFrame(() => { chatScroll.scrollTop = chatScroll.scrollHeight; });
+  return row;
+}
+
+function refreshMessageNode(message) {
+  const current = messagesList.querySelector(`[data-message-id="${CSS.escape(message.id)}"]`);
+  if (!current) return;
+  current.replaceWith(createMessageNode(message));
+}
+
+function renderReplyPreview() {
+  const preview = $('#replyPreview');
+  if (!preview) return;
+  preview.replaceChildren();
+  if (!replyTarget) {
+    preview.hidden = true;
+    return;
+  }
+  const copy = document.createElement('div');
+  copy.className = 'reply-preview-copy';
+  const title = document.createElement('strong');
+  title.textContent = 'Ответ: ' + (replyTarget.name || 'участник');
+  const text = document.createElement('span');
+  text.textContent = replyTarget.text || 'Сообщение';
+  copy.append(title, text);
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'reply-preview-close';
+  cancel.textContent = '×';
+  cancel.setAttribute('aria-label', 'Отменить ответ');
+  cancel.addEventListener('click', () => { replyTarget = null; renderReplyPreview(); });
+  preview.append(copy, cancel);
+  preview.hidden = false;
+}
+
+function renderPinnedMessage() {
+  const banner = $('#pinnedMessageBanner');
+  if (!banner) return;
+  banner.replaceChildren();
+  if (!pinnedMessage || pinnedMessage.deleted) {
+    banner.hidden = true;
+    return;
+  }
+  const marker = document.createElement('span');
+  marker.className = 'pinned-message-marker';
+  marker.textContent = '⌑';
+  const copy = document.createElement('div');
+  copy.className = 'pinned-message-copy';
+  const label = document.createElement('strong');
+  label.textContent = 'Закреплённое сообщение';
+  const text = document.createElement('span');
+  text.textContent = (pinnedMessage.name || 'Участник') + ': ' + (pinnedMessage.text || '');
+  copy.append(label, text);
+  const jump = document.createElement('button');
+  jump.type = 'button';
+  jump.className = 'pinned-message-jump';
+  jump.textContent = '↓';
+  jump.title = 'Перейти к сообщению';
+  jump.addEventListener('click', () => {
+    const node = messagesList.querySelector(`[data-message-id="${CSS.escape(pinnedMessage.id)}"]`);
+    if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+  banner.append(marker, copy, jump);
+  banner.hidden = false;
+}
+
+function renderTypingIndicator() {
+  const indicator = $('#typingIndicator');
+  if (!indicator) return;
+  const names = [...typingMembers.values()].map((entry) => entry.name);
+  indicator.hidden = names.length === 0;
+  if (!names.length) return;
+  indicator.textContent = names.length === 1
+    ? names[0] + ' печатает…'
+    : names.slice(0, 2).join(' и ') + (names.length > 2 ? ' и ещё ' + (names.length - 2) : '') + ' печатают…';
+}
+
+function markMessagesRead(ids) {
+  if (!socket || !socket.connected || !Array.isArray(ids) || !ids.length) return;
+  for (let index = 0; index < ids.length; index += 50) {
+    socket.emit('chat:read', { messageIds: ids.slice(index, index + 50) });
+  }
+}
+
+function applyMessageSearch() {
+  const query = messageSearchQuery.trim().toLocaleLowerCase('ru-RU');
+  messagesList.querySelectorAll('.message-row').forEach((row) => {
+    const message = messageRecords.get(row.dataset.messageId);
+    const searchable = message ? [message.name, message.text].join(' ').toLocaleLowerCase('ru-RU') : '';
+    row.hidden = Boolean(query && !searchable.includes(query));
+  });
+}
+
+function notifyIncomingMessage(message) {
+  if (!notificationsEnabled || !('Notification' in window) ||
+      Notification.permission !== 'granted' || !document.hidden ||
+      !message || message.from === (socket && socket.id)) return;
+  const notification = new Notification(message.name || 'Новое сообщение', {
+    body: String(message.text || 'Отправил сообщение').slice(0, 180),
+    tag: 'kotomaster-' + message.id
+  });
+  notification.onclick = () => {
+    window.focus();
+    notification.close();
+  };
+}
+
+
+const communityState = {
+  tab: 'chats',
+  conversations: [],
+  friends: [],
+  requests: [],
+  outgoingRequests: [],
+  currentConversationId: null,
+  currentConversation: null,
+  realtimeChannel: null,
+  globalChannel: null,
+  searchTimer: null,
+  voiceRecorder: null,
+  voiceStream: null,
+  voiceChunks: [],
+  replyTarget: null,
+  pinnedMessage: null
+};
+
+function updateNotificationsButton() {
+  const button=$('#notificationsBtn');
+  if(!button) return;
+  button.classList.toggle('enabled',notificationsEnabled);
+  button.setAttribute('aria-pressed',String(notificationsEnabled));
+  button.title=notificationsEnabled?'Отключить уведомления':'Включить уведомления';
+}
+
+async function stopCommunityRealtime() {
+  if(communityState.globalChannel && supabaseClient) {
+    const channel=communityState.globalChannel;
+    communityState.globalChannel=null;
+    try { await supabaseClient.removeChannel(channel); } catch(_error) {}
+  }
+  if(communityState.realtimeChannel && supabaseClient) {
+    const channel=communityState.realtimeChannel;
+    communityState.realtimeChannel=null;
+    try { await supabaseClient.removeChannel(channel); } catch(_error) {}
+  }
+}
+
+async function startCommunityRealtime() {
+  if(!supabaseClient || !communityUserId()) {
+    await stopCommunityRealtime();
+    return;
+  }
+  if(communityState.globalChannel) {
+    const oldChannel=communityState.globalChannel;
+    communityState.globalChannel=null;
+    await supabaseClient.removeChannel(oldChannel);
+  }
+  const userId=communityUserId();
+  const channel=supabaseClient.channel('kotomaster-inbox-'+userId)
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},(payload)=>{
+      const message=payload.new;
+      if(!message || message.sender_id===userId) return;
+      loadCommunityConversations().catch((error)=>console.warn('Inbox refresh failed:',error));
+      if(document.hidden && notificationsEnabled && 'Notification' in window && Notification.permission==='granted') {
+        const conversation=communityState.conversations.find((item)=>item.id===message.conversation_id);
+        const title=conversation?.title||'Новое сообщение';
+        const body=message.body ? String(message.body).slice(0,120) : 'Тебе отправили вложение';
+        try {
+          const notification=new Notification('KOTOMASTER · '+title,{body,tag:'kotomaster-'+message.conversation_id});
+          notification.onclick=()=>{
+            window.focus();
+            switchPanel('community');
+            setCommunityTab('chats');
+            openCommunityConversation(message.conversation_id).catch((error)=>showToast(error.message));
+            notification.close();
+          };
+        } catch(error) { console.warn('Notification failed:',error); }
+      }
+    })
+    .on('postgres_changes',{event:'*',schema:'public',table:'friendships'},()=>{
+      loadCommunityFriends().catch((error)=>console.warn('Friend list refresh failed:',error));
+      loadCommunityConversations().catch((error)=>console.warn('Conversation refresh failed:',error));
+    })
+    .subscribe();
+  communityState.globalChannel=channel;
+}
+
+function communityUserId() {
+  return authSession?.user?.id || null;
+}
+
+function setCommunityTab(tab) {
+  communityState.tab = ['chats','friends','groups'].includes(tab) ? tab : 'chats';
+  document.querySelectorAll('.community-tab').forEach((button) =>
+    button.classList.toggle('active', button.dataset.communityTab === communityState.tab)
+  );
+  $('#communityChatsPanel').hidden = communityState.tab !== 'chats';
+  $('#communityFriendsPanel').hidden = communityState.tab !== 'friends';
+  $('#communityGroupsPanel').hidden = communityState.tab !== 'groups';
+  $('#communityChatTitle').textContent = 'Чаты';
+  refreshCommunity();
+}
+
+function communityNode(tag, className, textValue) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (textValue !== undefined && textValue !== null) node.textContent = String(textValue);
+  return node;
+}
+
+async function fetchCommunityProfiles(ids) {
+  const uniqueIds = [...new Set((ids || []).filter(Boolean))];
+  if (!uniqueIds.length) return [];
+  const { data, error } = await supabaseClient.from('profiles')
+    .select('id,username,display_name,avatar_path,bio')
+    .in('id', uniqueIds);
+  if (error) throw error;
+  return data || [];
+}
+
+function renderCommunityLoading(container, message) {
+  container.replaceChildren(communityNode('p','community-empty-note',message));
+}
+
+async function loadCommunityFriends() {
+  const userId = communityUserId();
+  if (!userId) return;
+  const { data, error } = await supabaseClient.from('friendships')
+    .select('id,requester_id,addressee_id,status,created_at')
+    .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
+    .order('created_at',{ascending:false});
+  if (error) throw error;
+  const rows = data || [];
+  const otherIds = rows.map((row) => row.requester_id === userId ? row.addressee_id : row.requester_id);
+  const profiles = await fetchCommunityProfiles(otherIds);
+  const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
+  communityState.friends = rows.filter((row) => row.status === 'accepted').map((row) => {
+    const otherId = row.requester_id === userId ? row.addressee_id : row.requester_id;
+    return { ...row, userId: otherId, profile: profileMap.get(otherId) || { display_name: 'Пользователь' } };
+  });
+  communityState.requests = rows.filter((row) => row.status === 'pending' && row.addressee_id === userId).map((row) => ({
+    ...row,
+    userId: row.requester_id,
+    profile: profileMap.get(row.requester_id) || { display_name: 'Пользователь' }
+  }));
+  communityState.outgoingRequests = rows.filter((row) => row.status === 'pending' && row.requester_id === userId).map((row) => ({
+    ...row,
+    userId: row.addressee_id,
+    profile: profileMap.get(row.addressee_id) || { display_name: 'Пользователь' }
+  }));
+  renderFriendLists();
+  renderGroupMemberChoices();
+}
+
+function renderFriendLists() {
+  const searchResults = $('#friendSearchResults');
+  if (searchResults && !searchResults.dataset.keep) searchResults.replaceChildren();
+  const requestList = $('#friendRequestsList');
+  requestList.replaceChildren();
+  if (!communityState.requests.length) {
+    requestList.append(communityNode('p','community-empty-note','Новых заявок пока нет.'));
+  } else {
+    communityState.requests.forEach((request) => {
+      const item = communityNode('div','community-person-item');
+      const copy = communityNode('div','community-person-copy');
+      copy.append(communityNode('strong','',request.profile.display_name || 'Пользователь'));
+      copy.append(communityNode('small','',request.profile.username ? '@'+request.profile.username : 'Хочет добавить тебя в друзья'));
+      const actions = communityNode('div','community-person-actions');
+      const accept = communityNode('button','community-small-action is-primary','Принять');
+      accept.type='button';
+      accept.addEventListener('click',()=>respondToFriendRequest(request.id,'accepted'));
+      const decline = communityNode('button','community-small-action','Отклонить');
+      decline.type='button';
+      decline.addEventListener('click',()=>respondToFriendRequest(request.id,'declined'));
+      actions.append(accept,decline); item.append(copy,actions); requestList.append(item);
+    });
+  }
+  const friendList = $('#friendList');
+  friendList.replaceChildren();
+  if (!communityState.friends.length) {
+    friendList.append(communityNode('p','community-empty-note','Здесь появятся принятые друзья.'));
+  } else {
+    communityState.friends.forEach((friend) => {
+      const item=communityNode('div','community-person-item');
+      const copy=communityNode('div','community-person-copy');
+      copy.append(communityNode('strong','',friend.profile.display_name || 'Пользователь'));
+      copy.append(communityNode('small','',friend.profile.username ? '@'+friend.profile.username : 'Друг'));
+      const button=communityNode('button','community-small-action is-primary','Написать');
+      button.type='button';
+      button.addEventListener('click',()=>openDirectConversation(friend.userId));
+      item.append(copy,button); friendList.append(item);
+    });
+  }
+}
+
+async function searchCommunityUsers(value) {
+  const results=$('#friendSearchResults');
+  results.replaceChildren();
+  const query=String(value||'').trim().replace(/^@/,'').replace(/[^a-zA-Z0-9_а-яА-ЯёЁ -]/g,'').slice(0,32);
+  if (query.length < 2) return;
+  renderCommunityLoading(results,'Ищем пользователей…');
+  const safe=query.replace(/[%_,().]/g,' ').trim();
+  const {data,error}=await supabaseClient.from('profiles')
+    .select('id,username,display_name')
+    .neq('id',communityUserId())
+    .or(`username.ilike.%${safe}%,display_name.ilike.%${safe}%`)
+    .limit(12);
+  results.replaceChildren();
+  if(error) { results.append(communityNode('p','community-empty-note','Не удалось выполнить поиск: '+error.message)); return; }
+  const known=new Map();
+  communityState.friends.forEach((f)=>known.set(f.userId,'accepted'));
+  communityState.requests.forEach((f)=>known.set(f.userId,'incoming'));
+  communityState.outgoingRequests.forEach((f)=>known.set(f.userId,'outgoing'));
+  if(!data?.length) { results.append(communityNode('p','community-empty-note','Никого не нашли. Проверь имя или username.')); return; }
+  data.forEach((profile)=>{
+    const item=communityNode('div','community-person-item');
+    const copy=communityNode('div','community-person-copy');
+    copy.append(communityNode('strong','',profile.display_name||'Пользователь'));
+    copy.append(communityNode('small','',profile.username?'@'+profile.username:'Пользователь KOTOMASTER'));
+    const knownStatus=known.get(profile.id);
+    const button=communityNode('button','community-small-action',knownStatus==='accepted'?'Друг':knownStatus==='incoming'?'Заявка получена':knownStatus==='outgoing'?'Заявка отправлена':'Добавить');
+    button.type='button';
+    button.disabled=Boolean(knownStatus);
+    if(!knownStatus) button.addEventListener('click',()=>sendFriendRequest(profile.id,button));
+    item.append(copy,button); results.append(item);
+  });
+}
+
+async function sendFriendRequest(friendId,button) {
+  if(!communityUserId() || !friendId || friendId===communityUserId()) return;
+  button.disabled=true;
+  try {
+    const {data,error}=await supabaseClient.rpc('request_friendship',{p_friend_id:friendId});
+    if(error) throw error;
+    if(data==='accepted') {
+      button.textContent='Друг';
+      button.disabled=true;
+      showToast('Вы теперь друзья.');
+      await loadCommunityFriends();
+      await loadCommunityConversations();
+      return;
+    }
+    button.textContent='Заявка отправлена';
+    button.disabled=true;
+    await loadCommunityFriends();
+    showToast('Заявка в друзья отправлена.');
+  } catch(error) {
+    button.disabled=false;
+    showToast('Не удалось отправить заявку: '+error.message);
+  }
+}
+
+async function respondToFriendRequest(requestId,status) {
+  try {
+    const {data,error}=await supabaseClient.from('friendships')
+      .update({status,updated_at:new Date().toISOString()})
+      .eq('id',requestId).eq('addressee_id',communityUserId()).eq('status','pending')
+      .select('id');
+    if(error) throw error;
+    if(!data?.length) throw new Error('Заявка уже обработана.');
+    await loadCommunityFriends();
+    await loadCommunityConversations();
+    showToast(status==='accepted'?'Заявка принята.':'Заявка отклонена.');
+  } catch(error) { showToast('Не удалось обработать заявку: '+error.message); }
+}
+
+async function loadCommunityConversations() {
+  const userId=communityUserId();
+  if(!userId) return;
+  const {data:members,error:memberError}=await supabaseClient.from('conversation_members')
+    .select('conversation_id,role,last_read_at,joined_at')
+    .eq('user_id',userId);
+  if(memberError) throw memberError;
+  const ids=(members||[]).map((m)=>m.conversation_id);
+  if(!ids.length) {
+    communityState.conversations=[];
+    renderCommunityConversations();
+    return;
+  }
+  const [convResult,memberResult,messageResult]=await Promise.all([
+    supabaseClient.from('conversations').select('id,kind,title,created_at,updated_at').in('id',ids),
+    supabaseClient.from('conversation_members').select('conversation_id,user_id,role').in('conversation_id',ids).neq('user_id',userId),
+    supabaseClient.from('messages').select('id,conversation_id,body,sender_id,created_at').in('conversation_id',ids).order('created_at',{ascending:false}).limit(250)
+  ]);
+  if(convResult.error) throw convResult.error;
+  if(memberResult.error) throw memberResult.error;
+  if(messageResult.error) throw messageResult.error;
+  const others=memberResult.data||[];
+  const profiles=await fetchCommunityProfiles(others.map((m)=>m.user_id));
+  const profileMap=new Map(profiles.map((p)=>[p.id,p]));
+  const convMap=new Map((convResult.data||[]).map((c)=>[c.id,c]));
+  const lastMessages=new Map();
+  (messageResult.data||[]).forEach((m)=>{
+    if(!lastMessages.has(m.conversation_id)) lastMessages.set(m.conversation_id,m);
+  });
+  communityState.conversations=(members||[]).map((member)=>{
+    const conv=convMap.get(member.conversation_id);
+    if(!conv) return null;
+    const otherMembers=others.filter((m)=>m.conversation_id===conv.id);
+    const names=otherMembers.map((m)=>profileMap.get(m.user_id)?.display_name||'Пользователь');
+    const title=conv.kind==='group'?(conv.title||'Группа'):(names[0]||'Личный чат');
+    const last=lastMessages.get(conv.id);
+    return {...conv,title,otherMembers,lastMessage:last||null,sortAt:last?.created_at||conv.updated_at};
+  }).filter(Boolean).sort((a,b)=>Date.parse(b.sortAt||0)-Date.parse(a.sortAt||0));
+  renderCommunityConversations();
+}
+
+function renderCommunityConversations() {
+  const chats=$('#communityConversationList');
+  const groups=$('#communityGroupsList');
+  chats.replaceChildren();
+  groups.replaceChildren();
+  const conversations=communityState.conversations;
+  if(!conversations.length) chats.append(communityNode('p','community-empty-note','Пока нет переписок. Добавь друга, чтобы начать.'));
+  conversations.forEach((conversation)=>{
+    const isSelected=conversation.id===communityState.currentConversationId;
+    const item=communityNode('button','community-conversation-item'+(isSelected?' is-selected':''));
+    item.type='button';
+    item.addEventListener('click',()=>openCommunityConversation(conversation.id));
+    const icon=communityNode('span','community-conversation-avatar',conversation.kind==='group'?'#':(conversation.title||'К').slice(0,1).toUpperCase());
+    const content=communityNode('span','community-conversation-copy');
+    content.append(communityNode('strong','',conversation.title));
+    const last=conversation.lastMessage;
+    content.append(communityNode('small','',last?(last.body||'Вложение').slice(0,70):'Начни общение'));
+    item.append(icon,content);
+    chats.append(item);
+    if(conversation.kind==='group') {
+      const groupItem=item.cloneNode(true);
+      groupItem.addEventListener('click',()=>openCommunityConversation(conversation.id));
+      groups.append(groupItem);
+    }
+  });
+  if(!groups.children.length) groups.append(communityNode('p','community-empty-note','Групповых чатов пока нет.'));
+}
+
+function renderCommunityMessages(rows,profiles,attachments=[],reactions=[],readThrough=0) {
+  const list=$('#communityMessages');
+  list.replaceChildren();
+  if(!rows.length) {
+    list.append(communityNode('p','community-empty-note','Сообщений пока нет. Напиши первым.'));
+    return;
+  }
+  const names=new Map((profiles||[]).map((p)=>[p.id,p.display_name||'Пользователь']));
+  const reactionMap=new Map();
+  (reactions||[]).forEach((reaction)=>{
+    if(!reactionMap.has(reaction.message_id)) reactionMap.set(reaction.message_id,[]);
+    reactionMap.get(reaction.message_id).push(reaction);
+  });
+  const messageMap=new Map(rows.map((message)=>[message.id,message]));
+  rows.forEach((message)=>{
+    const own=message.sender_id===communityUserId();
+    const item=communityNode('article','community-message'+(own?' is-own':''));
+    item.dataset.messageId=message.id;
+    const header=communityNode('div','community-message-header');
+    header.append(communityNode('strong','',own?'Ты':(names.get(message.sender_id)||'Пользователь')));
+    const date=new Date(message.created_at);
+    header.append(communityNode('time','',date.toLocaleString('ru-RU',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})));
+    if(own && readThrough && Date.parse(message.created_at)<=readThrough) {
+      header.append(communityNode('span','community-read-indicator','✓✓ Прочитано'));
+    }
+    if(message.reply_to) {
+      const replied=messageMap.get(message.reply_to);
+      const quote=communityNode('div','community-message-reply',replied?(replied.body||'Сообщение удалено'):'Ответ на сообщение');
+      if(replied && replied.sender_id) quote.prepend(communityNode('strong','',names.get(replied.sender_id)||'Пользователь'));
+      item.append(quote);
+    }
+    const body=communityNode('p','',message.deleted_at?'Сообщение удалено':message.body);
+    if(message.edited_at && !message.deleted_at) body.append(communityNode('small','community-edited',' · изменено'));
+    item.append(header,body);
+    const messageAttachments=(attachments||[]).filter((attachment)=>attachment.message_id===message.id);
+    messageAttachments.forEach((attachment)=>{
+      if(!attachment.signedUrl) return;
+      const mime=attachment.mime_type||'';
+      if(mime.startsWith('image/')) {
+        const link=communityNode('a','community-attachment-link');
+        link.href=attachment.signedUrl; link.target='_blank'; link.rel='noopener noreferrer';
+        const image=document.createElement('img');
+        image.src=attachment.signedUrl; image.alt=attachment.file_name||'Изображение'; image.loading='lazy';
+        link.append(image); item.append(link);
+      } else if(mime.startsWith('audio/')) {
+        const audio=document.createElement('audio');
+        audio.controls=true; audio.preload='metadata'; audio.src=attachment.signedUrl;
+        audio.className='community-attachment-audio'; item.append(audio);
+      } else if(mime.startsWith('video/')) {
+        const video=document.createElement('video');
+        video.controls=true; video.preload='metadata'; video.src=attachment.signedUrl;
+        video.className='community-attachment-video'; item.append(video);
+      }
+      const link=communityNode('a','community-file-link',attachment.file_name||'Скачать файл');
+      link.href=attachment.signedUrl; link.target='_blank'; link.rel='noopener noreferrer';
+      item.append(link);
+    });
+    const reactionRows=message.deleted_at?[]:(reactionMap.get(message.id)||[]);
+    if(reactionRows.length) {
+      const reactionBar=communityNode('div','community-reactions');
+      const heartCount=reactionRows.filter((reaction)=>reaction.emoji==='❤️').length;
+      if(heartCount) {
+        const heart=communityNode('span','community-reaction-chip',`❤️ ${heartCount}`);
+        reactionBar.append(heart);
+      }
+      item.append(reactionBar);
+    }
+    const actions=communityNode('div','community-message-actions');
+    const replyButton=communityNode('button','community-message-action','↩ Ответить');
+    replyButton.type='button';
+    replyButton.addEventListener('click',()=>setCommunityReply(message));
+    actions.append(replyButton);
+    if(!message.deleted_at) {
+      const reactionButton=communityNode('button','community-message-action','❤️');
+      reactionButton.type='button'; reactionButton.title='Поставить реакцию';
+      reactionButton.addEventListener('click',()=>toggleCommunityReaction(message.id,'❤️'));
+      actions.append(reactionButton);
+      const pinButton=communityNode('button','community-message-action',communityState.pinnedMessage?.message_id===message.id?'📌 Снять':'📌 Закрепить');
+      pinButton.type='button';
+      pinButton.addEventListener('click',()=>toggleCommunityPin(message.id));
+      actions.append(pinButton);
+    }
+    if(own && !message.deleted_at) {
+      const editButton=communityNode('button','community-message-action','Изменить');
+      editButton.type='button'; editButton.addEventListener('click',()=>editCommunityMessage(message));
+      const deleteButton=communityNode('button','community-message-action is-danger','Удалить');
+      deleteButton.type='button'; deleteButton.addEventListener('click',()=>deleteCommunityMessage(message));
+      actions.append(editButton,deleteButton);
+    }
+    item.append(actions);
+    list.append(item);
+  });
+  list.scrollTop=list.scrollHeight;
+  renderCommunityPinnedBanner(rows);
+}
+
+async function loadCommunityMessages(conversationId) {
+  const {data,error}=await supabaseClient.from('messages')
+    .select('id,sender_id,body,reply_to,edited_at,deleted_at,created_at')
+    .eq('conversation_id',conversationId)
+    .order('created_at',{ascending:true})
+    .limit(150);
+  if(error) throw error;
+  const rows=data||[];
+  const profiles=await fetchCommunityProfiles(rows.map((m)=>m.sender_id));
+  const {data:readers,error:readersError}=await supabaseClient.from('conversation_members')
+    .select('user_id,last_read_at').eq('conversation_id',conversationId).neq('user_id',communityUserId());
+  if(readersError) throw readersError;
+  const readTimestamps=(readers||[]).map((reader)=>reader.last_read_at?Date.parse(reader.last_read_at):0);
+  const readThrough=readTimestamps.length&&readTimestamps.every((timestamp)=>timestamp>0)?Math.min(...readTimestamps):0;
+  let attachments=[];
+  if(rows.length) {
+    const {data:attachmentRows,error:attachmentError}=await supabaseClient.from('conversation_attachments')
+      .select('id,message_id,bucket_id,object_path,file_name,mime_type,size_bytes')
+      .eq('conversation_id',conversationId)
+      .in('message_id',rows.map((m)=>m.id));
+    if(attachmentError) throw attachmentError;
+    attachments=await Promise.all((attachmentRows||[]).map(async(attachment)=>{
+      const {data:signed,error:signedError}=await supabaseClient.storage
+        .from(attachment.bucket_id).createSignedUrl(attachment.object_path,3600);
+      return {...attachment,signedUrl:signedError?null:signed?.signedUrl||null};
+    }));
+  }
+  let reactions=[];
+  if(rows.length) {
+    const {data:reactionRows,error:reactionError}=await supabaseClient.from('message_reactions')
+      .select('message_id,user_id,emoji')
+      .in('message_id',rows.map((m)=>m.id));
+    if(reactionError) throw reactionError;
+    reactions=reactionRows||[];
+  }
+  const {data:pin,error:pinError}=await supabaseClient.from('conversation_pins')
+    .select('conversation_id,message_id,pinned_by,pinned_at')
+    .eq('conversation_id',conversationId).maybeSingle();
+  if(pinError) throw pinError;
+  communityState.pinnedMessage=pin||null;
+  renderCommunityMessages(rows,profiles,attachments,reactions,readThrough);
+}
+
+
+function renderCommunityPinnedBanner(rows=[]) {
+  const banner=$('#communityPinnedBanner');
+  const pinned=communityState.pinnedMessage;
+  banner.replaceChildren();
+  banner.hidden=!pinned;
+  if(!pinned) return;
+  const message=(rows||[]).find((row)=>row.id===pinned.message_id);
+  banner.append(communityNode('strong','', 'Закреплённое сообщение'));
+  banner.append(communityNode('span','',message?.body||'Нажми, чтобы перейти к сообщению'));
+  banner.onclick=()=>{
+    const target=$('#communityMessages').querySelector(`[data-message-id="${pinned.message_id}"]`);
+    if(target) target.scrollIntoView({behavior:'smooth',block:'center'});
+  };
+}
+
+function setCommunityReply(message) {
+  communityState.replyTarget=message;
+  const preview=$('#communityReplyPreview');
+  preview.replaceChildren();
+  preview.hidden=false;
+  const copy=communityNode('div','community-reply-copy');
+  copy.append(communityNode('strong','',message.sender_id===communityUserId()?'Ты':communityState.currentConversation?.title||'Ответ'));
+  copy.append(communityNode('span','',(message.body||'Сообщение').slice(0,100)));
+  const close=communityNode('button','community-reply-close','×');
+  close.type='button'; close.addEventListener('click',clearCommunityReply);
+  preview.append(copy,close);
+  $('#communityMessageInput').focus();
+}
+
+function clearCommunityReply() {
+  communityState.replyTarget=null;
+  const preview=$('#communityReplyPreview');
+  preview.hidden=true; preview.replaceChildren();
+}
+
+async function toggleCommunityReaction(messageId,emoji) {
+  const userId=communityUserId();
+  try {
+    const {data,error}=await supabaseClient.from('message_reactions')
+      .select('message_id').eq('message_id',messageId).eq('user_id',userId).eq('emoji',emoji);
+    if(error) throw error;
+    if(data?.length) {
+      const {error:deleteError}=await supabaseClient.from('message_reactions').delete()
+        .eq('message_id',messageId).eq('user_id',userId).eq('emoji',emoji);
+      if(deleteError) throw deleteError;
+    } else {
+      const {error:insertError}=await supabaseClient.from('message_reactions')
+        .insert({message_id:messageId,user_id:userId,emoji});
+      if(insertError) throw insertError;
+    }
+    await loadCommunityMessages(communityState.currentConversationId);
+  } catch(error) { showToast('Не удалось поставить реакцию: '+error.message); }
+}
+
+async function toggleCommunityPin(messageId) {
+  const conversationId=communityState.currentConversationId;
+  try {
+    if(communityState.pinnedMessage?.message_id===messageId) {
+      const {error}=await supabaseClient.from('conversation_pins').delete().eq('conversation_id',conversationId);
+      if(error) throw error;
+      showToast('Закрепление снято.');
+    } else {
+      if(communityState.pinnedMessage) {
+        const {error:deleteError}=await supabaseClient.from('conversation_pins').delete().eq('conversation_id',conversationId);
+        if(deleteError) throw deleteError;
+      }
+      const {error}=await supabaseClient.from('conversation_pins').insert({
+        conversation_id:conversationId,message_id:messageId,pinned_by:communityUserId()
+      });
+      if(error) throw error;
+      showToast('Сообщение закреплено.');
+    }
+    await loadCommunityMessages(conversationId);
+  } catch(error) { showToast('Не удалось закрепить: '+error.message); }
+}
+
+async function editCommunityMessage(message) {
+  const updated=window.prompt('Измени сообщение',message.body||'');
+  if(updated===null) return;
+  const body=updated.trim();
+  if(!body) { showToast('Сообщение не может быть пустым.'); return; }
+  try {
+    const {error}=await supabaseClient.from('messages')
+      .update({body,edited_at:new Date().toISOString()})
+      .eq('id',message.id).eq('sender_id',communityUserId());
+    if(error) throw error;
+    await loadCommunityMessages(communityState.currentConversationId);
+  } catch(error) { showToast('Не удалось изменить сообщение: '+error.message); }
+}
+
+async function deleteCommunityMessage(message) {
+  if(!window.confirm('Удалить это сообщение и прикреплённые файлы?')) return;
+  try {
+    const {data:attachments,error:attachmentError}=await supabaseClient.from('conversation_attachments')
+      .select('id,bucket_id,object_path')
+      .eq('message_id',message.id).eq('uploader_id',communityUserId());
+    if(attachmentError) throw attachmentError;
+    const byBucket=new Map();
+    (attachments||[]).forEach((attachment)=>{
+      if(!byBucket.has(attachment.bucket_id)) byBucket.set(attachment.bucket_id,[]);
+      byBucket.get(attachment.bucket_id).push(attachment.object_path);
+    });
+    for(const [bucket,paths] of byBucket) {
+      const {error:storageError}=await supabaseClient.storage.from(bucket).remove(paths);
+      if(storageError) throw storageError;
+    }
+    if(attachments?.length) {
+      const {error:metaError}=await supabaseClient.from('conversation_attachments')
+        .delete().eq('message_id',message.id).eq('uploader_id',communityUserId());
+      if(metaError) throw metaError;
+    }
+    await supabaseClient.from('conversation_pins').delete()
+      .eq('conversation_id',communityState.currentConversationId).eq('message_id',message.id);
+    const {error}=await supabaseClient.from('messages')
+      .update({body:'',deleted_at:new Date().toISOString()})
+      .eq('id',message.id).eq('sender_id',communityUserId());
+    if(error) throw error;
+    await loadCommunityMessages(communityState.currentConversationId);
+  } catch(error) { showToast('Не удалось удалить сообщение: '+error.message); }
+}
+
+async function openCommunityConversation(conversationId) {
+  const conversation=communityState.conversations.find((c)=>c.id===conversationId);
+  if(!conversation) return;
+  communityState.currentConversationId=conversationId;
+  communityState.currentConversation=conversation;
+  $('#communityEmpty').hidden=true;
+  $('#communityActiveChat').hidden=false;
+  $('#communityChatTitle').textContent=conversation.title;
+  $('#communityChatSubtitle').textContent=conversation.kind==='group'?'Групповая переписка':'Личные сообщения';
+  renderCommunityConversations();
+  renderCommunityLoading($('#communityMessages'),'Загружаем историю переписки…');
+  if(communityState.realtimeChannel) await supabaseClient.removeChannel(communityState.realtimeChannel);
+  try {
+    await loadCommunityMessages(conversationId);
+    communityState.realtimeChannel=supabaseClient.channel('kotomaster-conversation-'+conversationId)
+      .on('postgres_changes',{event:'*',schema:'public',table:'messages',filter:`conversation_id=eq.${conversationId}`},async()=> {
+        try {
+          await loadCommunityMessages(conversationId);
+          await loadCommunityConversations();
+          if(!document.hidden) await supabaseClient.from('conversation_members')
+            .update({last_read_at:new Date().toISOString()})
+            .eq('conversation_id',conversationId).eq('user_id',communityUserId());
+        } catch(error) { console.warn('Realtime chat refresh failed:',error); }
+      })
+      .on('postgres_changes',{event:'*',schema:'public',table:'conversation_attachments',filter:`conversation_id=eq.${conversationId}`},()=>loadCommunityMessages(conversationId).catch((error)=>console.warn(error)))
+      .on('postgres_changes',{event:'*',schema:'public',table:'message_reactions'},()=>loadCommunityMessages(conversationId).catch((error)=>console.warn(error)))
+      .on('postgres_changes',{event:'*',schema:'public',table:'conversation_pins',filter:`conversation_id=eq.${conversationId}`},()=>loadCommunityMessages(conversationId).catch((error)=>console.warn(error)))
+      .on('postgres_changes',{event:'*',schema:'public',table:'conversation_members',filter:`conversation_id=eq.${conversationId}`},()=>loadCommunityMessages(conversationId).catch((error)=>console.warn(error)))
+      .subscribe();
+    await supabaseClient.from('conversation_members')
+      .update({last_read_at:new Date().toISOString()})
+      .eq('conversation_id',conversationId).eq('user_id',communityUserId());
+  } catch(error) {
+    renderCommunityLoading($('#communityMessages'),'Не удалось загрузить чат: '+error.message);
+  }
+}
+
+async function openDirectConversation(friendId) {
+  try {
+    const {data,error}=await supabaseClient.rpc('create_direct_conversation',{p_friend_id:friendId});
+    if(error) throw error;
+    await loadCommunityConversations();
+    setCommunityTab('chats');
+    await openCommunityConversation(data);
+  } catch(error) {
+    showToast('Не удалось открыть чат: '+error.message);
+  }
+}
+
+function renderGroupMemberChoices() {
+  const list=$('#newGroupMembers');
+  if(!list) return;
+  list.replaceChildren();
+  if(!communityState.friends.length) {
+    list.append(communityNode('p','community-empty-note','Сначала добавь друзей.'));
+    return;
+  }
+  communityState.friends.forEach((friend)=>{
+    const label=communityNode('label','community-group-member');
+    const checkbox=document.createElement('input');
+    checkbox.type='checkbox'; checkbox.value=friend.userId;
+    label.append(checkbox,communityNode('span','',friend.profile.display_name||'Пользователь'));
+    list.append(label);
+  });
+}
+
+async function createCommunityGroup(event) {
+  event.preventDefault();
+  const title=$('#newGroupTitle').value.trim();
+  const memberIds=[...$('#newGroupMembers').querySelectorAll('input:checked')].map((input)=>input.value);
+  if(memberIds.length===0) { $('#newGroupError').textContent='Выбери хотя бы одного друга.'; return; }
+  const button=$('#newGroupForm').querySelector('button[type="submit"]');
+  setBusy(button,true,'Создаём группу…');
+  try {
+    const {data,error}=await supabaseClient.rpc('create_group_conversation',{p_title:title,p_member_ids:memberIds});
+    if(error) throw error;
+    $('#newGroupModal').hidden=true;
+    $('#newGroupForm').reset();
+    await loadCommunityConversations();
+    setCommunityTab('groups');
+    await openCommunityConversation(data);
+    showToast('Группа создана.');
+  } catch(error) {
+    $('#newGroupError').textContent=error.message||'Не удалось создать группу.';
+  } finally { setBusy(button,false); }
+}
+
+async function uploadCommunityFile(file) {
+  const conversationId=communityState.currentConversationId;
+  const userId=communityUserId();
+  if(!conversationId||!userId||!file) throw new Error('Сначала открой переписку.');
+  const maxBytes=50*1024*1024;
+  if(file.size>maxBytes) throw new Error('Файл больше 50 МБ. Выбери файл поменьше.');
+  const safeName=String(file.name||'file').replace(/[^\p{L}\p{N}._-]/gu,'_').slice(-90)||'file';
+  const unique=(window.crypto?.randomUUID?.()||String(Date.now()));
+  const objectPath=`${conversationId}/${userId}/${unique}-${safeName}`;
+  let uploaded=false;
+  let messageId=null;
+  try {
+    const contentType=String(file.type||'application/octet-stream').split(';')[0];
+    const allowedTypes=new Set([
+      'image/jpeg','image/png','image/webp','image/gif',
+      'video/mp4','video/webm',
+      'audio/webm','audio/ogg','audio/mpeg','audio/mp4',
+      'application/pdf','text/plain',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ]);
+    if(!allowedTypes.has(contentType)) throw new Error('Этот тип файла не поддерживается. Отправь изображение, видео, аудио, PDF, TXT, DOCX или XLSX.');
+    const {error:uploadError}=await supabaseClient.storage.from('chat-files').upload(objectPath,file,{
+      cacheControl:'3600',contentType,upsert:false
+    });
+    if(uploadError) throw uploadError;
+    uploaded=true;
+    const messageType=contentType.startsWith('image/')?'image':
+      contentType.startsWith('video/')?'video':
+      contentType.startsWith('audio/')?(String(file.name||'').startsWith('voice-')?'voice':'audio'):'file';
+    const {data:message,error:messageError}=await supabaseClient.from('messages')
+      .insert({conversation_id:conversationId,sender_id:userId,body:`Файл: ${file.name||safeName}`,message_type:messageType})
+      .select('id').single();
+    if(messageError) throw messageError;
+    messageId=message.id;
+    const {error:metadataError}=await supabaseClient.from('conversation_attachments').insert({
+      conversation_id:conversationId,message_id:messageId,uploader_id:userId,
+      bucket_id:'chat-files',object_path:objectPath,file_name:String(file.name||safeName).slice(0,180),
+      mime_type:contentType,size_bytes:file.size
+    });
+    if(metadataError) throw metadataError;
+    await loadCommunityMessages(conversationId);
+    await loadCommunityConversations();
+  } catch(error) {
+    if(uploaded) {
+      try { await supabaseClient.storage.from('chat-files').remove([objectPath]); } catch(_cleanupError) {}
+    }
+    if(messageId) {
+      try { await supabaseClient.from('messages').delete().eq('id',messageId).eq('sender_id',userId); } catch(_cleanupError) {}
+    }
+    throw error;
+  }
+}
+
+async function handleCommunityFiles(files) {
+  if(!files?.length) return;
+  const list=[...files];
+  for(const file of list) {
+    try {
+      showToast(`Загружаю: ${file.name}`);
+      await uploadCommunityFile(file);
+    } catch(error) {
+      showToast(`Не удалось отправить ${file.name}: ${error.message}`);
+      break;
+    }
+  }
+}
+
+async function toggleCommunityVoiceRecording() {
+  const button=$('#communityVoiceBtn');
+  if(communityState.voiceRecorder && communityState.voiceRecorder.state==='recording') {
+    button.disabled=true;
+    button.textContent='…';
+    communityState.voiceRecorder.stop();
+    return;
+  }
+  if(!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder==='undefined') {
+    showToast('Запись голоса не поддерживается этим браузером.');
+    return;
+  }
+  if(!communityState.currentConversationId) {
+    showToast('Сначала открой личный или групповой чат.');
+    return;
+  }
+  try {
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{
+      echoCancellation:true,noiseSuppression:true,autoGainControl:true
+    }});
+    communityState.voiceStream=stream;
+    communityState.voiceChunks=[];
+    const candidates=['audio/webm;codecs=opus','audio/webm','audio/mp4'];
+    const mimeType=candidates.find((type)=>MediaRecorder.isTypeSupported(type));
+    const recorder=new MediaRecorder(stream,mimeType?{mimeType}:undefined);
+    communityState.voiceRecorder=recorder;
+    recorder.addEventListener('dataavailable',(event)=>{
+      if(event.data&&event.data.size) communityState.voiceChunks.push(event.data);
+    });
+    recorder.addEventListener('stop',async()=>{
+      const blob=new Blob(communityState.voiceChunks,{type:recorder.mimeType||'audio/webm'});
+      stream.getTracks().forEach((track)=>track.stop());
+      communityState.voiceStream=null;
+      communityState.voiceRecorder=null;
+      communityState.voiceChunks=[];
+      button.disabled=false;
+      button.classList.remove('is-recording');
+      button.textContent='🎙';
+      button.setAttribute('aria-pressed','false');
+      if(blob.size) {
+        const extension=(recorder.mimeType||'audio/webm').includes('mp4')?'m4a':'webm';
+        const file=new File([blob],`voice-${Date.now()}.${extension}`,{type:recorder.mimeType||'audio/webm'});
+        try { await uploadCommunityFile(file); showToast('Голосовое сообщение отправлено.'); }
+        catch(error) { showToast('Голосовое сообщение не отправлено: '+error.message); }
+      }
+    });
+    recorder.addEventListener('error',(event)=>{
+      console.error('Voice recording failed:',event.error);
+      showToast('Не удалось записать голосовое сообщение.');
+    });
+    recorder.start(250);
+    button.classList.add('is-recording');
+    button.textContent='■';
+    button.title='Остановить и отправить запись';
+    button.setAttribute('aria-pressed','true');
+    showToast('Запись идёт. Нажми ■, чтобы отправить голосовое сообщение.');
+  } catch(error) {
+    if(communityState.voiceStream) communityState.voiceStream.getTracks().forEach((track)=>track.stop());
+    communityState.voiceStream=null;
+    showToast(error.name==='NotAllowedError'?'Разреши доступ к микрофону в браузере.':'Не удалось начать запись: '+error.message);
+  }
+}
+
+async function sendCommunityMessage(event) {
+  event.preventDefault();
+  const input=$('#communityMessageInput');
+  const body=input.value.trim();
+  const conversationId=communityState.currentConversationId;
+  if(!body||!conversationId||!communityUserId()) return;
+  input.disabled=true;
+  try {
+    const {error}=await supabaseClient.from('messages').insert({
+      conversation_id:conversationId,
+      sender_id:communityUserId(),
+      body,
+      reply_to:communityState.replyTarget?.id||null
+    });
+    if(error) throw error;
+    input.value='';
+    clearCommunityReply();
+    await loadCommunityMessages(conversationId);
+    await loadCommunityConversations();
+  } catch(error) {
+    showToast('Сообщение не отправлено: '+error.message);
+  } finally { input.disabled=false; input.focus(); }
+}
+
+async function refreshCommunity() {
+  if(!supabaseClient||!authSession?.user) return;
+  try {
+    if(communityState.tab==='friends') await loadCommunityFriends();
+    else {
+      await loadCommunityConversations();
+      if(communityState.tab==='groups') {
+        const groups=$('#communityGroupsList');
+        if(!groups.children.length) groups.append(communityNode('p','community-empty-note','Групповых чатов пока нет.'));
+      }
+    }
+  } catch(error) {
+    showToast('Не удалось обновить список: '+error.message);
+  }
 }
 
 function switchPanel(panel) {
-  activePanel = panel === 'call' ? 'call' : 'chat';
+  activePanel = ['call','community'].includes(panel) ? panel : 'chat';
   panel = activePanel;
   const isCall = panel === 'call';
-  chatPanel.hidden = isCall;
+  const isCommunity = panel === 'community';
+  chatPanel.hidden = isCall || isCommunity;
   callPanel.hidden = !isCall;
+  $('#communityPanel').hidden = !isCommunity;
   document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.panel === panel));
-  $('#topbarTitle').textContent = isCall ? 'Видеокомната' : 'Общий чат';
+  $('#topbarTitle').textContent = isCall ? 'Видеокомната' : isCommunity ? 'Сообщения и друзья' : 'Общий чат';
+  if (isCommunity) refreshCommunity();
   updateCallStage();
 }
 
@@ -954,6 +2403,7 @@ async function startCall() {
     localStream.getAudioTracks().forEach(attachLocalAudioTrackLifecycle);
 
     isInCall = true;
+    activeCallStartedAt = Date.now();
     isMicOn = localStream.getAudioTracks().length > 0;
     isCameraOn = false;
     wasMicInterrupted = false;
@@ -1910,6 +3360,101 @@ async function stopScreenShare() {
   showToast('Демонстрация экрана остановлена.');
 }
 
+const CALL_HISTORY_KEY = 'kotomaster-call-history-v1';
+
+function loadCallHistory() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(CALL_HISTORY_KEY) || '[]');
+    return Array.isArray(stored) ? stored.slice(0, 20) : [];
+  } catch (_error) {
+    return [];
+  }
+}
+
+function saveCallHistoryEntry(entry) {
+  const history = loadCallHistory();
+  history.unshift({
+    id: window.crypto && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+    roomId: String(entry.roomId || ''),
+    name: String(entry.name || 'Котик'),
+    startedAt: Number(entry.startedAt) || Date.now(),
+    endedAt: Number(entry.endedAt) || Date.now(),
+    type: entry.type === 'Видео' ? 'Видео' : 'Аудио'
+  });
+  try {
+    localStorage.setItem(CALL_HISTORY_KEY, JSON.stringify(history.slice(0, 20)));
+  } catch (_error) {}
+  renderCallHistory();
+  persistCallHistoryEntry(entry).catch((error)=>console.warn('Call history sync failed:',error));
+}
+
+let remoteCallHistory = [];
+
+async function persistCallHistoryEntry(entry) {
+  if(!supabaseClient||!authSession?.user) return;
+  const {error}=await supabaseClient.from('call_history').insert({
+    user_id:authSession.user.id,
+    conversation_id:roomConversationId,
+    call_type:entry.type==='Видео'?'video':'audio',
+    started_at:new Date(entry.startedAt).toISOString(),
+    ended_at:new Date(entry.endedAt).toISOString()
+  });
+  if(error) throw error;
+  await loadRemoteCallHistory();
+}
+
+async function loadRemoteCallHistory() {
+  if(!supabaseClient||!authSession?.user) return;
+  const {data,error}=await supabaseClient.from('call_history')
+    .select('id,call_type,conversation_id,started_at,ended_at')
+    .eq('user_id',authSession.user.id)
+    .order('ended_at',{ascending:false}).limit(20);
+  if(error) throw error;
+  remoteCallHistory=(data||[]).map((item)=>({
+    id:item.id,roomId:item.conversation_id?'Чат':'Комната',name:myName||'KOTOMASTER',
+    startedAt:Date.parse(item.started_at)||Date.now(),endedAt:Date.parse(item.ended_at)||Date.now(),
+    type:item.call_type==='video'?'Видео':'Аудио'
+  }));
+  renderCallHistory();
+}
+
+function renderCallHistory() {
+  const list = $('#callHistoryList');
+  if (!list) return;
+  list.replaceChildren();
+  const localHistory = loadCallHistory();
+  const history = [...remoteCallHistory,...localHistory].sort((a,b)=>(b.endedAt||0)-(a.endedAt||0));
+  if (!history.length) {
+    const empty = document.createElement('p');
+    empty.className = 'call-history-empty';
+    empty.textContent = 'Здесь появятся завершённые звонки.';
+    list.append(empty);
+    return;
+  }
+  history.slice(0, 8).forEach((call) => {
+    const item = document.createElement('div');
+    item.className = 'call-history-item';
+    const icon = document.createElement('span');
+    icon.className = 'call-history-icon';
+    icon.textContent = call.type === 'Видео' ? '▣' : '☎';
+    const copy = document.createElement('div');
+    copy.className = 'call-history-copy';
+    const title = document.createElement('strong');
+    title.textContent = call.type + ' · ' + (call.name || 'Котик');
+    const date = new Date(call.endedAt || call.startedAt);
+    const duration = Math.max(0, Math.round(((call.endedAt || call.startedAt) - call.startedAt) / 1000));
+    const mins = Math.floor(duration / 60);
+    const secs = duration % 60;
+    const meta = document.createElement('small');
+    meta.textContent = date.toLocaleDateString('ru-RU', { day:'2-digit', month:'short' }) + ' · ' +
+      date.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit' }) + ' · ' +
+      (mins ? mins + ' мин ' : '') + secs + ' сек · ' + (call.roomId || 'Комната');
+    copy.append(title, meta);
+    item.append(icon, copy);
+    list.append(item);
+  });
+}
+
 function stopCall() {
   if (!isInCall) {
     for (const peerId of Array.from(peerConnections.keys())) {
@@ -1928,6 +3473,16 @@ function stopCall() {
     removeVideoTile(peerId);
   }
   stopMicInputMeter();
+  if (activeCallStartedAt) {
+    saveCallHistoryEntry({
+      roomId,
+      name: myName,
+      startedAt: activeCallStartedAt,
+      endedAt: Date.now(),
+      type: isCameraOn ? 'Видео' : 'Аудио'
+    });
+    activeCallStartedAt = 0;
+  }
   if (localStream) {
     localStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
     localStream = null;
@@ -2112,6 +3667,7 @@ function leaveRoom() {
     socket = null;
   }
   roomId = '';
+  roomConversationId = null;
   myName = '';
   participants.clear();
   seenMessages.clear();
@@ -2124,6 +3680,16 @@ function leaveRoom() {
   inviteModal.hidden = true;
   showToast('Ты вышел из комнаты.');
 }
+
+$('#authForm').addEventListener('submit', handleAuthSubmit);
+$('#authModeToggle').addEventListener('click', () => setAuthMode(authMode === 'signin' ? 'signup' : 'signin'));
+$('#signOutBtn').addEventListener('click', signOutAccount);
+$('#forgotPasswordBtn').addEventListener('click', handlePasswordRecovery);
+$('#editProfileBtn').addEventListener('click',openProfileEditor);
+$('#closeEditProfileBtn').addEventListener('click',()=>$('#editProfileModal').hidden=true);
+$('#editProfileModal').addEventListener('click',(event)=>{if(event.target===$('#editProfileModal'))$('#editProfileModal').hidden=true;});
+$('#editProfileForm').addEventListener('submit',saveProfileChanges);
+
 
 joinForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -2168,6 +3734,30 @@ joinRoomForm.addEventListener('submit', async (event) => {
 roomInput.addEventListener('input', () => { roomInput.value = roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6); });
 
 document.querySelectorAll('.nav-item').forEach((item) => item.addEventListener('click', () => switchPanel(item.dataset.panel)));
+document.querySelectorAll('.community-tab').forEach((button)=>button.addEventListener('click',()=>setCommunityTab(button.dataset.communityTab)));
+$('#friendSearchInput').addEventListener('input',(event)=>{
+  clearTimeout(communityState.searchTimer);
+  communityState.searchTimer=setTimeout(()=>searchCommunityUsers(event.target.value).catch((error)=>showToast(error.message)),220);
+});
+$('#refreshCommunityBtn').addEventListener('click',refreshCommunity);
+$('#communityRefreshMessages').addEventListener('click',()=>communityState.currentConversationId&&loadCommunityMessages(communityState.currentConversationId).catch((error)=>showToast(error.message)));
+$('#communityMessageForm').addEventListener('submit',sendCommunityMessage);
+$('#communityAttachBtn').addEventListener('click',()=>$('#communityFileInput').click());
+$('#communityFileInput').addEventListener('change',(event)=>{
+  handleCommunityFiles(event.target.files).finally(()=>{event.target.value='';});
+});
+$('#communityVoiceBtn').addEventListener('click',toggleCommunityVoiceRecording);
+
+$('#newGroupBtn').addEventListener('click',async()=>{
+  $('#newGroupError').textContent='';
+  $('#newGroupModal').hidden=false;
+  try { await loadCommunityFriends(); renderGroupMemberChoices(); }
+  catch(error) { $('#newGroupError').textContent=error.message; }
+});
+$('#closeNewGroupBtn').addEventListener('click',()=>$('#newGroupModal').hidden=true);
+$('#newGroupModal').addEventListener('click',(event)=>{if(event.target===$('#newGroupModal'))$('#newGroupModal').hidden=true;});
+$('#newGroupForm').addEventListener('submit',createCommunityGroup);
+
 
 $('#messageForm').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -2175,15 +3765,87 @@ $('#messageForm').addEventListener('submit', async (event) => {
   const text = input.value.trim();
   if (!text || !socket || !socket.connected) return;
   input.value = '';
+  if (typingStopTimer) clearTimeout(typingStopTimer);
+  socket.emit('chat:typing', { typing: false });
   try {
-    const response = await emitWithAck('chat:send', { text });
+    const response = await emitWithAck('chat:send', {
+      text,
+      replyTo: replyTarget ? replyTarget.id : null
+    });
     if (!response.ok) showToast('Сообщение не отправлено.');
+    else {
+      replyTarget = null;
+      renderReplyPreview();
+    }
   } catch (error) {
     showToast(error.message);
   }
 });
 
+$('#messageInput').addEventListener('input', () => {
+  if (!socket || !socket.connected || !roomId) return;
+  const now = Date.now();
+  if (now - lastTypingEmitAt >= 300) {
+    socket.emit('chat:typing', { typing: true });
+    lastTypingEmitAt = now;
+  }
+  if (typingStopTimer) clearTimeout(typingStopTimer);
+  typingStopTimer = setTimeout(() => {
+    if (socket && socket.connected) socket.emit('chat:typing', { typing: false });
+  }, 1300);
+});
+
+$('#messageInput').addEventListener('blur', () => {
+  if (typingStopTimer) clearTimeout(typingStopTimer);
+  if (socket && socket.connected) socket.emit('chat:typing', { typing: false });
+});
+
+$('#chatSearchInput')?.addEventListener('input', (event) => {
+  messageSearchQuery = event.target.value || '';
+  applyMessageSearch();
+});
+
+$('#notificationsBtn')?.addEventListener('click', async () => {
+  if (!('Notification' in window)) {
+    showToast('Этот браузер не поддерживает уведомления.');
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    showToast('Уведомления заблокированы в настройках браузера.');
+    return;
+  }
+  if (Notification.permission === 'default') {
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      showToast('Разрешение на уведомления не выдано.');
+      return;
+    }
+  }
+  notificationsEnabled = !notificationsEnabled;
+  try { localStorage.setItem('kotomaster-notifications',notificationsEnabled?'1':'0'); } catch(_error) {}
+  updateNotificationsButton();
+  showToast(notificationsEnabled ? 'Уведомления включены, пока сайт открыт.' : 'Уведомления отключены.');
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && roomId && activePanel === 'chat') {
+    markMessagesRead([...messageRecords.values()].filter((message) => message.from !== (socket && socket.id)).map((message) => message.id));
+  }
+});
+
 $('#startCallBtn').addEventListener('click', startCall);
+$('#clearCallHistoryBtn')?.addEventListener('click', async () => {
+  if (!window.confirm('Очистить историю звонков на этом устройстве?')) return;
+  try { localStorage.removeItem(CALL_HISTORY_KEY); } catch (_error) {}
+  remoteCallHistory=[];
+  if(supabaseClient&&communityUserId()) {
+    const {error}=await supabaseClient.from('call_history').delete().eq('user_id',communityUserId());
+    if(error) { showToast('Не удалось очистить историю на сервере: '+error.message); return; }
+  }
+  renderCallHistory();
+});
+renderCallHistory();
+updateNotificationsButton();
 $('#micBtn').addEventListener('click', toggleMic);
 $('#cameraBtn').addEventListener('click', toggleCamera);
 $('#shareBtn').addEventListener('click', () => isSharing ? stopScreenShare() : startScreenShare());
@@ -2249,4 +3911,13 @@ rtcConfigPromise = (async function loadConfig() {
 refreshAudioInputDevices();
 updateCallButtons();
 updateVideoQualityBoostButton();
-restoreSavedRoom();
+initializeSupabase().then(async () => {
+  if (authSession?.user) {
+    await loadMyProfile();
+    await loadRemoteCallHistory().catch((error)=>console.warn('Could not load remote call history:',error));
+    restoreSavedRoom();
+  }
+}).catch((error) => {
+  console.error('KOTOMASTER auth initialization failed:', error);
+  $('#authError').textContent = error.message || 'Не удалось подключить авторизацию.';
+});
