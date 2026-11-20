@@ -1866,6 +1866,7 @@ $('#videoViewerModal').addEventListener('click', (event) => {
 });
 $('#videoResolutionSelect').addEventListener('change', changeVideoResolution);
 $('#audioInputSelect').addEventListener('change', selectAudioInput);
+$('#micPreviewBtn').addEventListener('click', selectAudioInput);
 if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
   navigator.mediaDevices.addEventListener('devicechange', () => {
     refreshAudioInputDevices();
