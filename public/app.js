@@ -66,7 +66,7 @@ async function connectSocket() {
   if (socket && socket.connected) return;
   if (!window.io) throw new Error('Не загрузился модуль связи. Обнови страницу.');
   if (!socket) {
-    socket = window.io({ autoConnect: false, reconnection: true, reconnectionAttempts: 8, timeout: 9000 });
+    socket = window.io({ autoConnect: false, reconnection: true, reconnectionAttempts: Infinity, reconnectionDelay: 700, reconnectionDelayMax: 9000, randomizationFactor: 0.35, timeout: 12000 });
     bindSocketEvents();
   }
   await new Promise((resolve, reject) => {
@@ -669,7 +669,7 @@ async function createPeerConnection(peerId) {
     const pc = new RTCPeerConnection({
       iceServers: appConfig.iceServers || [],
       iceTransportPolicy: appConfig.iceTransportPolicy || 'all',
-      iceCandidatePoolSize: 8,
+      iceCandidatePoolSize: 4,
       bundlePolicy: 'max-bundle',
       rtcpMuxPolicy: 'require'
     });
