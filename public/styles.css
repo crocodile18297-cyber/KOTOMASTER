@@ -506,3 +506,80 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cyan); outl
   .resolution-control { display: none; }
   #rtcQualityBars, #rtcQualityText { display: none; }
 }
+
+
+/* Mobile room roster: participants must remain visible outside the desktop sidebar. */
+.mobile-member-strip {
+  display: none;
+}
+@media (max-width: 740px) {
+  .mobile-member-strip {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 7px;
+    min-height: 48px;
+    width: 100%;
+    padding: 6px 12px 7px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-bottom: 1px solid rgba(179,166,235,.12);
+    background: rgba(17,15,32,.86);
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .mobile-member-strip:empty {
+    display: none;
+  }
+  .mobile-member-strip::-webkit-scrollbar {
+    display: none;
+  }
+  .mobile-member-chip {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    max-width: 150px;
+    min-height: 32px;
+    padding: 3px 9px 3px 4px;
+    border: 1px solid rgba(179,166,235,.13);
+    border-radius: 18px;
+    background: rgba(37,33,58,.7);
+    color: #c9c1df;
+  }
+  .mobile-member-chip.is-me {
+    border-color: rgba(112,221,235,.32);
+    background: rgba(112,221,235,.08);
+  }
+  .mobile-member-avatar {
+    display: grid;
+    flex: 0 0 24px;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    border-radius: 50%;
+    background: linear-gradient(140deg, rgba(181,161,255,.32), rgba(115,220,231,.22));
+    color: #e6e0ff;
+    font-size: 10px;
+    font-weight: 800;
+  }
+  .mobile-member-name {
+    overflow: hidden;
+    max-width: 100px;
+    font-size: 9px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mobile-member-state {
+    flex: 0 0 6px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #79738c;
+  }
+  .mobile-member-state.in-call {
+    background: var(--green);
+    box-shadow: 0 0 7px rgba(121,225,179,.55);
+  }
+}
