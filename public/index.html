@@ -142,7 +142,7 @@
       <div id="memberList" class="member-list"></div>
 
       <div class="sidebar-bottom">
-        <div class="profile-card"><div id="myAvatar" class="avatar avatar-me">К</div><div class="profile-info"><strong id="myName">Котик</strong><small><span class="online-dot"></span> В сети</small></div><button id="leaveRoomBtn" class="icon-button leave-icon" title="Выйти из комнаты" aria-label="Выйти из комнаты">↪</button></div>
+        <div class="profile-card"><div id="myAvatar" class="avatar avatar-me">К</div><div class="profile-info"><strong id="myName">Котик</strong><small><span class="online-dot"></span> В сети</small><small id="myUsername" class="profile-username"></small></div><button id="editProfileBtn" class="icon-button profile-edit-icon" title="Изменить профиль" aria-label="Изменить профиль">✎</button><button id="leaveRoomBtn" class="icon-button leave-icon" title="Выйти из комнаты" aria-label="Выйти из комнаты">↪</button></div>
         <button id="signOutBtn" class="sign-out-button" type="button">Выйти из аккаунта</button>
         <div class="sidebar-caption">KOTOMASTER <span>v1.0</span></div>
       </div>
@@ -241,6 +241,21 @@
         </div>
       </section>
 
+  <div id="editProfileModal" class="community-modal" hidden>
+    <form id="editProfileForm" class="community-modal-card">
+      <button id="closeEditProfileBtn" class="community-modal-close" type="button" aria-label="Закрыть">×</button>
+      <div class="call-kicker">YOUR KOTOMASTER PROFILE</div>
+      <h3>Настройки профиля</h3>
+      <label class="field-label" for="profileDisplayName">ИМЯ</label>
+      <input id="profileDisplayName" class="community-search-input" maxlength="24" required>
+      <label class="field-label" for="profileUsername">USERNAME</label>
+      <input id="profileUsername" class="community-search-input" maxlength="24" minlength="3" pattern="[A-Za-z0-9_]{3,24}" required>
+      <label class="field-label" for="profileBio">О СЕБЕ</label>
+      <textarea id="profileBio" class="community-search-input" maxlength="160" rows="3" placeholder="Пара слов о себе"></textarea>
+      <p id="profileEditError" class="form-error" role="status"></p>
+      <button class="primary-button" type="submit"><span>✓</span> Сохранить профиль</button>
+    </form>
+  </div>
   <div id="newGroupModal" class="community-modal" hidden>
     <form id="newGroupForm" class="community-modal-card">
       <button id="closeNewGroupBtn" class="community-modal-close" type="button" aria-label="Закрыть">×</button>
