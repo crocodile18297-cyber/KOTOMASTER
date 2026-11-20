@@ -19,6 +19,24 @@ const videoGrid = $('#videoGrid');
 const callEmptyState = $('#callEmptyState');
 const callDescription = $('#callDescription');
 
+const tabClientId = (() => {
+  const key = 'kotomaster-tab-client-id';
+  try {
+    let value = sessionStorage.getItem(key);
+    if (!value) {
+      value = window.crypto && typeof window.crypto.randomUUID === 'function'
+        ? window.crypto.randomUUID()
+        : `km-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+      sessionStorage.setItem(key, value);
+    }
+    return value;
+  } catch (_error) {
+    return window.crypto && typeof window.crypto.randomUUID === 'function'
+      ? window.crypto.randomUUID()
+      : `km-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  }
+})();
+
 let socket = null;
 let roomId = '';
 let myName = '';
@@ -102,6 +120,18 @@ function emitWithAck(event, payload) {
 }
 
 function bindSocketEvents() {
+  socket.on('room:session-replaced', () => {
+    if (isInCall) stopCall();
+    roomId = '';
+    participants.clear();
+    seenMessages.clear();
+    appScreen.hidden = true;
+    joinScreen.hidden = false;
+    showJoinError('Эта вкладка уже подключена к комнате из другого окна. Войди в комнату заново.');
+    socket.disconnect();
+    showToast('Старое подключение заменено новым. Повторно войди в комнату.');
+  });
+
   socket.on('chat:message', (message) => appendMessage(message));
 
   socket.on('room:peer-joined', (member) => {
@@ -202,7 +232,7 @@ function bindSocketEvents() {
     if (!roomId || participants.has(socket.id)) return;
     const reconnectRoom = roomId;
     try {
-      const response = await emitWithAck('room:join', { name: myName, roomId: reconnectRoom });
+      const response = await emitWithAck('room:join', { name: myName, roomId: reconnectRoom, clientId: tabClientId });
       if (roomId !== reconnectRoom) {
         if (response.ok) socket.emit('room:leave');
         return;
@@ -245,13 +275,13 @@ function bindSocketEvents() {
 }
 
 async function createRoom(name) {
-  const response = await emitWithAck('room:create', { name });
+  const response = await emitWithAck('room:create', { name, clientId: tabClientId });
   if (!response.ok) throw new Error(response.error || 'Не удалось создать комнату.');
   enterWorkspace(response);
 }
 
 async function joinRoom(name, code) {
-  const response = await emitWithAck('room:join', { name, roomId: code });
+  const response = await emitWithAck('room:join', { name, roomId: code, clientId: tabClientId });
   if (!response.ok) throw new Error(response.error || 'Не удалось войти в комнату.');
   enterWorkspace(response);
 }
@@ -288,7 +318,9 @@ function firstLetter(value) {
 
 function renderParticipants() {
   const list = $('#memberList');
+  const mobileList = $('#mobileMemberStrip');
   list.replaceChildren();
+  if (mobileList) mobileList.replaceChildren();
   const entries = Array.from(participants.values());
   $('#memberCount').textContent = `${entries.length}/${appConfig.maxRoomSize || 6}`;
   $('#topbarSubtitle').textContent = `Твоя комната · ${entries.length} ${pluralize(entries.length, 'участник', 'участника', 'участников')}`;
@@ -308,6 +340,22 @@ function renderParticipants() {
     state.textContent = member.inCall ? '● LIVE' : '●';
     row.append(avatar, name, state);
     list.append(row);
+
+    if (mobileList) {
+      const chip = document.createElement('div');
+      chip.className = `mobile-member-chip${member.id === (socket && socket.id) ? ' is-me' : ''}`;
+      const chipAvatar = document.createElement('span');
+      chipAvatar.className = 'mobile-member-avatar';
+      chipAvatar.textContent = firstLetter(member.name);
+      const chipName = document.createElement('span');
+      chipName.className = 'mobile-member-name';
+      chipName.textContent = member.id === (socket && socket.id) ? 'Ты' : member.name;
+      const chipState = document.createElement('i');
+      chipState.className = `mobile-member-state${member.inCall ? ' in-call' : ''}`;
+      chipState.title = member.inCall ? 'В видеозвонке' : 'В комнате';
+      chip.append(chipAvatar, chipName, chipState);
+      mobileList.append(chip);
+    }
   });
 }
 
