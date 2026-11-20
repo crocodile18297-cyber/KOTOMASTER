@@ -89,6 +89,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cyan); outl
 .join-code-button { min-width: 91px; min-height: 40px; border: 1px solid rgba(166, 145, 255, .24); border-radius: 9px; background: rgba(153, 129, 244, .14); color: #c5b7ff; font-size: 11px; font-weight: 800; cursor: pointer; }
 .join-code-button span { padding-left: 8px; font-size: 15px; }
 .form-error { min-height: 18px; margin: 10px 0 0; color: #ff9dbb; font-size: 10px; }
+.form-error.form-success { min-height: 42px; padding: 12px 14px; border: 1px solid rgba(73, 164, 119, .35); border-radius: 12px; background: rgba(73, 164, 119, .10); color: #287b52; font-size: 13px; line-height: 1.5; font-weight: 700; }
 .privacy-note { display: flex; align-items: center; gap: 8px; margin-top: 15px; color: #77718d; font-size: 9px; }
 .privacy-lock { color: #8f80cf; font-size: 15px; }
 .join-bottom { width: min(390px, 100%); margin-top: auto; padding-top: 40px; display: flex; justify-content: space-between; gap: 10px; color: #68637e; font-size: 8px; letter-spacing: .8px; }
