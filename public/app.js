@@ -1054,7 +1054,9 @@ const communityState = {
   searchTimer: null,
   voiceRecorder: null,
   voiceStream: null,
-  voiceChunks: []
+  voiceChunks: [],
+  replyTarget: null,
+  pinnedMessage: null
 };
 
 function communityUserId() {
@@ -1291,7 +1293,7 @@ function renderCommunityConversations() {
   if(!groups.children.length) groups.append(communityNode('p','community-empty-note','Групповых чатов пока нет.'));
 }
 
-function renderCommunityMessages(rows,profiles,attachments=[]) {
+function renderCommunityMessages(rows,profiles,attachments=[],reactions=[]) {
   const list=$('#communityMessages');
   list.replaceChildren();
   if(!rows.length) {
@@ -1299,13 +1301,26 @@ function renderCommunityMessages(rows,profiles,attachments=[]) {
     return;
   }
   const names=new Map((profiles||[]).map((p)=>[p.id,p.display_name||'Пользователь']));
+  const reactionMap=new Map();
+  (reactions||[]).forEach((reaction)=>{
+    if(!reactionMap.has(reaction.message_id)) reactionMap.set(reaction.message_id,[]);
+    reactionMap.get(reaction.message_id).push(reaction);
+  });
+  const messageMap=new Map(rows.map((message)=>[message.id,message]));
   rows.forEach((message)=>{
     const own=message.sender_id===communityUserId();
     const item=communityNode('article','community-message'+(own?' is-own':''));
+    item.dataset.messageId=message.id;
     const header=communityNode('div','community-message-header');
     header.append(communityNode('strong','',own?'Ты':(names.get(message.sender_id)||'Пользователь')));
     const date=new Date(message.created_at);
     header.append(communityNode('time','',date.toLocaleString('ru-RU',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})));
+    if(message.reply_to) {
+      const replied=messageMap.get(message.reply_to);
+      const quote=communityNode('div','community-message-reply',replied?(replied.body||'Сообщение удалено'):'Ответ на сообщение');
+      if(replied && replied.sender_id) quote.prepend(communityNode('strong','',names.get(replied.sender_id)||'Пользователь'));
+      item.append(quote);
+    }
     const body=communityNode('p','',message.deleted_at?'Сообщение удалено':message.body);
     if(message.edited_at && !message.deleted_at) body.append(communityNode('small','community-edited',' · изменено'));
     item.append(header,body);
@@ -1332,9 +1347,43 @@ function renderCommunityMessages(rows,profiles,attachments=[]) {
       link.href=attachment.signedUrl; link.target='_blank'; link.rel='noopener noreferrer';
       item.append(link);
     });
+    const reactionRows=reactionMap.get(message.id)||[];
+    if(reactionRows.length) {
+      const reactionBar=communityNode('div','community-reactions');
+      const heartCount=reactionRows.filter((reaction)=>reaction.emoji==='❤️').length;
+      if(heartCount) {
+        const heart=communityNode('span','community-reaction-chip',`❤️ ${heartCount}`);
+        reactionBar.append(heart);
+      }
+      item.append(reactionBar);
+    }
+    const actions=communityNode('div','community-message-actions');
+    const replyButton=communityNode('button','community-message-action','↩ Ответить');
+    replyButton.type='button';
+    replyButton.addEventListener('click',()=>setCommunityReply(message));
+    actions.append(replyButton);
+    if(!message.deleted_at) {
+      const reactionButton=communityNode('button','community-message-action','❤️');
+      reactionButton.type='button'; reactionButton.title='Поставить реакцию';
+      reactionButton.addEventListener('click',()=>toggleCommunityReaction(message.id,'❤️'));
+      actions.append(reactionButton);
+      const pinButton=communityNode('button','community-message-action',communityState.pinnedMessage?.message_id===message.id?'📌 Снять':'📌 Закрепить');
+      pinButton.type='button';
+      pinButton.addEventListener('click',()=>toggleCommunityPin(message.id));
+      actions.append(pinButton);
+    }
+    if(own && !message.deleted_at) {
+      const editButton=communityNode('button','community-message-action','Изменить');
+      editButton.type='button'; editButton.addEventListener('click',()=>editCommunityMessage(message));
+      const deleteButton=communityNode('button','community-message-action is-danger','Удалить');
+      deleteButton.type='button'; deleteButton.addEventListener('click',()=>deleteCommunityMessage(message));
+      actions.append(editButton,deleteButton);
+    }
+    item.append(actions);
     list.append(item);
   });
   list.scrollTop=list.scrollHeight;
+  renderCommunityPinnedBanner(rows);
 }
 
 async function loadCommunityMessages(conversationId) {
@@ -1359,7 +1408,122 @@ async function loadCommunityMessages(conversationId) {
       return {...attachment,signedUrl:signedError?null:signed?.signedUrl||null};
     }));
   }
-  renderCommunityMessages(rows,profiles,attachments);
+  let reactions=[];
+  if(rows.length) {
+    const {data:reactionRows,error:reactionError}=await supabaseClient.from('message_reactions')
+      .select('message_id,user_id,emoji')
+      .in('message_id',rows.map((m)=>m.id));
+    if(reactionError) throw reactionError;
+    reactions=reactionRows||[];
+  }
+  const {data:pin,error:pinError}=await supabaseClient.from('conversation_pins')
+    .select('conversation_id,message_id,pinned_by,pinned_at')
+    .eq('conversation_id',conversationId).maybeSingle();
+  if(pinError) throw pinError;
+  communityState.pinnedMessage=pin||null;
+  renderCommunityMessages(rows,profiles,attachments,reactions);
+}
+
+
+function renderCommunityPinnedBanner(rows=[]) {
+  const banner=$('#communityPinnedBanner');
+  const pinned=communityState.pinnedMessage;
+  banner.replaceChildren();
+  banner.hidden=!pinned;
+  if(!pinned) return;
+  const message=(rows||[]).find((row)=>row.id===pinned.message_id);
+  banner.append(communityNode('strong','', 'Закреплённое сообщение'));
+  banner.append(communityNode('span','',message?.body||'Нажми, чтобы перейти к сообщению'));
+  banner.addEventListener('click',()=>{
+    const target=$('#communityMessages').querySelector(`[data-message-id="${pinned.message_id}"]`);
+    if(target) target.scrollIntoView({behavior:'smooth',block:'center'});
+  },{once:true});
+}
+
+function setCommunityReply(message) {
+  communityState.replyTarget=message;
+  const preview=$('#communityReplyPreview');
+  preview.replaceChildren();
+  preview.hidden=false;
+  const copy=communityNode('div','community-reply-copy');
+  copy.append(communityNode('strong','',message.sender_id===communityUserId()?'Ты':communityState.currentConversation?.title||'Ответ'));
+  copy.append(communityNode('span','',(message.body||'Сообщение').slice(0,100)));
+  const close=communityNode('button','community-reply-close','×');
+  close.type='button'; close.addEventListener('click',clearCommunityReply);
+  preview.append(copy,close);
+  $('#communityMessageInput').focus();
+}
+
+function clearCommunityReply() {
+  communityState.replyTarget=null;
+  const preview=$('#communityReplyPreview');
+  preview.hidden=true; preview.replaceChildren();
+}
+
+async function toggleCommunityReaction(messageId,emoji) {
+  const userId=communityUserId();
+  try {
+    const {data,error}=await supabaseClient.from('message_reactions')
+      .select('message_id').eq('message_id',messageId).eq('user_id',userId).eq('emoji',emoji);
+    if(error) throw error;
+    if(data?.length) {
+      const {error:deleteError}=await supabaseClient.from('message_reactions').delete()
+        .eq('message_id',messageId).eq('user_id',userId).eq('emoji',emoji);
+      if(deleteError) throw deleteError;
+    } else {
+      const {error:insertError}=await supabaseClient.from('message_reactions')
+        .insert({message_id:messageId,user_id:userId,emoji});
+      if(insertError) throw insertError;
+    }
+    await loadCommunityMessages(communityState.currentConversationId);
+  } catch(error) { showToast('Не удалось поставить реакцию: '+error.message); }
+}
+
+async function toggleCommunityPin(messageId) {
+  const conversationId=communityState.currentConversationId;
+  try {
+    if(communityState.pinnedMessage?.message_id===messageId) {
+      const {error}=await supabaseClient.from('conversation_pins').delete().eq('conversation_id',conversationId);
+      if(error) throw error;
+      showToast('Закрепление снято.');
+    } else {
+      if(communityState.pinnedMessage) {
+        const {error:deleteError}=await supabaseClient.from('conversation_pins').delete().eq('conversation_id',conversationId);
+        if(deleteError) throw deleteError;
+      }
+      const {error}=await supabaseClient.from('conversation_pins').insert({
+        conversation_id:conversationId,message_id:messageId,pinned_by:communityUserId()
+      });
+      if(error) throw error;
+      showToast('Сообщение закреплено.');
+    }
+    await loadCommunityMessages(conversationId);
+  } catch(error) { showToast('Не удалось закрепить: '+error.message); }
+}
+
+async function editCommunityMessage(message) {
+  const updated=window.prompt('Измени сообщение',message.body||'');
+  if(updated===null) return;
+  const body=updated.trim();
+  if(!body) { showToast('Сообщение не может быть пустым.'); return; }
+  try {
+    const {error}=await supabaseClient.from('messages')
+      .update({body,edited_at:new Date().toISOString()})
+      .eq('id',message.id).eq('sender_id',communityUserId());
+    if(error) throw error;
+    await loadCommunityMessages(communityState.currentConversationId);
+  } catch(error) { showToast('Не удалось изменить сообщение: '+error.message); }
+}
+
+async function deleteCommunityMessage(message) {
+  if(!window.confirm('Удалить это сообщение?')) return;
+  try {
+    const {error}=await supabaseClient.from('messages')
+      .update({body:'',deleted_at:new Date().toISOString()})
+      .eq('id',message.id).eq('sender_id',communityUserId());
+    if(error) throw error;
+    await loadCommunityMessages(communityState.currentConversationId);
+  } catch(error) { showToast('Не удалось удалить сообщение: '+error.message); }
 }
 
 async function openCommunityConversation(conversationId) {
@@ -1381,8 +1545,15 @@ async function openCommunityConversation(conversationId) {
         try {
           await loadCommunityMessages(conversationId);
           await loadCommunityConversations();
+          if(!document.hidden) await supabaseClient.from('conversation_members')
+            .update({last_read_at:new Date().toISOString()})
+            .eq('conversation_id',conversationId).eq('user_id',communityUserId());
         } catch(error) { console.warn('Realtime chat refresh failed:',error); }
-      }).subscribe();
+      })
+      .on('postgres_changes',{event:'*',schema:'public',table:'conversation_attachments',filter:`conversation_id=eq.${conversationId}`},()=>loadCommunityMessages(conversationId).catch((error)=>console.warn(error)))
+      .on('postgres_changes',{event:'*',schema:'public',table:'message_reactions'},()=>loadCommunityMessages(conversationId).catch((error)=>console.warn(error)))
+      .on('postgres_changes',{event:'*',schema:'public',table:'conversation_pins',filter:`conversation_id=eq.${conversationId}`},()=>loadCommunityMessages(conversationId).catch((error)=>console.warn(error)))
+      .subscribe();
     await supabaseClient.from('conversation_members')
       .update({last_read_at:new Date().toISOString()})
       .eq('conversation_id',conversationId).eq('user_id',communityUserId());
@@ -1571,10 +1742,12 @@ async function sendCommunityMessage(event) {
     const {error}=await supabaseClient.from('messages').insert({
       conversation_id:conversationId,
       sender_id:communityUserId(),
-      body
+      body,
+      reply_to:communityState.replyTarget?.id||null
     });
     if(error) throw error;
     input.value='';
+    clearCommunityReply();
     await loadCommunityMessages(conversationId);
     await loadCommunityConversations();
   } catch(error) {
