@@ -21,14 +21,15 @@ const callDescription = $('#callDescription');
 
 const ROOM_SESSION_KEY = 'kotomaster-last-room-session';
 const tabClientId = (() => {
-  const key = 'kotomaster-device-client-id';
+  // sessionStorage is shared by reloads in this tab, but isolated from other tabs.
+  const key = 'kotomaster-tab-client-id';
   try {
-    let value = localStorage.getItem(key);
+    let value = sessionStorage.getItem(key);
     if (!value) {
       value = window.crypto && typeof window.crypto.randomUUID === 'function'
         ? window.crypto.randomUUID()
         : `km-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-      localStorage.setItem(key, value);
+      sessionStorage.setItem(key, value);
     }
     return value;
   } catch (_error) {
@@ -2103,6 +2104,8 @@ function leaveRoom() {
   }
   stopMicInputMeter();
   stopCall();
+  // stopCall persists call state; leaving the room is an explicit opt-out.
+  try { localStorage.removeItem(ROOM_SESSION_KEY); } catch (_error) {}
   if (socket) {
     socket.emit('room:leave');
     socket.disconnect();
