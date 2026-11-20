@@ -6,6 +6,7 @@ on:
     paths:
       - "public/*.js"
       - "server.js"
+      - "scripts/*.mjs"
       - ".github/workflows/check-frontend.yml"
   workflow_dispatch:
 
@@ -23,3 +24,5 @@ jobs:
         run: |
           node --check public/app.js
           node --check server.js
+      - name: Check UI elements and Socket.IO wiring
+        run: node scripts/check-frontend.mjs
