@@ -281,7 +281,7 @@ async function saveProfileChanges(event) {
     $('#myAvatar').textContent=firstLetter(displayName);
     $('#myUsername').textContent='@'+username;
     $('#editProfileModal').hidden=true;
-    if(socket?.connected) socket.emit('profile:update',{name:displayName});
+    if(socket && socket.connected) socket.emit('profile:update',{name:displayName});
     showToast('Профиль обновлён.');
   } catch(error) {
     if(error.code==='23505') errorNode.textContent='Этот username уже занят. Выбери другой.';
