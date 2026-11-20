@@ -32,7 +32,10 @@ let isInCall = false;
 let isMicOn = false;
 let isCameraOn = false;
 let isSharing = false;
-let appConfig = { iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }], maxRoomSize: 6 };
+let appConfig = { iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }], iceTransportPolicy: 'all', maxRoomSize: 6 };
+let rtcConfigPromise = null;
+let peerConnectionPromises = new Map();
+let remoteAudioElements = new Map();
 let toastTimer = null;
 let viewerStream = null;
 
@@ -123,29 +126,36 @@ function bindSocketEvents() {
       return;
     }
     if (isInCall && socket.id.localeCompare(member.id) < 0) {
-      createPeerConnection(member.id, true).catch((error) => showToast(error.message));
+      createPeerConnection(member.id).catch((error) => showToast(error.message));
     }
   });
 
   socket.on('rtc:signal', async ({ from, name, signal }) => {
     if (!from || !signal || !isInCall) return;
     try {
-      const pc = await createPeerConnection(from, false);
+      const pc = await createPeerConnection(from);
       if (signal.type === 'offer') {
+        // The lower socket ID is the designated offerer; this avoids offer glare.
+        if (pc.signalingState !== 'stable') {
+          await pc.setLocalDescription({ type: 'rollback' });
+        }
         await pc.setRemoteDescription(new RTCSessionDescription(signal));
         await flushPendingIce(from, pc);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        socket.emit('rtc:signal', { to: from, signal: pc.localDescription });
+        if (socket && socket.connected) {
+          socket.emit('rtc:signal', { to: from, signal: pc.localDescription });
+        }
       } else if (signal.type === 'answer') {
         await pc.setRemoteDescription(new RTCSessionDescription(signal));
         await flushPendingIce(from, pc);
       } else if (signal.candidate) {
         const candidate = new RTCIceCandidate(signal.candidate);
-        if (pc.remoteDescription) await pc.addIceCandidate(candidate);
-        else {
+        if (pc.remoteDescription) {
+          await pc.addIceCandidate(candidate);
+        } else {
           const queued = pendingIce.get(from) || [];
-          queued.push(candidate);
+          if (queued.length < 80) queued.push(candidate);
           pendingIce.set(from, queued);
         }
       }
@@ -157,7 +167,13 @@ function bindSocketEvents() {
 
   socket.on('disconnect', () => {
     if (roomId) showToast('Соединение с сервером потеряно. Переподключаемся…');
-    if (isInCall) stopCall();
+    if (isInCall) {
+      for (const peerId of Array.from(peerConnections.keys())) {
+        closePeer(peerId);
+        removeVideoTile(peerId);
+      }
+      updateCallStage();
+    }
   });
   socket.on('connect', async () => {
     if (!roomId || participants.has(socket.id)) return;
@@ -170,6 +186,20 @@ function bindSocketEvents() {
       }
       if (response.ok) {
         enterWorkspace(response);
+        if (isInCall) {
+          const self = {
+            id: socket.id, name: myName, inCall: true,
+            audio: isMicOn, video: isCameraOn, sharing: isSharing
+          };
+          participants.set(socket.id, self);
+          publishMediaState();
+          for (const member of participants.values()) {
+            if (member.id !== socket.id && member.inCall && socket.id.localeCompare(member.id) < 0) {
+              createPeerConnection(member.id).catch((error) => showToast(error.message));
+            }
+          }
+          updateCallStage();
+        }
         showToast('Связь восстановлена. Ты снова в комнате.');
       } else {
         showToast(response.error || 'Комната больше недоступна.');
@@ -203,8 +233,6 @@ function enterWorkspace(data) {
   $('#sidebarRoomCode').textContent = roomId;
   $('#welcomeRoomCode').textContent = roomId;
   $('#callRoomCode').textContent = roomId;
-  const livekitTestLink = $('#livekitTestLink');
-  if (livekitTestLink) livekitTestLink.href = `/livekit-test.html?room=${encodeURIComponent(roomId)}&name=${encodeURIComponent(myName)}`;
   $('#myName').textContent = myName;
   $('#myAvatar').textContent = firstLetter(myName);
   $('#callNavBadge').hidden = true;
@@ -339,6 +367,12 @@ function makeVideoTile(id, name, local = false) {
   video.playsInline = true;
   video.muted = local;
   video.volume = 1;
+  video.addEventListener('click', () => {
+    if (local) return;
+    video.play().catch(() => {});
+    const audioElements = remoteAudioElements.get(id) || [];
+    audioElements.forEach((audio) => audio.play().catch(() => {}));
+  });
   const avatar = document.createElement('div');
   avatar.className = 'tile-avatar';
   avatar.textContent = firstLetter(name);
@@ -411,7 +445,7 @@ async function startCall() {
 
     for (const member of participants.values()) {
       if (member.id !== socket.id && member.inCall && socket.id.localeCompare(member.id) < 0) {
-        createPeerConnection(member.id, true).catch((error) => showToast(error.message));
+        createPeerConnection(member.id).catch((error) => showToast(error.message));
       }
     }
     showToast('Ты подключился к видеозвонку.');
@@ -428,67 +462,229 @@ async function startCall() {
   }
 }
 
-async function createPeerConnection(peerId, shouldOffer) {
+function currentOutgoingVideoSettings() {
+  const profile = VIDEO_PROFILES[$('#videoResolutionSelect').value] || VIDEO_PROFILES.auto;
+  const sharing = Boolean(isSharing && screenStream && screenStream.getVideoTracks().length);
+  return {
+    bitrate: sharing ? profile.shareBitrate : profile.bitrate,
+    frameRate: sharing ? profile.shareFrameRate : profile.frameRate,
+    keepTextSharp: sharing
+  };
+}
+
+function scheduleIceRestart(peerId, pc) {
+  if (!pc || !pc._isOfferer || pc.signalingState === 'closed' || !isInCall) return;
+  if (pc._iceRestartTimer) return;
+
+  const delay = pc.iceConnectionState === 'failed' ? 0 : 4500;
+  pc._iceRestartTimer = setTimeout(() => {
+    pc._iceRestartTimer = null;
+    if (!isInCall || pc.signalingState === 'closed') return;
+    if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') return;
+
+    if ((pc._iceRestartAttempts || 0) >= 2) {
+      const member = participants.get(peerId);
+      showToast(`Связь с ${member && member.name ? member.name : 'участником'} не восстановилась. Возможно, этой сети нужен TURN-сервер.`);
+      return;
+    }
+
+    pc._iceRestartAttempts = (pc._iceRestartAttempts || 0) + 1;
+    try {
+      pc.restartIce();
+      showToast('Восстанавливаем сетевое соединение…');
+    } catch (error) {
+      console.warn('ICE restart failed:', error);
+    }
+  }, delay);
+}
+
+function startPeerQualityMonitor(peerId, pc) {
+  if (pc._qualityTimer) clearInterval(pc._qualityTimer);
+  pc._qualityBusy = false;
+  pc._lastAdaptiveBitrate = 0;
+
+  pc._qualityTimer = setInterval(async () => {
+    if (pc._qualityBusy || pc.signalingState === 'closed' || !isInCall) return;
+    pc._qualityBusy = true;
+    try {
+      const stats = await pc.getStats();
+      let selectedPairId = null;
+      let selectedPair = null;
+      let packetLoss = 0;
+
+      stats.forEach((report) => {
+        if (report.type === 'transport' && report.selectedCandidatePairId) {
+          selectedPairId = report.selectedCandidatePairId;
+        }
+        if (report.type === 'remote-inbound-rtp' && (report.kind === 'video' || report.mediaType === 'video')) {
+          packetLoss = Math.max(packetLoss, Number(report.fractionLost) || 0);
+        }
+      });
+
+      stats.forEach((report) => {
+        if (report.type !== 'candidate-pair' || report.state !== 'succeeded') return;
+        if ((selectedPairId && report.id === selectedPairId) || (!selectedPairId && (report.selected || report.nominated))) {
+          selectedPair = report;
+        }
+      });
+
+      const sender = pc.getSenders().find((item) => item.track && item.track.kind === 'video');
+      if (!sender) return;
+
+      const current = currentOutgoingVideoSettings();
+      let target = current.bitrate;
+      if (selectedPair && Number.isFinite(selectedPair.availableOutgoingBitrate) && selectedPair.availableOutgoingBitrate > 0) {
+        target = Math.min(target, selectedPair.availableOutgoingBitrate * 0.78);
+      }
+      if (packetLoss > 0.18) target *= 0.58;
+      else if (packetLoss > 0.09) target *= 0.78;
+      target = Math.max(180000, Math.round(target));
+
+      const previous = pc._lastAdaptiveBitrate || 0;
+      if (!previous || Math.abs(target - previous) > Math.max(70000, previous * 0.14)) {
+        await tuneVideoSender(sender, target, current.frameRate, current.keepTextSharp);
+        pc._lastAdaptiveBitrate = target;
+      }
+    } catch (error) {
+      console.warn('WebRTC quality monitor skipped:', error);
+    } finally {
+      pc._qualityBusy = false;
+    }
+  }, 5000);
+}
+
+async function createPeerConnection(peerId) {
   if (!isInCall || !localStream) throw new Error('Сначала войди в звонок.');
-  let pc = peerConnections.get(peerId);
-  if (pc) return pc;
+  if (peerConnections.has(peerId)) return peerConnections.get(peerId);
+  if (peerConnectionPromises.has(peerId)) return peerConnectionPromises.get(peerId);
 
-  const member = participants.get(peerId) || { name: 'Участник' };
-  pc = new RTCPeerConnection({
-    iceServers: appConfig.iceServers || [],
-    iceCandidatePoolSize: 4,
-    bundlePolicy: 'max-bundle'
-  });
-  peerConnections.set(peerId, pc);
-  localStream.getAudioTracks().forEach((track) => pc.addTrack(track, localStream));
-  const outgoingVideoTrack = isSharing && screenStream
-    ? screenStream.getVideoTracks()[0]
-    : localStream.getVideoTracks()[0];
-  if (outgoingVideoTrack) {
-    pc.addTrack(outgoingVideoTrack, isSharing && screenStream ? screenStream : localStream);
-  }
-  pc.onicecandidate = (event) => {
-    if (event.candidate && socket && socket.connected) {
-      socket.emit('rtc:signal', { to: peerId, signal: { candidate: event.candidate } });
+  const creation = (async () => {
+    if (rtcConfigPromise) {
+      try { await rtcConfigPromise; } catch (_error) {}
     }
-  };
-  pc.ontrack = (event) => {
-    const currentMember = participants.get(peerId) || member;
-    const tile = makeVideoTile(peerId, currentMember.name || 'Участник');
-    const video = tile.querySelector('video');
-    let remoteStream = event.streams && event.streams[0];
-    if (!remoteStream) {
-      remoteStream = video.srcObject instanceof MediaStream ? video.srcObject : new MediaStream();
-      if (!remoteStream.getTracks().some((track) => track.id === event.track.id)) remoteStream.addTrack(event.track);
-    }
-    video.srcObject = remoteStream;
-    video.muted = false;
-    video.volume = 1;
-    event.track.onunmute = () => {
-      video.play().catch(() => showToast('Нажми на видео участника, чтобы разрешить воспроизведение звука.'));
+    if (!isInCall || !localStream) throw new Error('Звонок уже завершён.');
+    if (peerConnections.has(peerId)) return peerConnections.get(peerId);
+
+    const member = participants.get(peerId) || { name: 'Участник' };
+    const pc = new RTCPeerConnection({
+      iceServers: appConfig.iceServers || [],
+      iceTransportPolicy: appConfig.iceTransportPolicy || 'all',
+      iceCandidatePoolSize: 8,
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require'
+    });
+    pc._isOfferer = Boolean(socket && socket.id.localeCompare(peerId) < 0);
+    pc._makingOffer = false;
+    pc._iceRestartAttempts = 0;
+    peerConnections.set(peerId, pc);
+
+    pc.onnegotiationneeded = async () => {
+      if (!pc._isOfferer || pc._makingOffer || pc.signalingState !== 'stable' || !socket || !socket.connected) return;
+      pc._makingOffer = true;
+      try {
+        const offer = await pc.createOffer();
+        if (pc.signalingState !== 'stable') return;
+        await pc.setLocalDescription(offer);
+        if (socket && socket.connected) {
+          socket.emit('rtc:signal', { to: peerId, signal: pc.localDescription });
+        }
+      } catch (error) {
+        console.error('WebRTC offer error:', error);
+        showToast(`Не удалось начать соединение с ${member.name || 'участником'}.`);
+      } finally {
+        pc._makingOffer = false;
+      }
     };
-    video.play().catch(() => showToast('Нажми на видео участника, чтобы включить звук.'));
-    tile.classList.toggle('has-video', remoteStream.getVideoTracks().some((track) => track.readyState === 'live' && track.enabled));
-    tile.classList.toggle('sharing', Boolean(currentMember.sharing));
-    updateTileState(peerId, currentMember);
-  };
-  pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'failed') {
-      showToast(`Не удалось соединиться с ${member.name || 'участником'}. Для некоторых мобильных сетей нужен TURN-сервер.`);
-    }
-  };
-  pc.oniceconnectionstatechange = () => {
-    if (pc.iceConnectionState === 'failed' && typeof pc.restartIce === 'function') {
-      try { pc.restartIce(); } catch (error) { console.warn('ICE restart failed:', error); }
-    }
-  };
 
-  if (shouldOffer) {
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    socket.emit('rtc:signal', { to: peerId, signal: pc.localDescription });
+    localStream.getAudioTracks().forEach((track) => pc.addTrack(track, localStream));
+    const outgoingVideoTrack = isSharing && screenStream
+      ? screenStream.getVideoTracks()[0]
+      : localStream.getVideoTracks()[0];
+    if (outgoingVideoTrack) {
+      pc.addTrack(outgoingVideoTrack, isSharing && screenStream ? screenStream : localStream);
+      const settings = currentOutgoingVideoSettings();
+      const sender = pc.getSenders().find((item) => item.track === outgoingVideoTrack);
+      if (sender) tuneVideoSender(sender, settings.bitrate, settings.frameRate, settings.keepTextSharp);
+    }
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate && socket && socket.connected) {
+        socket.emit('rtc:signal', { to: peerId, signal: { candidate: event.candidate } });
+      }
+    };
+
+    pc.ontrack = (event) => {
+      const currentMember = participants.get(peerId) || member;
+
+      if (event.track.kind === 'audio') {
+        let audioElements = remoteAudioElements.get(peerId);
+        if (!audioElements) {
+          audioElements = [];
+          remoteAudioElements.set(peerId, audioElements);
+        }
+        const audio = document.createElement('audio');
+        audio.autoplay = true;
+        audio.playsInline = true;
+        audio.className = 'remote-audio-only';
+        audio.dataset.peerId = peerId;
+        audio.srcObject = new MediaStream([event.track]);
+        document.body.append(audio);
+        audioElements.push(audio);
+        audio.play().catch(() => showToast('Нажми на видео участника, чтобы включить звук.'));
+        event.track.onended = () => {
+          audio.pause();
+          audio.srcObject = null;
+          audio.remove();
+          const current = remoteAudioElements.get(peerId) || [];
+          remoteAudioElements.set(peerId, current.filter((item) => item !== audio));
+        };
+        return;
+      }
+
+      const tile = makeVideoTile(peerId, currentMember.name || 'Участник');
+      const video = tile.querySelector('video');
+      let remoteStream = event.streams && event.streams[0];
+      if (!remoteStream) remoteStream = new MediaStream([event.track]);
+      video.srcObject = remoteStream;
+      video.muted = true;
+      video.playsInline = true;
+      event.track.onunmute = () => video.play().catch(() => {});
+      video.play().catch(() => {});
+      tile.classList.toggle('has-video', event.track.readyState === 'live' && event.track.enabled);
+      tile.classList.toggle('sharing', Boolean(currentMember.sharing));
+      updateTileState(peerId, currentMember);
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'connected') {
+        if (pc._iceRestartTimer) clearTimeout(pc._iceRestartTimer);
+        pc._iceRestartTimer = null;
+        pc._iceRestartAttempts = 0;
+      } else if (pc.connectionState === 'failed') {
+        scheduleIceRestart(peerId, pc);
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        if (pc._iceRestartTimer) clearTimeout(pc._iceRestartTimer);
+        pc._iceRestartTimer = null;
+        pc._iceRestartAttempts = 0;
+      } else if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+        scheduleIceRestart(peerId, pc);
+      }
+    };
+
+    startPeerQualityMonitor(peerId, pc);
+    return pc;
+  })();
+
+  peerConnectionPromises.set(peerId, creation);
+  try {
+    return await creation;
+  } finally {
+    peerConnectionPromises.delete(peerId);
   }
-  return pc;
 }
 
 async function flushPendingIce(peerId, pc) {
@@ -506,11 +702,18 @@ function closePeer(peerId) {
     pc.onicecandidate = null;
     pc.onconnectionstatechange = null;
     pc.oniceconnectionstatechange = null;
+    pc.onnegotiationneeded = null;
+    if (pc._iceRestartTimer) clearTimeout(pc._iceRestartTimer);
+    if (pc._qualityTimer) clearInterval(pc._qualityTimer);
     pc.getReceivers().forEach((receiver) => { if (receiver.track) receiver.track.stop(); });
+    const audioElements = remoteAudioElements.get(peerId) || [];
+    audioElements.forEach((audio) => { audio.pause(); audio.srcObject = null; audio.remove(); });
+    remoteAudioElements.delete(peerId);
     pc.close();
     peerConnections.delete(peerId);
   }
   pendingIce.delete(peerId);
+  peerConnectionPromises.delete(peerId);
 }
 
 function removeVideoTile(peerId) {
@@ -577,7 +780,7 @@ async function tuneVideoSender(sender, bitrate, frameRate, keepTextSharp = false
   if (!sender || typeof sender.getParameters !== 'function') return;
   try {
     const params = sender.getParameters();
-    if (!params.encodings || !params.encodings.length) return;
+    if (!params.encodings || !params.encodings.length) params.encodings = [{}];
     params.encodings[0].maxBitrate = bitrate;
     params.encodings[0].maxFramerate = frameRate;
     if ('degradationPreference' in params || keepTextSharp) {
@@ -908,10 +1111,11 @@ $('#leaveRoomBtn').addEventListener('click', leaveRoom);
 inviteModal.addEventListener('click', (event) => { if (event.target === inviteModal) inviteModal.hidden = true; });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { inviteModal.hidden = true; if (!$('#videoViewerModal').hidden) closeVideoViewer(); } });
 
-(async function loadConfig() {
+rtcConfigPromise = (async function loadConfig() {
   try {
     const response = await fetch('/api/config', { cache: 'no-store' });
     if (response.ok) appConfig = { ...appConfig, ...await response.json() };
+    else console.warn('Using default WebRTC ICE configuration:', response.status);
   } catch (error) {
     console.warn('Using default WebRTC ICE configuration:', error);
   }
