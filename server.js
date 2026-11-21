@@ -119,6 +119,72 @@ async function verifyAccessToken(token) {
   }
 }
 
+const CLOUDFLARE_TURN_KEY_ID = String(process.env.CLOUDFLARE_TURN_KEY_ID || '').trim();
+const CLOUDFLARE_TURN_API_TOKEN = String(process.env.CLOUDFLARE_TURN_API_TOKEN || '').trim();
+const cloudflareTurnCredentialCache = new Map();
+const CLOUDFLARE_TURN_TTL_SECONDS = 43200;
+
+app.post('/api/rtc/ice-servers', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, private');
+  if (!CLOUDFLARE_TURN_KEY_ID || !CLOUDFLARE_TURN_API_TOKEN) {
+    return res.status(503).json({ error: 'turn_not_configured' });
+  }
+  const authorization = String(req.headers.authorization || '');
+  const accessToken = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  const user = await verifyAccessToken(accessToken);
+  if (!user) return res.status(401).json({ error: 'unauthorized' });
+
+  const now = Date.now();
+  const cached = cloudflareTurnCredentialCache.get(user.id);
+  if (cached && cached.expiresAt > now + 10 * 60 * 1000) {
+    return res.json({ iceServers: cached.iceServers, expiresAt: cached.expiresAt });
+  }
+
+  try {
+    const endpoint = 'https://rtc.live.cloudflare.com/v1/turn/keys/' +
+      encodeURIComponent(CLOUDFLARE_TURN_KEY_ID) + '/credentials/generate-ice-servers';
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + CLOUDFLARE_TURN_API_TOKEN,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ ttl: CLOUDFLARE_TURN_TTL_SECONDS }),
+      signal: AbortSignal.timeout(7000)
+    });
+    if (!response.ok) {
+      console.error('Cloudflare TURN credential request failed (' + response.status + ').');
+      return res.status(502).json({ error: 'turn_provider_unavailable' });
+    }
+    const payload = await response.json();
+    const iceServers = Array.isArray(payload.iceServers) ? payload.iceServers
+      .map((entry) => {
+        if (!entry || !Array.isArray(entry.urls)) return null;
+        // Port 53 is documented as browser-blocked; omit it to avoid wasted ICE timeouts.
+        const urls = entry.urls.filter((url) =>
+          typeof url === 'string' &&
+          /^(stun|turn|turns):/.test(url) &&
+          !/:53(?:\?|$)/.test(url)
+        );
+        if (!urls.length) return null;
+        const clean = { urls };
+        if (typeof entry.username === 'string') clean.username = entry.username;
+        if (typeof entry.credential === 'string') clean.credential = entry.credential;
+        return clean;
+      }).filter(Boolean) : [];
+    if (!iceServers.some((entry) => entry.urls.some((url) => url.startsWith('turn:') || url.startsWith('turns:')))) {
+      console.error('Cloudflare TURN returned no usable relay URLs.');
+      return res.status(502).json({ error: 'turn_provider_invalid_response' });
+    }
+    const expiresAt = now + CLOUDFLARE_TURN_TTL_SECONDS * 1000;
+    cloudflareTurnCredentialCache.set(user.id, { iceServers, expiresAt });
+    return res.json({ iceServers, expiresAt });
+  } catch (_error) {
+    console.error('Cloudflare TURN credential request failed.');
+    return res.status(502).json({ error: 'turn_provider_unavailable' });
+  }
+});
+
 async function fetchAuthenticatedProfile(token, userId) {
   try {
     const params = new URLSearchParams({ select: 'display_name,username', id: `eq.${userId}`, limit: '1' });
