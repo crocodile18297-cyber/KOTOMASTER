@@ -2350,3 +2350,7 @@ html[data-koto-theme="system"] { color-scheme:light; }
 .group-manage-copy small { color:#987e72; font-size:10px; }
 .group-manage-row .community-message-action { min-height:38px; font-size:11px; }
 @media(max-width:740px){.community-heading-actions{gap:5px}#manageGroupBtn{min-height:40px;font-size:10px;padding:6px 8px}.group-manage-row .community-message-action{min-height:42px}}
+
+.primary-button { background:var(--accent)!important; color:#fff!important; box-shadow:0 10px 24px color-mix(in srgb,var(--accent) 22%,transparent)!important; }
+.community-tab.active { border-color:color-mix(in srgb,var(--accent) 25%,transparent)!important; background:color-mix(in srgb,var(--accent) 16%,white)!important; color:var(--accent)!important; }
+.message-action:hover,.community-message-action:hover { border-color:color-mix(in srgb,var(--accent) 40%,transparent)!important; color:var(--accent)!important; }
