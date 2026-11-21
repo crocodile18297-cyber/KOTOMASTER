@@ -808,7 +808,8 @@ function handlePageResume() {
     socket.connect();
     return;
   }
-  syncRoomAfterResume();
+  unlockRemoteAudioPlayback();
+  syncRoomAfterResume().finally(unlockRemoteAudioPlayback);
 }
 
 async function restoreSavedRoom() {
@@ -2485,8 +2486,6 @@ function makeVideoTile(id, name, local = false) {
   video.playsInline = true;
   video.muted = local;
   video.volume = 1;
-  video.preload = 'none';
-  video.decoding = 'async';
   video.disablePictureInPicture = true;
   video.setAttribute('playsinline', '');
   video.setAttribute('disablepictureinpicture', '');
@@ -2934,22 +2933,21 @@ async function enableCameraAfterAudio(profile) {
     const videoConstraints = {
       width: { ideal: profile.width },
       height: { ideal: profile.height },
-      frameRate: { ideal: profile.frameRate, max: 60 }
+      frameRate: { ideal: profile.frameRate, max: profile.frameRate }
     };
     try {
       videoStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: videoConstraints });
     } catch (captureError) {
-      // Some phone cameras reject higher frame-rate constraints; retry at a broadly supported 30 FPS.
-      if (profile.frameRate <= 30 || !['OverconstrainedError', 'NotReadableError'].includes(captureError?.name)) throw captureError;
+      if (!['OverconstrainedError', 'NotReadableError'].includes(captureError?.name)) throw captureError;
       videoStream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
-          width: { ideal: Math.min(profile.width, 1280) },
-          height: { ideal: Math.min(profile.height, 720) },
-          frameRate: { ideal: 30, max: 30 }
+          width: { ideal: 854, max: 1280 },
+          height: { ideal: 480, max: 720 },
+          frameRate: { ideal: 24, max: 30 }
         }
       });
-      showToast('Камера не поддерживает выбранную частоту. Используется стабильный режим 30 FPS.');
+      showToast('Для этой камеры включён стабильный режим 480p/24 FPS.');
     }
     const videoTrack = videoStream.getVideoTracks()[0];
     if (!videoTrack) throw new Error('Браузер не вернул видеодорожку камеры.');
@@ -3139,15 +3137,26 @@ function startPeerQualityMonitor(peerId, pc) {
       let scale = 1;
       let fpsFactor = 1;
 
-      if (ratio < 0.22 || droppedFrameRatio > 0.22 || encoderLimit === 'cpu' && encodeLoad > 0.85) {
-        scale = current.keepTextSharp ? 1.8 : (videoQualityBoostEnabled ? 2.35 : 1.85);
-        fpsFactor = videoQualityBoostEnabled && !current.keepTextSharp ? 0.72 : 0.56;
+      if (current.keepTextSharp) {
+        if (ratio < 0.22 || droppedFrameRatio > 0.22 || encoderLimit === 'cpu' && encodeLoad > 0.85) {
+          scale = 1;
+          fpsFactor = 0.52;
+        } else if (ratio < 0.40 || videoPacketLoss > 0.14 || droppedFrameRatio > 0.12 || encoderLimit === 'bandwidth') {
+          scale = 1;
+          fpsFactor = 0.66;
+        } else if (ratio < 0.66 || videoPacketLoss > 0.07 || droppedFrameRatio > 0.06 || encodeLoad > 0.68) {
+          scale = 1;
+          fpsFactor = 0.82;
+        }
+      } else if (ratio < 0.22 || droppedFrameRatio > 0.22 || encoderLimit === 'cpu' && encodeLoad > 0.85) {
+        scale = videoQualityBoostEnabled ? 1.8 : 1.55;
+        fpsFactor = videoQualityBoostEnabled ? 0.78 : 0.68;
       } else if (ratio < 0.40 || videoPacketLoss > 0.14 || droppedFrameRatio > 0.12 || encoderLimit === 'bandwidth') {
-        scale = current.keepTextSharp ? 1.5 : (videoQualityBoostEnabled ? 1.85 : 1.5);
-        fpsFactor = videoQualityBoostEnabled && !current.keepTextSharp ? 0.82 : 0.72;
+        scale = videoQualityBoostEnabled ? 1.45 : 1.25;
+        fpsFactor = videoQualityBoostEnabled ? 0.88 : 0.82;
       } else if (ratio < 0.66 || videoPacketLoss > 0.07 || droppedFrameRatio > 0.06 || encodeLoad > 0.68) {
-        scale = current.keepTextSharp ? 1.15 : (videoQualityBoostEnabled ? 1.35 : 1.2);
-        fpsFactor = videoQualityBoostEnabled && !current.keepTextSharp ? 0.92 : 0.86;
+        scale = videoQualityBoostEnabled ? 1.15 : 1.08;
+        fpsFactor = 0.92;
       }
 
       const minimumFrameRate = videoQualityBoostEnabled
@@ -3335,18 +3344,36 @@ async function createPeerConnection(peerId) {
       video.autoplay = true;
       video.playsInline = true;
       video.muted = true;
-      video.preload = 'none';
-      video.decoding = 'async';
+      video.setAttribute('autoplay', '');
+      video.setAttribute('playsinline', '');
+
       let remoteStream = event.streams && event.streams[0];
-      if (!remoteStream) remoteStream = new MediaStream([event.track]);
+      if (!remoteStream) remoteStream = new MediaStream();
+      if (!remoteStream.getTracks().some((track) => track.id === event.track.id)) {
+        remoteStream.addTrack(event.track);
+      }
       video.srcObject = remoteStream;
-      video.muted = true;
-      video.playsInline = true;
-      event.track.onunmute = () => video.play().catch(() => {});
-      video.play().catch(() => {});
-      tile.classList.toggle('has-video', event.track.readyState === 'live' && event.track.enabled);
+
+      const resumeRemoteVideo = () => {
+        if (event.track.readyState !== 'live') return;
+        if (video.srcObject !== remoteStream) video.srcObject = remoteStream;
+        video.play().then(() => {
+          if (event.track.readyState === 'live' && !event.track.muted) {
+            tile.classList.add('has-video');
+          }
+        }).catch(() => {});
+      };
+
+      event.track.addEventListener('unmute', resumeRemoteVideo);
+      event.track.addEventListener('mute', () => tile.classList.remove('has-video'));
+      event.track.addEventListener('ended', () => tile.classList.remove('has-video'));
+      video.addEventListener('loadedmetadata', resumeRemoteVideo);
+      video.addEventListener('canplay', resumeRemoteVideo);
+      video.addEventListener('playing', () => tile.classList.add('has-video'));
+
       tile.classList.toggle('sharing', Boolean(currentMember.sharing));
       updateTileState(peerId, currentMember);
+      resumeRemoteVideo();
     };
 
     pc.onconnectionstatechange = () => {
@@ -3596,16 +3623,24 @@ async function toggleCamera() {
 }
 
 function unlockRemoteAudioPlayback() {
-  let attempted = 0;
+  let attemptedAudio = 0;
   for (const audioElements of remoteAudioElements.values()) {
     for (const audio of audioElements) {
       if (audio.paused) {
-        attempted += 1;
+        attemptedAudio += 1;
         audio.play().catch(() => {});
       }
     }
   }
-  if (attempted) showToast('Пробуем включить звук участников.');
+
+  const remoteVideos = videoGrid.querySelectorAll('.video-tile:not(.local) video');
+  remoteVideos.forEach((video) => {
+    if (video.srcObject && (video.paused || video.readyState < 2)) {
+      video.play().catch(() => {});
+    }
+  });
+
+  if (attemptedAudio) showToast('Пробуем включить звук участников.');
 }
 
 function preferOpusAudioCodec(pc, sender) {
@@ -3679,8 +3714,8 @@ async function tuneVideoSender(sender, bitrate, frameRate, keepTextSharp = false
       // Audio is configured as high priority; video yields bandwidth to speech.
       encoding.priority = 'low';
       if (includeScale) encoding.scaleResolutionDownBy = Math.max(1, scaleResolutionDownBy);
-      // For screen shares, preserve frame delivery and reduce resolution before allowing visible freezes.
-      params.degradationPreference = 'maintain-framerate';
+      // Camera adapts resolution and frame rate together. Screen sharing protects text sharpness.
+      params.degradationPreference = keepTextSharp ? 'maintain-resolution' : 'balanced';
       await sender.setParameters(params);
     };
 
@@ -4037,17 +4072,17 @@ function closeVideoViewer() {
 }
 
 const VIDEO_PROFILES = {
-  auto: { width: 1280, height: 720, frameRate: 30, bitrate: 1150000, shareFrameRate: 15, shareBitrate: 950000 },
-  '360': { width: 640, height: 360, frameRate: 30, bitrate: 500000, shareFrameRate: 10, shareBitrate: 420000 },
-  '480': { width: 854, height: 480, frameRate: 30, bitrate: 800000, shareFrameRate: 12, shareBitrate: 780000 },
-  '720': { width: 1280, height: 720, frameRate: 30, bitrate: 1250000, shareFrameRate: 15, shareBitrate: 1150000 },
+  auto: { width: 1280, height: 720, frameRate: 24, bitrate: 900000, shareFrameRate: 15, shareBitrate: 950000 },
+  '360': { width: 640, height: 360, frameRate: 24, bitrate: 450000, shareFrameRate: 10, shareBitrate: 420000 },
+  '480': { width: 854, height: 480, frameRate: 24, bitrate: 750000, shareFrameRate: 12, shareBitrate: 780000 },
+  '720': { width: 1280, height: 720, frameRate: 24, bitrate: 1150000, shareFrameRate: 15, shareBitrate: 1150000 },
   '1080': { width: 1920, height: 1080, frameRate: 30, bitrate: 2500000, shareFrameRate: 15, shareBitrate: 2200000 }
 };
 
-function isConstrainedVideoDevice() {
-  const cores = Number(navigator.hardwareConcurrency) || 0;
-  const memory = Number(navigator.deviceMemory) || 0;
-  return (cores > 0 && cores <= 4) || (memory > 0 && memory <= 4);
+function isMobileVideoDevice() {
+  const userAgent = navigator.userAgent || '';
+  return /Android|iPhone|iPad|iPod/i.test(userAgent) ||
+    Boolean(window.matchMedia && window.matchMedia('(max-width: 740px)').matches);
 }
 
 function getSelectedVideoProfile() {
@@ -4056,31 +4091,44 @@ function getSelectedVideoProfile() {
   const base = VIDEO_PROFILES[key];
   if (!videoQualityBoostEnabled) return base;
 
-  const bitrateByProfile = {
+  const mobile = isMobileVideoDevice();
+  const desktopBitrate = {
     auto: 2100000,
-    '360': 750000,
+    '360': 700000,
     '480': 1250000,
-    '720': 2050000,
+    '720': 1950000,
     '1080': 2600000
   };
-  const shareBitrateByProfile = {
+  const mobileBitrate = {
+    auto: 1450000,
+    '360': 550000,
+    '480': 900000,
+    '720': 1450000,
+    '1080': 1900000
+  };
+  const desktopShareBitrate = {
     auto: 1200000,
-    '360': 420000,
-    '480': 780000,
-    '720': 1150000,
+    '360': 520000,
+    '480': 900000,
+    '720': 1450000,
     '1080': 1800000
   };
-  const constrained = isConstrainedVideoDevice();
-  const use1080p = key === '1080' && !constrained;
-  const useLowPowerAuto = key === 'auto' && constrained;
+  const mobileShareBitrate = {
+    auto: 900000,
+    '360': 400000,
+    '480': 650000,
+    '720': 900000,
+    '1080': 1200000
+  };
+
   return {
     ...base,
-    width: use1080p ? 1920 : useLowPowerAuto ? 854 : base.width,
-    height: use1080p ? 1080 : useLowPowerAuto ? 480 : base.height,
-    frameRate: use1080p ? 30 : 60,
-    bitrate: use1080p ? bitrateByProfile[key] : Math.max(base.bitrate, bitrateByProfile[key]),
-    shareFrameRate: 20,
-    shareBitrate: Math.max(base.shareBitrate, shareBitrateByProfile[key])
+    width: key === 'auto' ? (mobile ? 1280 : 1920) : base.width,
+    height: key === 'auto' ? (mobile ? 720 : 1080) : base.height,
+    frameRate: 30,
+    bitrate: (mobile ? mobileBitrate : desktopBitrate)[key],
+    shareFrameRate: mobile ? 15 : 20,
+    shareBitrate: (mobile ? mobileShareBitrate : desktopShareBitrate)[key]
   };
 }
 
@@ -4100,10 +4148,10 @@ function updateVideoQualityBoostButton() {
   if (!button) return;
   button.classList.toggle('active', videoQualityBoostEnabled);
   button.setAttribute('aria-pressed', videoQualityBoostEnabled ? 'true' : 'false');
-  button.textContent = videoQualityBoostEnabled ? '60 FPS · ВКЛ' : '60 FPS · ВЫКЛ';
+  button.textContent = videoQualityBoostEnabled ? 'ЧЁТЧЕ · ВКЛ' : 'ЧЁТЧЕ · ВЫКЛ';
   button.title = videoQualityBoostEnabled
-    ? 'Плавный режим: запрос до 60 FPS. На слабых устройствах качество подстроится автоматически.'
-    : 'Включить плавный режим с частотой до 60 FPS';
+    ? 'Повышенное качество: до 30 FPS. На телефонах используется ограниченный битрейт.'
+    : 'Повысить качество до 30 FPS с адаптацией под устройство и сеть';
 }
 
 async function changeVideoResolution() {
@@ -4114,7 +4162,7 @@ async function changeVideoResolution() {
   const track = sharingTrack || cameraTrack;
   if (!track || !isInCall) {
     showToast(videoQualityBoostEnabled
-      ? 'Режим 60 FPS сохранён и применится при следующем звонке.'
+      ? 'Режим «Чётче» сохранён и применится при следующем звонке.'
       : 'Качество сохранено и применится при следующем звонке.');
     return;
   }
@@ -4125,14 +4173,14 @@ async function changeVideoResolution() {
     await track.applyConstraints({
       width: { ideal: profile.width },
       height: { ideal: profile.height },
-      frameRate: { ideal: frameRate, max: 60 }
+      frameRate: { ideal: frameRate, max: frameRate }
     });
     if (!sharingTrack) updateLiveFpsFromTrack(track);
     for (const pc of peerConnections.values()) {
       const sender = findVideoSender(pc);
       if (sender) await tuneVideoSender(sender, bitrate, frameRate, Boolean(sharingTrack));
     }
-    const mode = videoQualityBoostEnabled ? 'Режим до 60 FPS' :
+    const mode = videoQualityBoostEnabled ? 'Режим «Чётче»' :
       (select.value === 'auto' ? 'Автоматическое качество' : `Качество до ${select.value}p`);
     showToast(sharingTrack ? `${mode} демонстрации применено.` : `${mode} камеры применено.`);
   } catch (error) {
