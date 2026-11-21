@@ -2365,7 +2365,7 @@ html[data-koto-theme="system"] { color-scheme:light; }
   .video-tile .tile-label { left:7px; bottom:7px; padding:5px 7px; }
 }
 
-/* Unified message action sheet:/* Unified message action sheet: accessible on touch, mouse and keyboard. */
+/* Unified message action sheet: accessible on touch, mouse and keyboard. */
 .message-row .message-actions,
 .community-message-actions,
 .message-reaction-picker { display:none !important; }
