@@ -83,6 +83,44 @@ let notificationsEnabled = (() => { try { return localStorage.getItem('kotomaste
 let messageSearchQuery = '';
 let activeCallStartedAt = 0;
 
+
+const KOTO_PREFS_KEY='kotomaster-preferences-v1';
+const KOTO_MUTED_PEERS_KEY='kotomaster-muted-peers-v1';
+function readKotoPrefs(){
+  try{return {...{accent:'#a47965',theme:'light',scale:'normal',sounds:true,animations:true},...JSON.parse(localStorage.getItem(KOTO_PREFS_KEY)||'{}')};}
+  catch(_error){return {accent:'#a47965',theme:'light',scale:'normal',sounds:true,animations:true};}
+}
+let kotoPrefs=readKotoPrefs();
+function applyKotoPrefs(){
+  const root=document.documentElement;
+  root.style.setProperty('--accent',kotoPrefs.accent);
+  root.dataset.kotoTheme=kotoPrefs.theme;
+  root.dataset.kotoScale=kotoPrefs.scale;
+  root.dataset.kotoAnimations=kotoPrefs.animations?'on':'off';
+  const sound=$('#settingSounds'),animations=$('#settingAnimations');
+  if(sound)sound.checked=!!kotoPrefs.sounds;
+  if(animations)animations.checked=!!kotoPrefs.animations;
+  document.querySelectorAll('[data-accent]').forEach(b=>b.classList.toggle('is-selected',b.dataset.accent===kotoPrefs.accent));
+  document.querySelectorAll('[data-theme-choice]').forEach(b=>b.classList.toggle('is-selected',b.dataset.themeChoice===kotoPrefs.theme));
+  document.querySelectorAll('[data-scale-choice]').forEach(b=>b.classList.toggle('is-selected',b.dataset.scaleChoice===kotoPrefs.scale));
+  try{localStorage.setItem(KOTO_PREFS_KEY,JSON.stringify(kotoPrefs));}catch(_error){}
+}
+function readMutedPeers(){try{return new Set(JSON.parse(localStorage.getItem(KOTO_MUTED_PEERS_KEY)||'[]'));}catch(_error){return new Set();}}
+const locallyMutedPeers=readMutedPeers();
+function persistMutedPeers(){try{localStorage.setItem(KOTO_MUTED_PEERS_KEY,JSON.stringify([...locallyMutedPeers]));}catch(_error){}}
+function applyPeerMute(peerId){
+  const muted=locallyMutedPeers.has(peerId);
+  (remoteAudioElements.get(peerId)||[]).forEach(audio=>{audio.muted=muted;});
+  const tile=videoGrid?.querySelector('[data-peer-id="'+CSS.escape(peerId)+'"]');
+  if(tile)tile.classList.toggle('peer-locally-muted',muted);
+}
+function togglePeerLocalMute(peerId){
+  if(locallyMutedPeers.has(peerId))locallyMutedPeers.delete(peerId);else locallyMutedPeers.add(peerId);
+  persistMutedPeers();applyPeerMute(peerId);renderParticipants();
+}
+function openSettings(){applyKotoPrefs();$('#settingsModal').hidden=false;}
+function closeSettings(){$('#settingsModal').hidden=true;}
+
 let supabaseClient = null;
 let authSession = null;
 let authMode = 'signin';
@@ -798,6 +836,12 @@ function renderParticipants() {
     state.className = `member-state${member.inCall ? ' in-call' : ''}`;
     state.textContent = member.inCall ? '● LIVE' : '●';
     row.append(avatar, name, state);
+    if(member.id!==(socket&&socket.id)){
+      const mute=communityNode('button','member-local-mute',locallyMutedPeers.has(member.id)?'Со звуком':'Без звука');
+      mute.type='button';mute.setAttribute('aria-pressed',String(locallyMutedPeers.has(member.id)));
+      mute.addEventListener('click',()=>togglePeerLocalMute(member.id));
+      row.append(mute);
+    }
     list.append(row);
 
     if (mobileList) {
@@ -813,6 +857,12 @@ function renderParticipants() {
       chipState.className = `mobile-member-state${member.inCall ? ' in-call' : ''}`;
       chipState.title = member.inCall ? 'В видеозвонке' : 'В комнате';
       chip.append(chipAvatar, chipName, chipState);
+      if(member.id!==(socket&&socket.id)){
+        const mute=communityNode('button','mobile-local-mute',locallyMutedPeers.has(member.id)?'🔇':'🔊');
+        mute.type='button';mute.setAttribute('aria-label',locallyMutedPeers.has(member.id)?'Включить звук участника':'Выключить звук участника');
+        mute.addEventListener('click',event=>{event.stopPropagation();togglePeerLocalMute(member.id);});
+        chip.append(mute);
+      }
       mobileList.append(chip);
     }
   });
@@ -910,6 +960,11 @@ function createMessageNode(message) {
     content.append(quote);
   }
   content.append(bubble);
+  row.addEventListener('click',(event)=>{
+    if(event.target.closest('button'))return;
+    row.classList.toggle('message-menu-open');
+  });
+  row.addEventListener('contextmenu',event=>{event.preventDefault();row.classList.add('message-menu-open');});
 
   if (!message.deleted) {
     const actions = document.createElement('div');
@@ -1507,6 +1562,8 @@ function renderCommunityMessages(rows,profiles,attachments=[],reactions=[],readT
       item.append(reactionBar);
     }
     const actions=communityNode('div','community-message-actions');
+    item.addEventListener('click',event=>{if(!event.target.closest('button,a,audio,video'))item.classList.toggle('message-menu-open');});
+    item.addEventListener('contextmenu',event=>{event.preventDefault();item.classList.add('message-menu-open');});
     const replyButton=communityNode('button','community-message-action','↩ Ответить');
     replyButton.type='button';
     replyButton.addEventListener('click',()=>setCommunityReply(message));
@@ -2819,6 +2876,7 @@ async function createPeerConnection(peerId) {
         audio.playsInline = true;
         audio.muted = false;
         audio.volume = 1;
+        audio.muted = locallyMutedPeers.has(peerId);
         audio.className = 'remote-audio-only';
         audio.dataset.peerId = peerId;
         audio.dataset.trackId = event.track.id;
@@ -3849,6 +3907,15 @@ $('#clearCallHistoryBtn')?.addEventListener('click', async () => {
 });
 renderCallHistory();
 updateNotificationsButton();
+applyKotoPrefs();
+$('#settingsBtn')?.addEventListener('click',openSettings);
+$('#closeSettingsBtn')?.addEventListener('click',closeSettings);
+$('#settingsModal')?.addEventListener('click',event=>{if(event.target===$('#settingsModal'))closeSettings();});
+document.querySelectorAll('[data-accent]').forEach(button=>button.addEventListener('click',()=>{kotoPrefs.accent=button.dataset.accent;applyKotoPrefs();}));
+document.querySelectorAll('[data-theme-choice]').forEach(button=>button.addEventListener('click',()=>{kotoPrefs.theme=button.dataset.themeChoice;applyKotoPrefs();}));
+document.querySelectorAll('[data-scale-choice]').forEach(button=>button.addEventListener('click',()=>{kotoPrefs.scale=button.dataset.scaleChoice;applyKotoPrefs();}));
+$('#settingSounds')?.addEventListener('change',event=>{kotoPrefs.sounds=event.target.checked;applyKotoPrefs();});
+$('#settingAnimations')?.addEventListener('change',event=>{kotoPrefs.animations=event.target.checked;applyKotoPrefs();});
 $('#micBtn').addEventListener('click', toggleMic);
 $('#cameraBtn').addEventListener('click', toggleCamera);
 $('#shareBtn').addEventListener('click', () => isSharing ? stopScreenShare() : startScreenShare());
