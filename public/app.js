@@ -114,7 +114,8 @@ function playKotoNotificationSound(){
 function applyKotoPrefs(){
   const root=document.documentElement;
   root.style.setProperty('--accent',kotoPrefs.accent);
-  root.dataset.kotoTheme=kotoPrefs.theme;
+  const resolvedTheme=kotoPrefs.theme==='system'?(window.matchMedia?.('(prefers-color-scheme: dark)').matches?'dark':'light'):kotoPrefs.theme;
+  root.dataset.kotoTheme=resolvedTheme;
   root.dataset.kotoScale=kotoPrefs.scale;
   root.dataset.kotoAnimations=kotoPrefs.animations?'on':'off';
   const sound=$('#settingSounds'),animations=$('#settingAnimations');
