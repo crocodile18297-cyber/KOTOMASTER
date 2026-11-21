@@ -2086,8 +2086,9 @@ async function toggleCommunityReaction(messageId,emoji) {
 
 async function toggleCommunityPin(messageId) {
   const conversationId=communityState.currentConversationId;
+  const wasPinned=communityState.pinnedMessage?.message_id===messageId;
   try {
-    if(communityState.pinnedMessage?.message_id===messageId) {
+    if(wasPinned) {
       const {error}=await supabaseClient.from('conversation_pins').delete().eq('conversation_id',conversationId);
       if(error) throw error;
       showToast('Закрепление снято.');
@@ -2104,7 +2105,7 @@ async function toggleCommunityPin(messageId) {
     }
     captureProductEvent('message_pin_changed', {
       chat_type: 'community',
-      pinned: communityState.pinnedMessage?.message_id !== messageId
+      pinned: !wasPinned
     });
     await loadCommunityMessages(conversationId);
   } catch(error) { showToast('Не удалось закрепить: '+error.message); }
