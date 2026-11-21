@@ -2314,8 +2314,16 @@ button:focus-visible, input:focus-visible {
 html[data-koto-scale="large"] { font-size:18px; }
 html[data-koto-scale="compact"] { font-size:14px; }
 html[data-koto-animations="off"] *,html[data-koto-animations="off"] *::before,html[data-koto-animations="off"] *::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
-html[data-koto-theme="dark"] body { filter:invert(.88) hue-rotate(180deg); }
-html[data-koto-theme="dark"] img,html[data-koto-theme="dark"] video,html[data-koto-theme="dark"] svg { filter:invert(1) hue-rotate(180deg); }
+
+html[data-koto-theme="dark"] { color-scheme:dark; }
+html[data-koto-theme="dark"] body { background:#17130f!important; color:#f5e9e0!important; background-image:radial-gradient(ellipse at 14% 10%,rgba(164,121,101,.17),transparent 34%),radial-gradient(ellipse at 88% 78%,rgba(114,79,68,.14),transparent 30%)!important; }
+html[data-koto-theme="dark"] .app-shell,html[data-koto-theme="dark"] .sidebar,html[data-koto-theme="dark"] .chat-panel,html[data-koto-theme="dark"] .call-panel,html[data-koto-theme="dark"] .community-panel,html[data-koto-theme="dark"] .community-list-panel,html[data-koto-theme="dark"] .community-chat-panel,html[data-koto-theme="dark"] .community-modal-card { background:#211b17!important; color:#f5e9e0!important; border-color:#49372e!important; }
+html[data-koto-theme="dark"] .community-message,html[data-koto-theme="dark"] .community-conversation-item,html[data-koto-theme="dark"] .community-person-item,html[data-koto-theme="dark"] .message-bubble,html[data-koto-theme="dark"] .community-message-action,html[data-koto-theme="dark"] input,html[data-koto-theme="dark"] textarea { background:#30251f!important; color:#f5e9e0!important; border-color:#584337!important; }
+html[data-koto-theme="dark"] .community-message-header time,html[data-koto-theme="dark"] .settings-note,html[data-koto-theme="dark"] .community-chat-heading small { color:#c5a998!important; }
+html[data-koto-theme="dark"] .community-modal { background:rgba(12,8,6,.78)!important; }
+html[data-koto-theme="system"] { color-scheme:light; }
+@media(prefers-color-scheme:dark){html[data-koto-theme="system"] body{background:#17130f!important;color:#f5e9e0!important}}
+
 .message-actions { opacity:1; gap:7px; flex-wrap:wrap; }
 .message-action { min-width:42px; min-height:40px; padding:7px 11px; border-radius:11px; font-size:16px; }
 .message-row .message-actions { display:none; }
