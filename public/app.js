@@ -923,6 +923,198 @@ function createActionButton(label, title, action, messageId) {
   return button;
 }
 
+
+
+let activeMessageActionMenu = null;
+
+function closeMessageActionMenu(restoreFocus = true) {
+  const active = activeMessageActionMenu;
+  if (!active) return;
+  activeMessageActionMenu = null;
+  document.removeEventListener('keydown', active.onKeydown, true);
+  active.overlay.remove();
+  document.body.style.overflow = active.previousBodyOverflow;
+  if (restoreFocus && active.trigger && active.trigger.isConnected) {
+    try { active.trigger.focus({ preventScroll: true }); } catch (_error) { active.trigger.focus(); }
+  }
+}
+
+function createMessageMenuButton(action, icon, title, description, danger = false) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'message-action-menu-item' + (danger ? ' is-danger' : '');
+  button.dataset.menuAction = action;
+  button.setAttribute('aria-label', title);
+  const symbol = document.createElement('span');
+  symbol.className = 'message-action-menu-icon';
+  symbol.setAttribute('aria-hidden', 'true');
+  symbol.textContent = icon;
+  const copy = document.createElement('span');
+  copy.className = 'message-action-menu-copy';
+  const strong = document.createElement('strong');
+  strong.textContent = title;
+  const small = document.createElement('small');
+  small.textContent = description;
+  copy.append(strong, small);
+  button.append(symbol, copy);
+  return button;
+}
+
+function openMessageActionMenu(message, kind = 'room', trigger = null) {
+  if (!message) return;
+  const community = kind === 'community';
+  if (community ? message.deleted_at : message.deleted) return;
+  closeMessageActionMenu(false);
+
+  const own = community
+    ? message.sender_id === communityUserId()
+    : Boolean(socket && message.from === socket.id);
+  const pinned = community
+    ? communityState.pinnedMessage?.message_id === message.id
+    : Boolean(pinnedMessage && pinnedMessage.id === message.id);
+  const body = community ? (message.body || '') : (message.text || '');
+  const author = community
+    ? (own ? 'Ты' : (communityState.currentConversation?.title || 'Участник'))
+    : (own ? 'Ты' : (message.name || 'Участник'));
+
+  const overlay = document.createElement('div');
+  overlay.id = 'messageActionMenu';
+  overlay.className = 'message-action-menu-overlay';
+  overlay.setAttribute('role', 'presentation');
+
+  const panel = document.createElement('section');
+  panel.className = 'message-action-menu-panel';
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  panel.setAttribute('aria-labelledby', 'messageActionMenuTitle');
+  panel.tabIndex = -1;
+
+  const header = document.createElement('div');
+  header.className = 'message-action-menu-header';
+  const drag = document.createElement('span');
+  drag.className = 'message-action-menu-drag';
+  drag.setAttribute('aria-hidden', 'true');
+  const heading = document.createElement('strong');
+  heading.id = 'messageActionMenuTitle';
+  heading.textContent = 'Действия с сообщением';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'message-action-menu-close';
+  close.textContent = '×';
+  close.setAttribute('aria-label', 'Закрыть меню');
+  close.addEventListener('click', () => closeMessageActionMenu(true));
+  header.append(drag, heading, close);
+
+  const preview = document.createElement('div');
+  preview.className = 'message-action-menu-preview';
+  const previewLabel = document.createElement('span');
+  previewLabel.textContent = own ? 'ВАШЕ СООБЩЕНИЕ' : ('СООБЩЕНИЕ · ' + author.toLocaleUpperCase('ru-RU'));
+  const previewText = document.createElement('p');
+  previewText.textContent = body;
+  preview.append(previewLabel, previewText);
+
+  const reactionGroup = document.createElement('div');
+  reactionGroup.className = 'message-action-menu-reactions';
+  reactionGroup.setAttribute('role', 'group');
+  reactionGroup.setAttribute('aria-label', 'Быстрые реакции');
+  ['❤️', '👍', '😂', '🔥', '🐱', '🎉'].forEach((emoji) => {
+    const reaction = document.createElement('button');
+    reaction.type = 'button';
+    reaction.className = 'message-action-menu-reaction';
+    reaction.textContent = emoji;
+    reaction.setAttribute('aria-label', 'Поставить реакцию ' + emoji);
+    reaction.addEventListener('click', async () => {
+      closeMessageActionMenu(false);
+      if (community) {
+        await toggleCommunityReaction(message.id, emoji);
+      } else {
+        try {
+          const response = await emitWithAck('chat:react', { messageId: message.id, emoji });
+          if (!response.ok) showToast('Не удалось добавить реакцию.');
+        } catch (error) { showToast(error.message || 'Не удалось добавить реакцию.'); }
+      }
+    });
+    reactionGroup.append(reaction);
+  });
+
+  const actions = document.createElement('div');
+  actions.className = 'message-action-menu-grid';
+  actions.append(
+    createMessageMenuButton('reply', '↩', 'Ответить', 'Цитировать сообщение'),
+    createMessageMenuButton('all-reactions', '☺', 'Все реакции', 'Выбрать эмодзи'),
+    createMessageMenuButton('pin', '⌑', pinned ? 'Открепить' : 'Закрепить', 'Важное в чате')
+  );
+
+  const ownerActions = document.createElement('div');
+  ownerActions.className = 'message-action-menu-owner';
+  if (own) {
+    ownerActions.append(
+      createMessageMenuButton('edit', '✎', 'Изменить', 'Исправить текст'),
+      createMessageMenuButton('delete', '⌫', 'Удалить', 'Убрать сообщение', true)
+    );
+  }
+
+  const hint = document.createElement('p');
+  hint.className = 'message-action-menu-hint';
+  hint.textContent = 'Нажми вне панели или Esc, чтобы закрыть';
+  panel.append(header, preview, reactionGroup, actions);
+  if (own) panel.append(ownerActions);
+  panel.append(hint);
+  overlay.append(panel);
+
+  const findMessageNode = () => community
+    ? $('#communityMessages')?.querySelector('[data-message-id="' + CSS.escape(String(message.id)) + '"]')
+    : messagesList?.querySelector('[data-message-id="' + CSS.escape(String(message.id)) + '"]');
+
+  const runAction = (action) => {
+    if (action === 'all-reactions') {
+      reactionGroup.classList.add('is-emphasized');
+      reactionGroup.querySelector('button')?.focus({ preventScroll: true });
+      return;
+    }
+    const row = findMessageNode();
+    const selector = community
+      ? '[data-action="' + action + '"]'
+      : '.message-action[data-action="' + action + '"]';
+    const legacyButton = row?.querySelector(selector);
+    closeMessageActionMenu(false);
+    if (legacyButton) legacyButton.click();
+  };
+  panel.querySelectorAll('[data-menu-action]').forEach((button) => {
+    button.addEventListener('click', () => runAction(button.dataset.menuAction));
+  });
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) closeMessageActionMenu(true);
+  });
+
+  const onKeydown = (event) => {
+    if (!activeMessageActionMenu || activeMessageActionMenu.overlay !== overlay) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeMessageActionMenu(true);
+    } else if (event.key === 'Tab') {
+      const focusable = [...panel.querySelectorAll('button:not(:disabled)')];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+  };
+
+  const previousBodyOverflow = document.body.style.overflow;
+  activeMessageActionMenu = { overlay, trigger, previousBodyOverflow, onKeydown, kind, messageId: message.id };
+  document.body.append(overlay);
+  document.body.style.overflow = 'hidden';
+  document.addEventListener('keydown', onKeydown, true);
+  close.focus({ preventScroll: true });
+}
+
 function createMessageNode(message) {
   const mine = Boolean(socket && message.from === socket.id);
   const row = document.createElement('div');
@@ -984,11 +1176,26 @@ function createMessageNode(message) {
     content.append(quote);
   }
   content.append(bubble);
-  row.addEventListener('click',(event)=>{
-    if(event.target.closest('button'))return;
-    row.classList.toggle('message-menu-open');
+  bubble.tabIndex = 0;
+  bubble.setAttribute('role', 'button');
+  bubble.setAttribute('aria-haspopup', 'dialog');
+  bubble.setAttribute('aria-label', 'Открыть действия для сообщения');
+  row.addEventListener('click', (event) => {
+    if (event.target.closest('button,a,audio,video,input,textarea')) return;
+    if (window.getSelection && window.getSelection().toString()) return;
+    openMessageActionMenu(message, 'room', bubble);
   });
-  row.addEventListener('contextmenu',event=>{event.preventDefault();row.classList.add('message-menu-open');});
+  row.addEventListener('contextmenu', (event) => {
+    if (event.target.closest('button,a,audio,video,input,textarea')) return;
+    event.preventDefault();
+    openMessageActionMenu(message, 'room', bubble);
+  });
+  bubble.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openMessageActionMenu(message, 'room', bubble);
+    }
+  });
 
   if (!message.deleted) {
     const actions = document.createElement('div');
@@ -1091,6 +1298,7 @@ function createMessageNode(message) {
 function refreshMessageNode(message) {
   const current = messagesList.querySelector(`[data-message-id="${CSS.escape(message.id)}"]`);
   if (!current) return;
+  if (activeMessageActionMenu?.kind === 'room' && activeMessageActionMenu.messageId === message.id) closeMessageActionMenu(false);
   current.replaceWith(createMessageNode(message));
 }
 
@@ -1594,6 +1802,7 @@ function renderCommunityConversations() {
 }
 
 function renderCommunityMessages(rows,profiles,attachments=[],reactions=[],readThrough=0) {
+  if (activeMessageActionMenu?.kind === 'community') closeMessageActionMenu(false);
   const list=$('#communityMessages');
   list.replaceChildren();
   if(!rows.length) {
@@ -1661,30 +1870,53 @@ function renderCommunityMessages(rows,profiles,attachments=[],reactions=[],readT
       item.append(reactionBar);
     }
     const actions=communityNode('div','community-message-actions');
-    item.addEventListener('click',event=>{if(!event.target.closest('button,a,audio,video'))item.classList.toggle('message-menu-open');});
-    item.addEventListener('contextmenu',event=>{event.preventDefault();item.classList.add('message-menu-open');});
     const replyButton=communityNode('button','community-message-action','↩ Ответить');
     replyButton.type='button';
+    replyButton.dataset.action='reply';
     replyButton.addEventListener('click',()=>setCommunityReply(message));
     actions.append(replyButton);
     if(!message.deleted_at) {
       const reactionButton=communityNode('button','community-message-action','❤️');
       reactionButton.type='button'; reactionButton.title='Поставить реакцию';
+      reactionButton.dataset.action='react';
       reactionButton.addEventListener('click',()=>toggleCommunityReaction(message.id,'❤️'));
       actions.append(reactionButton);
       const pinButton=communityNode('button','community-message-action',communityState.pinnedMessage?.message_id===message.id?'📌 Снять':'📌 Закрепить');
       pinButton.type='button';
+      pinButton.dataset.action='pin';
       pinButton.addEventListener('click',()=>toggleCommunityPin(message.id));
       actions.append(pinButton);
     }
     if(own && !message.deleted_at) {
       const editButton=communityNode('button','community-message-action','Изменить');
-      editButton.type='button'; editButton.addEventListener('click',()=>editCommunityMessage(message));
+      editButton.type='button'; editButton.dataset.action='edit'; editButton.addEventListener('click',()=>editCommunityMessage(message));
       const deleteButton=communityNode('button','community-message-action is-danger','Удалить');
-      deleteButton.type='button'; deleteButton.addEventListener('click',()=>deleteCommunityMessage(message));
+      deleteButton.type='button'; deleteButton.dataset.action='delete'; deleteButton.addEventListener('click',()=>deleteCommunityMessage(message));
       actions.append(editButton,deleteButton);
     }
     item.append(actions);
+    item.tabIndex = message.deleted_at ? -1 : 0;
+    if (!message.deleted_at) {
+      item.setAttribute('aria-haspopup', 'dialog');
+      item.setAttribute('aria-label', 'Открыть действия для сообщения');
+      item.addEventListener('click', (event) => {
+        if (event.target.closest('button,a,audio,video,input,textarea')) return;
+        if (window.getSelection && window.getSelection().toString()) return;
+        openMessageActionMenu(message, 'community', item);
+      });
+      item.addEventListener('contextmenu', (event) => {
+        if (event.target.closest('button,a,audio,video,input,textarea')) return;
+        event.preventDefault();
+        openMessageActionMenu(message, 'community', item);
+      });
+      item.addEventListener('keydown', (event) => {
+        if (event.target !== item) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openMessageActionMenu(message, 'community', item);
+        }
+      });
+    }
     list.append(item);
   });
   list.scrollTop=list.scrollHeight;
