@@ -83,6 +83,67 @@ let notificationsEnabled = (() => { try { return localStorage.getItem('kotomaste
 let messageSearchQuery = '';
 let activeCallStartedAt = 0;
 
+
+const KOTO_PREFS_KEY='kotomaster-preferences-v1';
+const KOTO_MUTED_PEERS_KEY='kotomaster-muted-peers-v1';
+function readKotoPrefs(){
+  try{return {...{accent:'#a47965',theme:'light',scale:'normal',sounds:true,animations:true},...JSON.parse(localStorage.getItem(KOTO_PREFS_KEY)||'{}')};}
+  catch(_error){return {accent:'#a47965',theme:'light',scale:'normal',sounds:true,animations:true};}
+}
+let kotoPrefs=readKotoPrefs();
+function playKotoNotificationSound(){
+  if(!kotoPrefs.sounds || document.hidden) return;
+  try{
+    const AudioContextClass=window.AudioContext||window.webkitAudioContext;
+    if(!AudioContextClass)return;
+    const context=new AudioContextClass();
+    if(context.state==='suspended')context.resume().catch(()=>{});
+    const oscillator=context.createOscillator();
+    const gain=context.createGain();
+    oscillator.type='sine';
+    oscillator.frequency.setValueAtTime(660,context.currentTime);
+    oscillator.frequency.setValueAtTime(880,context.currentTime+0.08);
+    gain.gain.setValueAtTime(0.0001,context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.08,context.currentTime+0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001,context.currentTime+0.22);
+    oscillator.connect(gain);gain.connect(context.destination);
+    oscillator.start();oscillator.stop(context.currentTime+0.24);
+    oscillator.onended=()=>context.close().catch(()=>{});
+  }catch(_error){}
+}
+function applyKotoPrefs(){
+  const root=document.documentElement;
+  root.style.setProperty('--accent',kotoPrefs.accent);
+  const resolvedTheme=kotoPrefs.theme==='system'?(window.matchMedia?.('(prefers-color-scheme: dark)').matches?'dark':'light'):kotoPrefs.theme;
+  root.dataset.kotoTheme=resolvedTheme;
+  root.dataset.kotoScale=kotoPrefs.scale;
+  root.dataset.kotoAnimations=kotoPrefs.animations?'on':'off';
+  const sound=$('#settingSounds'),animations=$('#settingAnimations');
+  if(sound)sound.checked=!!kotoPrefs.sounds;
+  if(animations)animations.checked=!!kotoPrefs.animations;
+  document.querySelectorAll('[data-accent]').forEach(b=>b.classList.toggle('is-selected',b.dataset.accent===kotoPrefs.accent));
+  document.querySelectorAll('[data-theme-choice]').forEach(b=>b.classList.toggle('is-selected',b.dataset.themeChoice===kotoPrefs.theme));
+  document.querySelectorAll('[data-scale-choice]').forEach(b=>b.classList.toggle('is-selected',b.dataset.scaleChoice===kotoPrefs.scale));
+  try{localStorage.setItem(KOTO_PREFS_KEY,JSON.stringify(kotoPrefs));}catch(_error){}
+}
+function readMutedPeers(){try{return new Set(JSON.parse(localStorage.getItem(KOTO_MUTED_PEERS_KEY)||'[]'));}catch(_error){return new Set();}}
+const locallyMutedPeers=readMutedPeers();
+function persistMutedPeers(){try{localStorage.setItem(KOTO_MUTED_PEERS_KEY,JSON.stringify([...locallyMutedPeers]));}catch(_error){}}
+function applyPeerMute(peerId){
+  const stableId=(participants.get(peerId)||{}).userId || peerId;
+  const muted=locallyMutedPeers.has(stableId);
+  (remoteAudioElements.get(peerId)||[]).forEach(audio=>{audio.muted=muted;});
+  const tile=videoGrid?.querySelector('[data-peer-id="'+CSS.escape(peerId)+'"]');
+  if(tile)tile.classList.toggle('peer-locally-muted',muted);
+}
+function togglePeerLocalMute(peerId){
+  const stableId=(participants.get(peerId)||{}).userId || peerId;
+  if(locallyMutedPeers.has(stableId))locallyMutedPeers.delete(stableId);else locallyMutedPeers.add(stableId);
+  persistMutedPeers();applyPeerMute(peerId);renderParticipants();
+}
+function openSettings(){applyKotoPrefs();$('#settingsModal').hidden=false;}
+function closeSettings(){$('#settingsModal').hidden=true;}
+
 let supabaseClient = null;
 let authSession = null;
 let authMode = 'signin';
@@ -403,6 +464,7 @@ function bindSocketEvents() {
     appendMessage(message);
     if (message && message.from !== socket.id) {
       notifyIncomingMessage(message);
+      playKotoNotificationSound();
       if (!document.hidden && activePanel === 'chat') markMessagesRead([message.id]);
     }
   });
@@ -798,6 +860,12 @@ function renderParticipants() {
     state.className = `member-state${member.inCall ? ' in-call' : ''}`;
     state.textContent = member.inCall ? '● LIVE' : '●';
     row.append(avatar, name, state);
+    if(member.id!==(socket&&socket.id)){
+      const mute=communityNode('button','member-local-mute',locallyMutedPeers.has(member.userId||member.id)?'Со звуком':'Без звука');
+      mute.type='button';mute.setAttribute('aria-pressed',String(locallyMutedPeers.has(member.userId||member.id)));
+      mute.addEventListener('click',()=>togglePeerLocalMute(member.id));
+      row.append(mute);
+    }
     list.append(row);
 
     if (mobileList) {
@@ -813,6 +881,12 @@ function renderParticipants() {
       chipState.className = `mobile-member-state${member.inCall ? ' in-call' : ''}`;
       chipState.title = member.inCall ? 'В видеозвонке' : 'В комнате';
       chip.append(chipAvatar, chipName, chipState);
+      if(member.id!==(socket&&socket.id)){
+        const mute=communityNode('button','mobile-local-mute',locallyMutedPeers.has(member.userId||member.id)?'🔇':'🔊');
+        mute.type='button';mute.setAttribute('aria-label',locallyMutedPeers.has(member.userId||member.id)?'Включить звук участника':'Выключить звук участника');
+        mute.addEventListener('click',event=>{event.stopPropagation();togglePeerLocalMute(member.id);});
+        chip.append(mute);
+      }
       mobileList.append(chip);
     }
   });
@@ -910,10 +984,16 @@ function createMessageNode(message) {
     content.append(quote);
   }
   content.append(bubble);
+  row.addEventListener('click',(event)=>{
+    if(event.target.closest('button'))return;
+    row.classList.toggle('message-menu-open');
+  });
+  row.addEventListener('contextmenu',event=>{event.preventDefault();row.classList.add('message-menu-open');});
 
   if (!message.deleted) {
     const actions = document.createElement('div');
     actions.className = 'message-actions';
+    actions.addEventListener('click',event=>event.stopPropagation());
     actions.append(
       createActionButton('↩', 'Ответить', 'reply', message.id),
       createActionButton('☺', 'Добавить реакцию', 'toggle-reactions', message.id),
@@ -1193,6 +1273,80 @@ async function startCommunityRealtime() {
 
 function communityUserId() {
   return authSession?.user?.id || null;
+}
+
+
+async function openGroupManage(){
+  const conversation=communityState.currentConversation;
+  if(!conversation||conversation.kind!=='group')return;
+  $('#groupManageError').textContent='';
+  $('#groupManageModal').hidden=false;
+  await renderGroupManageMembers();
+}
+async function renderGroupManageMembers(){
+  const conversation=communityState.currentConversation;
+  const list=$('#groupManageMembers');
+  list.replaceChildren(communityNode('p','community-empty-note','Загружаем участников…'));
+  if(!conversation)return;
+  const {data:members,error}=await supabaseClient.from('conversation_members')
+    .select('user_id,role').eq('conversation_id',conversation.id);
+  if(error)throw error;
+  const profiles=await fetchCommunityProfiles((members||[]).map(m=>m.user_id));
+  const names=new Map(profiles.map(p=>[p.id,p.display_name||p.username||'Пользователь']));
+  const myMember=(members||[]).find(m=>m.user_id===communityUserId());
+  const isOwner=myMember?.role==='owner';
+  const isAdmin=['owner','admin'].includes(myMember?.role);
+  list.replaceChildren();
+  (members||[]).forEach(member=>{
+    const row=communityNode('div','group-manage-row');
+    const copy=communityNode('div','group-manage-copy');
+    copy.append(communityNode('strong','',member.user_id===communityUserId()?'Ты':names.get(member.user_id)||'Пользователь'));
+    copy.append(communityNode('small','',member.role==='owner'?'Владелец':member.role==='admin'?'Администратор':'Участник'));
+    row.append(copy);
+    if(member.user_id!==communityUserId() && member.role!=='owner'){
+      if(isOwner){
+        const roleButton=communityNode('button','community-message-action',member.role==='admin'?'Снять админа':'Назначить админом');
+        roleButton.type='button';
+        roleButton.addEventListener('click',async()=>{
+          try{const {error}=await supabaseClient.rpc('manage_group_role',{p_conversation_id:conversation.id,p_user_id:member.user_id,p_make_admin:member.role!=='admin'});if(error)throw error;await renderGroupManageMembers();showToast('Роль обновлена.');}
+          catch(error){$('#groupManageError').textContent=error.message;}
+        });
+        row.append(roleButton);
+      }
+      if(isAdmin && member.role==='member'){
+        const muteButton=communityNode('button','community-message-action','Мут 10 мин');
+        muteButton.type='button';
+        muteButton.addEventListener('click',async()=>{
+          try{const {error}=await supabaseClient.rpc('mute_group_member',{p_conversation_id:conversation.id,p_user_id:member.user_id,p_duration_minutes:10});if(error)throw error;showToast('Участник временно не может отправлять сообщения.');}
+          catch(error){$('#groupManageError').textContent=error.message;}
+        });
+        row.append(muteButton);
+        const unmuteButton=communityNode('button','community-message-action','Снять мут');
+        unmuteButton.type='button';
+        unmuteButton.addEventListener('click',async()=>{
+          try{const {error}=await supabaseClient.rpc('unmute_group_member',{p_conversation_id:conversation.id,p_user_id:member.user_id});if(error)throw error;showToast('Ограничение снято, если оно было активно.');}
+          catch(error){$('#groupManageError').textContent=error.message;}
+        });
+        row.append(unmuteButton);
+        const longMute=communityNode('button','community-message-action','На 1 час');
+        longMute.type='button';
+        longMute.addEventListener('click',async()=>{
+          try{const {error}=await supabaseClient.rpc('mute_group_member',{p_conversation_id:conversation.id,p_user_id:member.user_id,p_duration_minutes:60});if(error)throw error;showToast('Ограничение на 1 час установлено.');}
+          catch(error){$('#groupManageError').textContent=error.message;}
+        });
+        row.append(longMute);
+        const remove=communityNode('button','community-message-action is-danger','Удалить');
+        remove.type='button';
+        remove.addEventListener('click',async()=>{
+          if(!window.confirm('Удалить участника из группы?'))return;
+          try{const {error}=await supabaseClient.rpc('remove_group_member',{p_conversation_id:conversation.id,p_user_id:member.user_id});if(error)throw error;await renderGroupManageMembers();showToast('Участник удалён.');}
+          catch(error){$('#groupManageError').textContent=error.message;}
+        });
+        row.append(remove);
+      }
+    }
+    list.append(row);
+  });
 }
 
 function setCommunityTab(tab) {
@@ -1507,6 +1661,8 @@ function renderCommunityMessages(rows,profiles,attachments=[],reactions=[],readT
       item.append(reactionBar);
     }
     const actions=communityNode('div','community-message-actions');
+    item.addEventListener('click',event=>{if(!event.target.closest('button,a,audio,video'))item.classList.toggle('message-menu-open');});
+    item.addEventListener('contextmenu',event=>{event.preventDefault();item.classList.add('message-menu-open');});
     const replyButton=communityNode('button','community-message-action','↩ Ответить');
     replyButton.type='button';
     replyButton.addEventListener('click',()=>setCommunityReply(message));
@@ -1709,6 +1865,7 @@ async function openCommunityConversation(conversationId) {
   $('#communityActiveChat').hidden=false;
   $('#communityChatTitle').textContent=conversation.title;
   $('#communityChatSubtitle').textContent=conversation.kind==='group'?'Групповая переписка':'Личные сообщения';
+  $('#manageGroupBtn').hidden=conversation.kind!=='group';
   renderCommunityConversations();
   renderCommunityLoading($('#communityMessages'),'Загружаем историю переписки…');
   if(communityState.realtimeChannel) await supabaseClient.removeChannel(communityState.realtimeChannel);
@@ -2817,8 +2974,8 @@ async function createPeerConnection(peerId) {
         const audio = document.createElement('audio');
         audio.autoplay = true;
         audio.playsInline = true;
-        audio.muted = false;
         audio.volume = 1;
+        audio.muted = locallyMutedPeers.has((participants.get(peerId)||{}).userId || peerId);
         audio.className = 'remote-audio-only';
         audio.dataset.peerId = peerId;
         audio.dataset.trackId = event.track.id;
@@ -3743,6 +3900,9 @@ $('#friendSearchInput').addEventListener('input',(event)=>{
   communityState.searchTimer=setTimeout(()=>searchCommunityUsers(event.target.value).catch((error)=>showToast(error.message)),220);
 });
 $('#refreshCommunityBtn').addEventListener('click',refreshCommunity);
+$('#manageGroupBtn')?.addEventListener('click',()=>openGroupManage().catch(error=>$('#groupManageError').textContent=error.message));
+$('#closeGroupManageBtn')?.addEventListener('click',()=>$('#groupManageModal').hidden=true);
+$('#groupManageModal')?.addEventListener('click',event=>{if(event.target===$('#groupManageModal'))$('#groupManageModal').hidden=true;});
 $('#communityRefreshMessages').addEventListener('click',()=>communityState.currentConversationId&&loadCommunityMessages(communityState.currentConversationId).catch((error)=>showToast(error.message)));
 $('#communityMessageForm').addEventListener('submit',sendCommunityMessage);
 $('#communityAttachBtn').addEventListener('click',()=>$('#communityFileInput').click());
@@ -3849,6 +4009,15 @@ $('#clearCallHistoryBtn')?.addEventListener('click', async () => {
 });
 renderCallHistory();
 updateNotificationsButton();
+applyKotoPrefs();
+$('#settingsBtn')?.addEventListener('click',openSettings);
+$('#closeSettingsBtn')?.addEventListener('click',closeSettings);
+$('#settingsModal')?.addEventListener('click',event=>{if(event.target===$('#settingsModal'))closeSettings();});
+document.querySelectorAll('[data-accent]').forEach(button=>button.addEventListener('click',()=>{kotoPrefs.accent=button.dataset.accent;applyKotoPrefs();}));
+document.querySelectorAll('[data-theme-choice]').forEach(button=>button.addEventListener('click',()=>{kotoPrefs.theme=button.dataset.themeChoice;applyKotoPrefs();}));
+document.querySelectorAll('[data-scale-choice]').forEach(button=>button.addEventListener('click',()=>{kotoPrefs.scale=button.dataset.scaleChoice;applyKotoPrefs();}));
+$('#settingSounds')?.addEventListener('change',event=>{kotoPrefs.sounds=event.target.checked;applyKotoPrefs();});
+$('#settingAnimations')?.addEventListener('change',event=>{kotoPrefs.animations=event.target.checked;applyKotoPrefs();});
 $('#micBtn').addEventListener('click', toggleMic);
 $('#cameraBtn').addEventListener('click', toggleCamera);
 $('#shareBtn').addEventListener('click', () => isSharing ? stopScreenShare() : startScreenShare());
