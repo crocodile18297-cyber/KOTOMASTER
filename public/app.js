@@ -969,6 +969,7 @@ function createMessageNode(message) {
   if (!message.deleted) {
     const actions = document.createElement('div');
     actions.className = 'message-actions';
+    actions.addEventListener('click',event=>event.stopPropagation());
     actions.append(
       createActionButton('↩', 'Ответить', 'reply', message.id),
       createActionButton('☺', 'Добавить реакцию', 'toggle-reactions', message.id),
@@ -2941,6 +2942,7 @@ async function createPeerConnection(peerId) {
 
         const audio = document.createElement('audio');
         audio.autoplay = true;
+        audio.muted = locallyMutedPeers.has(peerId);
         audio.playsInline = true;
         audio.muted = false;
         audio.volume = 1;
