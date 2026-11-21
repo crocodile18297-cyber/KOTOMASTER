@@ -1852,8 +1852,7 @@ function renderCommunityConversations() {
     content.append(communityNode('small','',last?(last.body||'Вложение').slice(0,70):'Начни общение'));
     item.append(icon,content);
     chats.append(item);
-    captureProductEvent('conversation_opened', { chat_type: conversation.kind === 'group' ? 'group' : 'direct' });
-  if(conversation.kind==='group') {
+    if(conversation.kind==='group') {
       const groupItem=item.cloneNode(true);
       groupItem.addEventListener('click',()=>openCommunityConversation(conversation.id));
       groups.append(groupItem);
@@ -2157,6 +2156,7 @@ async function deleteCommunityMessage(message) {
 async function openCommunityConversation(conversationId) {
   const conversation=communityState.conversations.find((c)=>c.id===conversationId);
   if(!conversation) return;
+  captureProductEvent('conversation_opened', { chat_type: conversation.kind === 'group' ? 'group' : 'direct' });
   communityState.currentConversationId=conversationId;
   communityState.currentConversation=conversation;
   $('#communityEmpty').hidden=true;
