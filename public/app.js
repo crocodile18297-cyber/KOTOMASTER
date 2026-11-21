@@ -1250,6 +1250,73 @@ function communityUserId() {
   return authSession?.user?.id || null;
 }
 
+
+async function openGroupManage(){
+  const conversation=communityState.currentConversation;
+  if(!conversation||conversation.kind!=='group')return;
+  $('#groupManageError').textContent='';
+  $('#groupManageModal').hidden=false;
+  await renderGroupManageMembers();
+}
+async function renderGroupManageMembers(){
+  const conversation=communityState.currentConversation;
+  const list=$('#groupManageMembers');
+  list.replaceChildren(communityNode('p','community-empty-note','Загружаем участников…'));
+  if(!conversation)return;
+  const {data:members,error}=await supabaseClient.from('conversation_members')
+    .select('user_id,role').eq('conversation_id',conversation.id);
+  if(error)throw error;
+  const profiles=await fetchCommunityProfiles((members||[]).map(m=>m.user_id));
+  const names=new Map(profiles.map(p=>[p.id,p.display_name||p.username||'Пользователь']));
+  const myMember=(members||[]).find(m=>m.user_id===communityUserId());
+  const isOwner=myMember?.role==='owner';
+  const isAdmin=['owner','admin'].includes(myMember?.role);
+  list.replaceChildren();
+  (members||[]).forEach(member=>{
+    const row=communityNode('div','group-manage-row');
+    const copy=communityNode('div','group-manage-copy');
+    copy.append(communityNode('strong','',member.user_id===communityUserId()?'Ты':names.get(member.user_id)||'Пользователь'));
+    copy.append(communityNode('small','',member.role==='owner'?'Владелец':member.role==='admin'?'Администратор':'Участник'));
+    row.append(copy);
+    if(member.user_id!==communityUserId() && member.role!=='owner'){
+      if(isOwner){
+        const roleButton=communityNode('button','community-message-action',member.role==='admin'?'Снять админа':'Назначить админом');
+        roleButton.type='button';
+        roleButton.addEventListener('click',async()=>{
+          try{const {error}=await supabaseClient.rpc('manage_group_role',{p_conversation_id:conversation.id,p_user_id:member.user_id,p_make_admin:member.role!=='admin'});if(error)throw error;await renderGroupManageMembers();showToast('Роль обновлена.');}
+          catch(error){$('#groupManageError').textContent=error.message;}
+        });
+        row.append(roleButton);
+      }
+      if(isAdmin && member.role==='member'){
+        const muteButton=communityNode('button','community-message-action','Мут 10 мин');
+        muteButton.type='button';
+        muteButton.addEventListener('click',async()=>{
+          try{const {error}=await supabaseClient.rpc('mute_group_member',{p_conversation_id:conversation.id,p_user_id:member.user_id,p_duration_minutes:10});if(error)throw error;showToast('Участник временно не может отправлять сообщения.');}
+          catch(error){$('#groupManageError').textContent=error.message;}
+        });
+        row.append(muteButton);
+        const longMute=communityNode('button','community-message-action','На 1 час');
+        longMute.type='button';
+        longMute.addEventListener('click',async()=>{
+          try{const {error}=await supabaseClient.rpc('mute_group_member',{p_conversation_id:conversation.id,p_user_id:member.user_id,p_duration_minutes:60});if(error)throw error;showToast('Ограничение на 1 час установлено.');}
+          catch(error){$('#groupManageError').textContent=error.message;}
+        });
+        row.append(longMute);
+        const remove=communityNode('button','community-message-action is-danger','Удалить');
+        remove.type='button';
+        remove.addEventListener('click',async()=>{
+          if(!window.confirm('Удалить участника из группы?'))return;
+          try{const {error}=await supabaseClient.rpc('remove_group_member',{p_conversation_id:conversation.id,p_user_id:member.user_id});if(error)throw error;await renderGroupManageMembers();showToast('Участник удалён.');}
+          catch(error){$('#groupManageError').textContent=error.message;}
+        });
+        row.append(remove);
+      }
+    }
+    list.append(row);
+  });
+}
+
 function setCommunityTab(tab) {
   communityState.tab = ['chats','friends','groups'].includes(tab) ? tab : 'chats';
   document.querySelectorAll('.community-tab').forEach((button) =>
@@ -1766,6 +1833,7 @@ async function openCommunityConversation(conversationId) {
   $('#communityActiveChat').hidden=false;
   $('#communityChatTitle').textContent=conversation.title;
   $('#communityChatSubtitle').textContent=conversation.kind==='group'?'Групповая переписка':'Личные сообщения';
+  $('#manageGroupBtn').hidden=conversation.kind!=='group';
   renderCommunityConversations();
   renderCommunityLoading($('#communityMessages'),'Загружаем историю переписки…');
   if(communityState.realtimeChannel) await supabaseClient.removeChannel(communityState.realtimeChannel);
@@ -3801,6 +3869,9 @@ $('#friendSearchInput').addEventListener('input',(event)=>{
   communityState.searchTimer=setTimeout(()=>searchCommunityUsers(event.target.value).catch((error)=>showToast(error.message)),220);
 });
 $('#refreshCommunityBtn').addEventListener('click',refreshCommunity);
+$('#manageGroupBtn')?.addEventListener('click',()=>openGroupManage().catch(error=>$('#groupManageError').textContent=error.message));
+$('#closeGroupManageBtn')?.addEventListener('click',()=>$('#groupManageModal').hidden=true);
+$('#groupManageModal')?.addEventListener('click',event=>{if(event.target===$('#groupManageModal'))$('#groupManageModal').hidden=true;});
 $('#communityRefreshMessages').addEventListener('click',()=>communityState.currentConversationId&&loadCommunityMessages(communityState.currentConversationId).catch((error)=>showToast(error.message)));
 $('#communityMessageForm').addEventListener('submit',sendCommunityMessage);
 $('#communityAttachBtn').addEventListener('click',()=>$('#communityFileInput').click());
