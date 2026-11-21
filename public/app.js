@@ -190,6 +190,25 @@ function captureProductEvent(event, properties = {}) {
   try { window.posthog.capture(event, properties); } catch (_error) {}
 }
 
+function captureWebRtcDiagnostic(stage, error, peerConnection = null) {
+  const rawName = error && typeof error.name === 'string' ? error.name : 'Error';
+  const errorName = rawName.replace(/[^A-Za-z0-9_]/g, '').slice(0, 48) || 'Error';
+  const properties = {
+    feature: 'webrtc',
+    stage: String(stage).slice(0, 48),
+    error_name: errorName
+  };
+  if (peerConnection) {
+    const connectionState = String(peerConnection.connectionState || '').slice(0, 24);
+    const iceState = String(peerConnection.iceConnectionState || '').slice(0, 24);
+    const signalingState = String(peerConnection.signalingState || '').slice(0, 24);
+    if (connectionState) properties.connection_state = connectionState;
+    if (iceState) properties.ice_state = iceState;
+    if (signalingState) properties.signaling_state = signalingState;
+  }
+  captureProductEvent('webrtc_error', properties);
+}
+
 function getAnalyticsSessionId() {
   if (!posthogInitialized || !window.posthog || typeof window.posthog.get_session_id !== 'function') return null;
   try { return window.posthog.get_session_id() || null; } catch (_error) { return null; }
@@ -682,9 +701,10 @@ function bindSocketEvents() {
         }
       }
     } catch (error) {
-      console.error('WebRTC signal error:', error);
-      showToast('Не удалось согласовать видеосвязь. Повторяем подключение…');
       const pc = peerConnections.get(from);
+      console.error('WebRTC signal error:', error);
+      captureWebRtcDiagnostic('signal', error, pc);
+      showToast('Не удалось согласовать видеосвязь. Повторяем подключение…');
       if (pc && pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed') {
         scheduleIceRestart(from, pc);
       }
@@ -2709,6 +2729,7 @@ async function recoverInterruptedMedia() {
       publishMediaState();
       showToast('Микрофон восстановлен.');
     } catch (error) {
+      captureWebRtcDiagnostic('restore_microphone', error);
       console.warn('Could not restore microphone after mobile resume:', error);
       showToast('Микрофон не восстановился автоматически. Нажми кнопку микрофона.');
     }
@@ -2741,6 +2762,7 @@ async function recoverInterruptedMedia() {
       publishMediaState();
       showToast('Камера восстановлена.');
     } catch (error) {
+      captureWebRtcDiagnostic('restore_camera', error);
       console.warn('Could not restore camera after mobile resume:', error);
       showToast('Камера не восстановилась автоматически. Нажми кнопку камеры.');
     }
@@ -2913,6 +2935,7 @@ async function startCall() {
       console.warn('Camera startup failed:', error);
     });
   } catch (error) {
+    captureWebRtcDiagnostic('call_start', error);
     console.error('Call startup error:', error);
     if (isInCall) stopCall();
     else if (audioStream && !usedAudioPreview) audioStream.getTracks().forEach((track) => track.stop());
@@ -2972,6 +2995,7 @@ async function enableCameraAfterAudio(profile) {
     publishMediaState();
     showToast('Камера подключена. Голос уже передавался, не дожидаясь её запуска.');
   } catch (error) {
+    captureWebRtcDiagnostic('camera_start', error);
     console.warn('Camera unavailable:', error);
     let message = 'Камера не подключилась. Звонок продолжится со звуком.';
     if (error && error.name === 'NotAllowedError') message = 'Браузеру запрещён доступ к камере. Звонок продолжится со звуком.';
@@ -3252,6 +3276,7 @@ async function createPeerConnection(peerId) {
         }
       } catch (error) {
         console.error('WebRTC negotiation error:', error);
+        captureWebRtcDiagnostic('negotiation', error, pc);
         showToast(`Не удалось согласовать соединение с ${member.name || 'участником'}.`);
       } finally {
         pc._makingOffer = false;
@@ -3349,7 +3374,17 @@ async function createPeerConnection(peerId) {
       updateTileState(peerId, currentMember);
     };
 
+    pc._lastReportedConnectionState = '';
+    pc._lastReportedIceState = '';
     pc.onconnectionstatechange = () => {
+      const connectionState = pc.connectionState;
+      if (connectionState && connectionState !== pc._lastReportedConnectionState) {
+        pc._lastReportedConnectionState = connectionState;
+        captureProductEvent('webrtc_connection_state_changed', { state: connectionState });
+      }
+      if (connectionState === 'failed') {
+        captureWebRtcDiagnostic('peer_connection_failed', { name: 'ConnectionFailed' }, pc);
+      }
       if (pc.connectionState === 'connected') {
         if (pc._iceRestartTimer) clearTimeout(pc._iceRestartTimer);
         pc._iceRestartTimer = null;
@@ -3360,6 +3395,14 @@ async function createPeerConnection(peerId) {
     };
 
     pc.oniceconnectionstatechange = () => {
+      const iceState = pc.iceConnectionState;
+      if (iceState && iceState !== pc._lastReportedIceState) {
+        pc._lastReportedIceState = iceState;
+        captureProductEvent('webrtc_ice_state_changed', { state: iceState });
+      }
+      if (iceState === 'failed') {
+        captureWebRtcDiagnostic('ice_failed', { name: 'IceConnectionFailed' }, pc);
+      }
       if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
         if (pc._iceRestartTimer) clearTimeout(pc._iceRestartTimer);
         pc._iceRestartTimer = null;
@@ -3523,6 +3566,7 @@ async function toggleMic() {
         await refreshAudioInputDevices(tracks[0].getSettings ? tracks[0].getSettings().deviceId : '');
       }
     } catch (error) {
+      captureWebRtcDiagnostic('microphone_toggle', error);
       console.warn('Could not enable microphone:', error);
       showToast(error && error.name === 'NotAllowedError'
         ? 'Разреши микрофон в настройках браузера.'
@@ -3573,6 +3617,7 @@ async function toggleCamera() {
         }
       }
     } catch (error) {
+      captureWebRtcDiagnostic('camera_toggle', error);
       console.warn('Could not enable camera:', error);
       let message = 'Не удалось включить камеру.';
       if (error && error.name === 'NotAllowedError') message = 'Разреши камеру в настройках браузера.';
@@ -3795,6 +3840,7 @@ async function startScreenShare() {
     const actualSize = actual.width && actual.height ? `${actual.width}×${actual.height}` : 'автоматическое разрешение';
     showToast(`Демонстрация экрана началась: ${actualSize}, до ${frameRate} FPS.`);
   } catch (error) {
+    captureWebRtcDiagnostic('screen_share', error);
     console.error('Screen share error:', error);
     captureProductEvent('screen_share_failed', { error_name: String(error?.name || 'Error').slice(0, 48) });
 
