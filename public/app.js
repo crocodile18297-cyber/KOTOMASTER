@@ -2883,6 +2883,10 @@ function startPeerQualityMonitor(peerId, pc) {
         (participants.get(peerId) || {}).name,
         audioJitterMs, audioPacketLoss
       );
+      const qualityLabel = $('#rtcQualityText');
+      if (qualityLabel && Number.isFinite(encodedFps) && encodedFps > 0) {
+        qualityLabel.textContent = `${encodedFps.toFixed(0)} FPS · ${level === 'good' ? 'ХОРОШО' : level === 'medium' ? 'СРЕДНЕ' : 'СЛАБО'}`;
+      }
       const bars = $('#rtcQualityBars');
       if (bars) {
         const extra = [
@@ -3766,6 +3770,17 @@ function getSelectedVideoProfile() {
     shareFrameRate: 20,
     shareBitrate: Math.max(base.shareBitrate, shareBitrateByProfile[key])
   };
+}
+
+function updateLiveFpsFromTrack(track) {
+  if (!track || typeof track.getSettings !== 'function') return;
+  const settings = track.getSettings();
+  const fps = Number(settings.frameRate);
+  const label = $('#rtcQualityText');
+  if (label && Number.isFinite(fps) && fps > 0) {
+    label.textContent = `${Math.round(fps)} FPS · КАМЕРА`;
+    label.title = `Камера сейчас сообщает ${Math.round(fps)} кадров/с`;
+  }
 }
 
 function updateVideoQualityBoostButton() {
