@@ -34,6 +34,29 @@ app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] })
 const SUPABASE_URL = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
 const SUPABASE_PUBLISHABLE_KEY = String(process.env.SUPABASE_PUBLISHABLE_KEY || '');
 const AUTH_REQUIRED = Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY);
+const POSTHOG_PROJECT_TOKEN = String(process.env.POSTHOG_PROJECT_TOKEN || '');
+const POSTHOG_API_HOST = String(process.env.POSTHOG_API_HOST || '').replace(/\/+$/, '');
+
+function capturePostHogEvent(distinctId, event, properties = {}) {
+  if (!POSTHOG_PROJECT_TOKEN || !POSTHOG_API_HOST || !distinctId) return;
+  const payload = {
+    api_key: POSTHOG_PROJECT_TOKEN,
+    event,
+    properties: { ...properties, distinct_id: distinctId }
+  };
+  fetch(`${POSTHOG_API_HOST}/capture/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(2500)
+  }).then((response) => {
+    if (!response.ok && process.env.NODE_ENV !== 'production') {
+      console.warn(`PostHog event delivery failed (${response.status}).`);
+    }
+  }).catch(() => {
+    if (process.env.NODE_ENV !== 'production') console.warn('PostHog event delivery failed.');
+  });
+}
 
 app.get('/api/config', (_req, res) => {
   const iceServers = [{
@@ -62,7 +85,9 @@ app.get('/api/config', (_req, res) => {
     maxRoomSize: MAX_ROOM_SIZE,
     supabaseUrl: SUPABASE_URL || null,
     supabasePublishableKey: SUPABASE_PUBLISHABLE_KEY || null,
-    authRequired: AUTH_REQUIRED
+    authRequired: AUTH_REQUIRED,
+    posthogProjectToken: POSTHOG_PROJECT_TOKEN || null,
+    posthogApiHost: POSTHOG_API_HOST || null
   });
 });
 
@@ -404,6 +429,10 @@ async function joinRoom(socket, payload, ack, createNew = false) {
     return callback({ ok: false, error: `Не удалось загрузить историю чата: ${error.message}` });
   }
 
+  capturePostHogEvent(socket.data.userId, createNew ? 'room_created' : 'room_joined', {
+    chat_type: 'room',
+    participant_count: room.members.size
+  });
   callback({
     ok: true,
     roomId,
@@ -423,10 +452,14 @@ function leaveRoom(socket, reason = 'left') {
   if (room) {
     const member = room.members.get(socket.id);
     if (member && member.inCall) {
+      capturePostHogEvent(socket.data.userId, 'call_ended', { reason: reason === 'left' ? 'left_room' : 'disconnected' });
       socket.to(roomId).emit('media:peer-state', {
         ...member, inCall: false, audio: false, video: false, sharing: false
       });
     }
+    capturePostHogEvent(socket.data.userId, 'room_left', {
+      reason: String(reason || 'left').slice(0, 24)
+    });
     room.members.delete(socket.id);
     socket.to(roomId).emit('room:peer-left', { id: socket.id, reason });
     if (room.members.size === 0) rooms.delete(roomId);
@@ -527,6 +560,10 @@ io.on('connection', (socket) => {
         if (removed.some((item) => item.id === room.pinnedMessageId)) room.pinnedMessageId = null;
       }
       io.to(roomId).emit('chat:message', message);
+      capturePostHogEvent(socket.data.userId, 'message_sent', {
+        chat_type: 'room',
+        has_reply: Boolean(replyTarget)
+      });
       callback({ ok: true, id: message.id });
     } catch (error) {
       console.error('Persist room message failed:', error);
@@ -639,6 +676,7 @@ io.on('connection', (socket) => {
         message.reactions[item.emoji].push(item.user_id);
       });
       io.to(roomId).emit('chat:reaction', { messageId, reactions: message.reactions });
+      capturePostHogEvent(socket.data.userId, 'message_reaction_toggled', { chat_type: 'room' });
       callback({ ok: true });
     } catch (error) {
       callback({ ok: false, error: `Реакция не сохранена: ${error.message}` });
@@ -671,6 +709,10 @@ io.on('connection', (socket) => {
       }
       room.pinnedMessageId = message ? message.id : null;
       io.to(roomId).emit('chat:pinned', message);
+      capturePostHogEvent(socket.data.userId, 'message_pin_changed', {
+        chat_type: 'room',
+        pinned: Boolean(message)
+      });
       callback({ ok: true });
     } catch (error) {
       callback({ ok: false, error: `Не удалось сохранить закрепление: ${error.message}` });
@@ -706,10 +748,30 @@ io.on('connection', (socket) => {
     const room = roomId && rooms.get(roomId);
     const member = room && room.members.get(socket.id);
     if (!member) return;
+    const previous = {
+      inCall: member.inCall,
+      audio: member.audio,
+      video: member.video,
+      sharing: member.sharing
+    };
     member.inCall = Boolean(payload && payload.inCall);
     member.audio = member.inCall && Boolean(payload && payload.audio);
     member.video = member.inCall && Boolean(payload && payload.video);
     member.sharing = member.inCall && Boolean(payload && payload.sharing);
+    if (!previous.inCall && member.inCall) {
+      capturePostHogEvent(socket.data.userId, 'call_started', { chat_type: 'room' });
+    } else if (previous.inCall && !member.inCall) {
+      capturePostHogEvent(socket.data.userId, 'call_ended', { reason: 'normal' });
+    }
+    if (member.inCall && previous.audio !== member.audio) {
+      capturePostHogEvent(socket.data.userId, 'microphone_state_changed', { enabled: member.audio });
+    }
+    if (member.inCall && previous.video !== member.video) {
+      capturePostHogEvent(socket.data.userId, 'camera_state_changed', { enabled: member.video });
+    }
+    if (member.inCall && previous.sharing !== member.sharing) {
+      capturePostHogEvent(socket.data.userId, 'screen_share_state_changed', { enabled: member.sharing });
+    }
     socket.to(roomId).emit('media:peer-state', { ...member });
   });
 
