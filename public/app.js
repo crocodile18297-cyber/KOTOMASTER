@@ -91,6 +91,26 @@ function readKotoPrefs(){
   catch(_error){return {accent:'#a47965',theme:'light',scale:'normal',sounds:true,animations:true};}
 }
 let kotoPrefs=readKotoPrefs();
+function playKotoNotificationSound(){
+  if(!kotoPrefs.sounds || document.hidden) return;
+  try{
+    const AudioContextClass=window.AudioContext||window.webkitAudioContext;
+    if(!AudioContextClass)return;
+    const context=new AudioContextClass();
+    if(context.state==='suspended')context.resume().catch(()=>{});
+    const oscillator=context.createOscillator();
+    const gain=context.createGain();
+    oscillator.type='sine';
+    oscillator.frequency.setValueAtTime(660,context.currentTime);
+    oscillator.frequency.setValueAtTime(880,context.currentTime+0.08);
+    gain.gain.setValueAtTime(0.0001,context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.08,context.currentTime+0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001,context.currentTime+0.22);
+    oscillator.connect(gain);gain.connect(context.destination);
+    oscillator.start();oscillator.stop(context.currentTime+0.24);
+    oscillator.onended=()=>context.close().catch(()=>{});
+  }catch(_error){}
+}
 function applyKotoPrefs(){
   const root=document.documentElement;
   root.style.setProperty('--accent',kotoPrefs.accent);
@@ -443,6 +463,7 @@ function bindSocketEvents() {
     appendMessage(message);
     if (message && message.from !== socket.id) {
       notifyIncomingMessage(message);
+      playKotoNotificationSound();
       if (!document.hidden && activePanel === 'chat') markMessagesRead([message.id]);
     }
   });
