@@ -280,6 +280,7 @@ function makeRoomId() {
 function toPublicMember(member) {
   return {
     id: member.id,
+    userId: member.userId,
     name: member.name,
     inCall: member.inCall,
     audio: member.audio,
@@ -371,6 +372,7 @@ async function joinRoom(socket, payload, ack, createNew = false) {
 
   const member = {
     id: socket.id,
+    userId: socket.data.userId,
     clientId,
     name,
     inCall: false,
