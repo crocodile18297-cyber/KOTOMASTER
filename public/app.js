@@ -208,6 +208,7 @@ async function initializeSupabase() {
   const { data, error } = await supabaseClient.auth.getSession();
   if (error) throw error;
   authSession = data.session;
+  updateProductAnalyticsIdentity(authSession?.user?.id || null);
   supabaseClient.auth.onAuthStateChange((event, session) => {
     const previousToken = authSession?.access_token;
     authSession = session;
@@ -324,6 +325,7 @@ async function handleAuthSubmit(event) {
         options: { data: { display_name: displayName, username }, emailRedirectTo: window.location.origin }
       });
       if (error) throw error;
+      captureProductEvent('account_signup_submitted', { auth_method: 'email' });
       if (!data.session) {
         errorNode.classList.add('form-success');
         errorNode.textContent = 'АККАУНТ СОЗДАН. Открой письмо от Supabase и нажми «Подтвердить почту». Если письма нет, проверь «Спам» и запроси регистрацию ещё раз только после проверки, что адрес не занят.';
