@@ -2295,3 +2295,40 @@ button:focus-visible, input:focus-visible {
   padding:9px 11px;
   resize:vertical;
 }
+
+/* KOTOMASTER preferences and touch-friendly message controls */
+:root { --accent:#a47965; }
+#settingsBtn { font-size:18px; }
+.settings-card { max-width:480px; }
+.settings-section { display:flex; flex-direction:column; gap:11px; margin:18px 0; padding-bottom:15px; border-bottom:1px solid rgba(164,121,101,.18); }
+.settings-section > strong { font-size:14px; color:var(--text,#3e1e12); }
+.settings-swatches,.settings-choice-row { display:flex; flex-wrap:wrap; gap:9px; }
+.settings-swatches button { width:38px; height:38px; border:3px solid transparent; border-radius:50%; background:var(--swatch); cursor:pointer; box-shadow:0 0 0 1px rgba(80,50,40,.14); }
+.settings-swatches button:nth-child(1){--swatch:#a47965}.settings-swatches button:nth-child(2){--swatch:#8b78d6}.settings-swatches button:nth-child(3){--swatch:#438d9a}.settings-swatches button:nth-child(4){--swatch:#518b68}.settings-swatches button:nth-child(5){--swatch:#c16c8a}.settings-swatches button:nth-child(6){--swatch:#5275b9}
+.settings-swatches button.is-selected { border-color:#fff; outline:2px solid var(--accent); }
+.settings-choice-row button { min-height:40px; padding:8px 13px; border:1px solid rgba(164,121,101,.24); border-radius:11px; background:rgba(164,121,101,.08); color:inherit; font-size:12px; cursor:pointer; }
+.settings-choice-row button.is-selected { color:#fff; background:var(--accent); border-color:var(--accent); }
+.settings-toggles label { display:flex; align-items:center; justify-content:space-between; min-height:42px; font-size:13px; }
+.settings-toggles input { width:20px; height:20px; accent-color:var(--accent); }
+.settings-note { color:#987e72; font-size:11px; }
+html[data-koto-scale="large"] { font-size:18px; }
+html[data-koto-scale="compact"] { font-size:14px; }
+html[data-koto-animations="off"] *,html[data-koto-animations="off"] *::before,html[data-koto-animations="off"] *::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
+html[data-koto-theme="dark"] body { filter:invert(.88) hue-rotate(180deg); }
+html[data-koto-theme="dark"] img,html[data-koto-theme="dark"] video,html[data-koto-theme="dark"] svg { filter:invert(1) hue-rotate(180deg); }
+.message-actions { opacity:1; gap:7px; flex-wrap:wrap; }
+.message-action { min-width:42px; min-height:40px; padding:7px 11px; border-radius:11px; font-size:16px; }
+.message-row .message-actions { display:none; }
+.message-row.message-menu-open .message-actions { display:flex; }
+.message-row { cursor:pointer; }
+.community-message-actions { display:none; gap:8px; padding:8px; margin-top:10px; border:1px solid rgba(164,121,101,.18); border-radius:14px; background:rgba(164,121,101,.07); opacity:1; }
+.community-message.message-menu-open .community-message-actions { display:flex; }
+.community-message-action { min-height:42px; padding:9px 13px; border-radius:10px; font-size:12px; }
+.member-local-mute,.mobile-local-mute { min-height:34px; padding:5px 9px; border:1px solid rgba(164,121,101,.25); border-radius:9px; background:rgba(164,121,101,.09); color:inherit; font-size:10px; cursor:pointer; }
+.mobile-local-mute { flex:none; min-width:34px; }
+.peer-locally-muted .tile-mic { opacity:.35; }
+@media (max-width:740px) {
+  .message-action { min-width:44px; min-height:44px; font-size:18px; }
+  .community-message-action { min-height:44px; font-size:13px; }
+  .member-local-mute { min-height:40px; }
+}
