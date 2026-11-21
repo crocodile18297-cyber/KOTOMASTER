@@ -6,10 +6,10 @@
   <meta name="theme-color" content="#fff8f4">
   <meta name="description" content="KOTOMASTER — мессенджер с видеозвонками и демонстрацией экрана.">
   <title>KOTOMASTER — на связи по-кошачьи</title>
-  <link rel="stylesheet" href="/styles.css?v=20261121-email-confirm1">
+  <link rel="stylesheet" href="/styles.css?v=20261121-settings1">
   <script src="/socket.io/socket.io.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2" defer></script>
-  <script src="/app.js?v=20261121-email-confirm1" defer></script>
+  <script src="/app.js?v=20261121-settings1" defer></script>
 </head>
 <body>
   <div class="ambient ambient-one"></div>
@@ -153,6 +153,7 @@
         <div class="topbar-title"><div class="topbar-room-icon">✦</div><div><h2 id="topbarTitle">Общий чат</h2><p id="topbarSubtitle">Твоя комната · 1 участник</p></div></div>
         <div class="topbar-actions">
           <label class="chat-search-box" for="chatSearchInput"><span aria-hidden="true">⌕</span><input id="chatSearchInput" type="search" placeholder="Найти в чате..." autocomplete="off" aria-label="Поиск по сообщениям"></label>
+          <button id="settingsBtn" class="notifications-button" type="button" aria-label="Настройки" title="Настройки">⚙</button>
           <button id="notificationsBtn" class="notifications-button" type="button" aria-label="Включить уведомления" title="Включить уведомления" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></svg></button>
           <div class="secure-pill"><span>●</span> Комната по коду</div>
           <button id="inviteBtn" class="invite-button"><span>＋</span> Пригласить</button>
@@ -241,6 +242,45 @@
         </div>
       </section>
 
+  <div id="settingsModal" class="community-modal" hidden>
+    <section class="community-modal-card settings-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <button id="closeSettingsBtn" class="community-modal-close" type="button" aria-label="Закрыть">×</button>
+      <div class="call-kicker">KOTOMASTER PERSONAL</div>
+      <h3 id="settingsTitle">Настройки</h3>
+      <section class="settings-section">
+        <strong>Цвет интерфейса</strong>
+        <div class="settings-swatches" role="group" aria-label="Цвет интерфейса">
+          <button type="button" data-accent="#a47965" aria-label="Терракотовый" title="Терракотовый"></button>
+          <button type="button" data-accent="#8b78d6" aria-label="Лавандовый" title="Лавандовый"></button>
+          <button type="button" data-accent="#438d9a" aria-label="Бирюзовый" title="Бирюзовый"></button>
+          <button type="button" data-accent="#518b68" aria-label="Зелёный" title="Зелёный"></button>
+          <button type="button" data-accent="#c16c8a" aria-label="Розовый" title="Розовый"></button>
+          <button type="button" data-accent="#5275b9" aria-label="Синий" title="Синий"></button>
+        </div>
+      </section>
+      <section class="settings-section">
+        <strong>Тема</strong>
+        <div class="settings-choice-row">
+          <button type="button" data-theme-choice="light">Светлая</button>
+          <button type="button" data-theme-choice="dark">Тёмная</button>
+          <button type="button" data-theme-choice="system">Системная</button>
+        </div>
+      </section>
+      <section class="settings-section">
+        <strong>Размер интерфейса</strong>
+        <div class="settings-choice-row">
+          <button type="button" data-scale-choice="compact">Компактный</button>
+          <button type="button" data-scale-choice="normal">Обычный</button>
+          <button type="button" data-scale-choice="large">Крупный</button>
+        </div>
+      </section>
+      <section class="settings-section settings-toggles">
+        <label><span>Звуки интерфейса</span><input id="settingSounds" type="checkbox" checked></label>
+        <label><span>Анимации</span><input id="settingAnimations" type="checkbox" checked></label>
+      </section>
+      <p class="settings-note">Настройки сохраняются на этом устройстве.</p>
+    </section>
+  </div>
   <div id="editProfileModal" class="community-modal" hidden>
     <form id="editProfileForm" class="community-modal-card">
       <button id="closeEditProfileBtn" class="community-modal-close" type="button" aria-label="Закрыть">×</button>
