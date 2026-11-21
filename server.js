@@ -37,12 +37,16 @@ const AUTH_REQUIRED = Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY);
 const POSTHOG_PROJECT_TOKEN = String(process.env.POSTHOG_PROJECT_TOKEN || '');
 const POSTHOG_API_HOST = String(process.env.POSTHOG_API_HOST || '').replace(/\/+$/, '');
 
-function capturePostHogEvent(distinctId, event, properties = {}) {
+function capturePostHogEvent(distinctId, event, properties = {}, sessionId = null) {
   if (!POSTHOG_PROJECT_TOKEN || !POSTHOG_API_HOST || !distinctId) return;
   const payload = {
     api_key: POSTHOG_PROJECT_TOKEN,
     event,
-    properties: { ...properties, distinct_id: distinctId }
+    properties: {
+      ...properties,
+      ...(sessionId ? { $session_id: sessionId } : {}),
+      distinct_id: distinctId
+    }
   };
   fetch(`${POSTHOG_API_HOST}/capture/`, {
     method: 'POST',
@@ -56,6 +60,15 @@ function capturePostHogEvent(distinctId, event, properties = {}) {
   }).catch(() => {
     if (process.env.NODE_ENV !== 'production') console.warn('PostHog event delivery failed.');
   });
+}
+
+function captureSocketPostHogEvent(socket, event, properties = {}) {
+  capturePostHogEvent(
+    socket.data.userId,
+    event,
+    properties,
+    socket.data.posthogSessionId
+  );
 }
 
 app.get('/api/config', (_req, res) => {
@@ -127,6 +140,11 @@ io.use(async (socket, next) => {
   const user = await verifyAccessToken(token);
   if (!user) return next(new Error('Сессия недействительна. Войди в аккаунт заново.'));
   socket.data.userId = user.id;
+  const analyticsSessionId = socket.handshake.auth && socket.handshake.auth.posthogSessionId;
+  socket.data.posthogSessionId = typeof analyticsSessionId === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(analyticsSessionId)
+    ? analyticsSessionId
+    : null;
   socket.data.email = user.email;
   socket.data.authUser = user;
   socket.data.accessToken = token;
@@ -429,7 +447,7 @@ async function joinRoom(socket, payload, ack, createNew = false) {
     return callback({ ok: false, error: `Не удалось загрузить историю чата: ${error.message}` });
   }
 
-  capturePostHogEvent(socket.data.userId, createNew ? 'room_created' : 'room_joined', {
+  captureSocketPostHogEvent(socket, createNew ? 'room_created' : 'room_joined', {
     chat_type: 'room',
     participant_count: room.members.size
   });
@@ -452,12 +470,12 @@ function leaveRoom(socket, reason = 'left') {
   if (room) {
     const member = room.members.get(socket.id);
     if (member && member.inCall) {
-      capturePostHogEvent(socket.data.userId, 'call_ended', { reason: reason === 'left' ? 'left_room' : 'disconnected' });
+      captureSocketPostHogEvent(socket, 'call_ended', { reason: reason === 'left' ? 'left_room' : 'disconnected' });
       socket.to(roomId).emit('media:peer-state', {
         ...member, inCall: false, audio: false, video: false, sharing: false
       });
     }
-    capturePostHogEvent(socket.data.userId, 'room_left', {
+    captureSocketPostHogEvent(socket, 'room_left', {
       reason: String(reason || 'left').slice(0, 24)
     });
     room.members.delete(socket.id);
@@ -560,7 +578,7 @@ io.on('connection', (socket) => {
         if (removed.some((item) => item.id === room.pinnedMessageId)) room.pinnedMessageId = null;
       }
       io.to(roomId).emit('chat:message', message);
-      capturePostHogEvent(socket.data.userId, 'message_sent', {
+      captureSocketPostHogEvent(socket, 'message_sent', {
         chat_type: 'room',
         has_reply: Boolean(replyTarget)
       });
@@ -676,7 +694,7 @@ io.on('connection', (socket) => {
         message.reactions[item.emoji].push(item.user_id);
       });
       io.to(roomId).emit('chat:reaction', { messageId, reactions: message.reactions });
-      capturePostHogEvent(socket.data.userId, 'message_reaction_toggled', { chat_type: 'room' });
+      captureSocketPostHogEvent(socket, 'message_reaction_toggled', { chat_type: 'room' });
       callback({ ok: true });
     } catch (error) {
       callback({ ok: false, error: `Реакция не сохранена: ${error.message}` });
@@ -709,7 +727,7 @@ io.on('connection', (socket) => {
       }
       room.pinnedMessageId = message ? message.id : null;
       io.to(roomId).emit('chat:pinned', message);
-      capturePostHogEvent(socket.data.userId, 'message_pin_changed', {
+      captureSocketPostHogEvent(socket, 'message_pin_changed', {
         chat_type: 'room',
         pinned: Boolean(message)
       });
@@ -759,18 +777,18 @@ io.on('connection', (socket) => {
     member.video = member.inCall && Boolean(payload && payload.video);
     member.sharing = member.inCall && Boolean(payload && payload.sharing);
     if (!previous.inCall && member.inCall) {
-      capturePostHogEvent(socket.data.userId, 'call_started', { chat_type: 'room' });
+      captureSocketPostHogEvent(socket, 'call_started', { chat_type: 'room' });
     } else if (previous.inCall && !member.inCall) {
-      capturePostHogEvent(socket.data.userId, 'call_ended', { reason: 'normal' });
+      captureSocketPostHogEvent(socket, 'call_ended', { reason: 'normal' });
     }
     if (member.inCall && previous.audio !== member.audio) {
-      capturePostHogEvent(socket.data.userId, 'microphone_state_changed', { enabled: member.audio });
+      captureSocketPostHogEvent(socket, 'microphone_state_changed', { enabled: member.audio });
     }
     if (member.inCall && previous.video !== member.video) {
-      capturePostHogEvent(socket.data.userId, 'camera_state_changed', { enabled: member.video });
+      captureSocketPostHogEvent(socket, 'camera_state_changed', { enabled: member.video });
     }
     if (member.inCall && previous.sharing !== member.sharing) {
-      capturePostHogEvent(socket.data.userId, 'screen_share_state_changed', { enabled: member.sharing });
+      captureSocketPostHogEvent(socket, 'screen_share_state_changed', { enabled: member.sharing });
     }
     socket.to(roomId).emit('media:peer-state', { ...member });
   });
