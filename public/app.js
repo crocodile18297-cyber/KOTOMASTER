@@ -1852,7 +1852,8 @@ function renderCommunityConversations() {
     content.append(communityNode('small','',last?(last.body||'Вложение').slice(0,70):'Начни общение'));
     item.append(icon,content);
     chats.append(item);
-    if(conversation.kind==='group') {
+    captureProductEvent('conversation_opened', { chat_type: conversation.kind === 'group' ? 'group' : 'direct' });
+  if(conversation.kind==='group') {
       const groupItem=item.cloneNode(true);
       groupItem.addEventListener('click',()=>openCommunityConversation(conversation.id));
       groups.append(groupItem);
@@ -2077,6 +2078,7 @@ async function toggleCommunityReaction(messageId,emoji) {
         .insert({message_id:messageId,user_id:userId,emoji});
       if(insertError) throw insertError;
     }
+    captureProductEvent('message_reaction_toggled', { chat_type: 'community' });
     await loadCommunityMessages(communityState.currentConversationId);
   } catch(error) { showToast('Не удалось поставить реакцию: '+error.message); }
 }
@@ -2099,6 +2101,10 @@ async function toggleCommunityPin(messageId) {
       if(error) throw error;
       showToast('Сообщение закреплено.');
     }
+    captureProductEvent('message_pin_changed', {
+      chat_type: 'community',
+      pinned: communityState.pinnedMessage?.message_id !== messageId
+    });
     await loadCommunityMessages(conversationId);
   } catch(error) { showToast('Не удалось закрепить: '+error.message); }
 }
@@ -2225,6 +2231,7 @@ async function createCommunityGroup(event) {
   try {
     const {data,error}=await supabaseClient.rpc('create_group_conversation',{p_title:title,p_member_ids:memberIds});
     if(error) throw error;
+    captureProductEvent('group_created', { member_count: memberIds.length + 1 });
     $('#newGroupModal').hidden=true;
     $('#newGroupForm').reset();
     await loadCommunityConversations();
@@ -3526,7 +3533,6 @@ async function toggleMic() {
   updateTileState(socket.id, { audio: isMicOn, video: isCameraOn });
   updateCallButtons();
   publishMediaState();
-  captureProductEvent('microphone_state_changed', { enabled: isMicOn });
 }
 
 async function toggleCamera() {
@@ -3582,7 +3588,6 @@ async function toggleCamera() {
   updateTileState(socket.id, { audio: isMicOn, video: isCameraOn });
   updateCallButtons();
   publishMediaState();
-  captureProductEvent('camera_state_changed', { enabled: isCameraOn });
 }
 
 function unlockRemoteAudioPlayback() {
@@ -3987,7 +3992,6 @@ function stopCall() {
   publishMediaState();
   updateCallButtons();
   updateCallStage();
-  captureProductEvent('call_stopped', { with_camera: isCameraOn, with_screen_share: false });
   const audioSelect = $('#audioInputSelect');
   if (audioSelect) audioSelect.disabled = true;
   const meter = $('#micInputLevel');
