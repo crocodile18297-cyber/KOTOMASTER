@@ -150,12 +150,55 @@ let authMode = 'signin';
 let authReady = false;
 let authProfile = null;
 let passwordRecoveryPending = false;
+let posthogInitialized = false;
+let posthogIdentity = null;
+
+function initializeProductAnalytics(config, currentSession) {
+  if (!config?.posthogProjectToken || !config?.posthogApiHost ||
+      !window.posthog || typeof window.posthog.init !== 'function') return;
+  try {
+    window.posthog.init(config.posthogProjectToken, {
+      api_host: config.posthogApiHost,
+      defaults: '2026-08-30',
+      autocapture: false,
+      disable_session_recording: true,
+      capture_pageview: true
+    });
+    posthogInitialized = true;
+    updateProductAnalyticsIdentity(currentSession?.user?.id || null);
+  } catch (error) {
+    console.warn('PostHog initialization failed:', error?.name || 'Error');
+  }
+}
+
+function updateProductAnalyticsIdentity(userId) {
+  if (!posthogInitialized || !window.posthog) return;
+  const nextId = typeof userId === 'string' && userId.length <= 80 ? userId : null;
+  if (nextId && nextId !== posthogIdentity) {
+    window.posthog.identify(nextId);
+    posthogIdentity = nextId;
+  } else if (!nextId && posthogIdentity) {
+    window.posthog.reset();
+    posthogIdentity = null;
+  }
+}
+
+function captureProductEvent(event, properties = {}) {
+  if (!posthogInitialized || !window.posthog || typeof window.posthog.capture !== 'function') return;
+  try { window.posthog.capture(event, properties); } catch (_error) {}
+}
+
+function getAnalyticsSessionId() {
+  if (!posthogInitialized || !window.posthog || typeof window.posthog.get_session_id !== 'function') return null;
+  try { return window.posthog.get_session_id() || null; } catch (_error) { return null; }
+}
 
 async function initializeSupabase() {
   const response = await fetch('/api/config', { cache: 'no-store' });
   if (!response.ok) throw new Error('Не удалось загрузить настройки сервиса.');
   const config = await response.json();
   appConfig = { ...appConfig, ...config };
+  initializeProductAnalytics(config, authSession);
   if (!config.supabaseUrl || !config.supabasePublishableKey || !window.supabase?.createClient) {
     throw new Error('Авторизация не настроена. Обнови страницу позже.');
   }
@@ -168,6 +211,7 @@ async function initializeSupabase() {
   supabaseClient.auth.onAuthStateChange((event, session) => {
     const previousToken = authSession?.access_token;
     authSession = session;
+    updateProductAnalyticsIdentity(session?.user?.id || null);
     if (session?.user && (!previousToken || previousToken !== session.access_token)) {
       loadRemoteCallHistory().catch((error)=>console.warn('Could not refresh remote call history:',error));
       startCommunityRealtime().catch((error)=>console.warn('Could not start inbox updates:',error));
@@ -187,7 +231,10 @@ async function initializeSupabase() {
     }
     updateAuthInterface();
     if (session?.access_token && socket) {
-      socket.auth = { accessToken: session.access_token };
+      socket.auth = {
+        accessToken: session.access_token,
+        posthogSessionId: getAnalyticsSessionId()
+      };
       if (previousToken && previousToken !== session.access_token && socket.connected) {
         socket.disconnect();
         socket.connect();
@@ -286,6 +333,7 @@ async function handleAuthSubmit(event) {
       authProfile = null;
       updateAuthInterface();
       await loadMyProfile();
+      captureProductEvent('account_signed_up', { auth_method: 'email' });
       showToast('Аккаунт создан. Добро пожаловать в KOTOMASTER.');
     } else {
       const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
@@ -294,9 +342,14 @@ async function handleAuthSubmit(event) {
       authProfile = null;
       updateAuthInterface();
       await loadMyProfile();
+      captureProductEvent('account_signed_in', { auth_method: 'email' });
       showToast('Вход выполнен.');
     }
   } catch (error) {
+    captureProductEvent('authentication_failed', {
+      auth_method: authMode === 'signup' ? 'email_signup' : 'email_signin',
+      error_name: String(error?.name || 'AuthError').slice(0, 48)
+    });
     errorNode.textContent = authErrorMessage(error);
   } finally {
     setBusy(button, false);
@@ -382,6 +435,7 @@ async function signOutAccount() {
   if (!supabaseClient) return;
   if (isInCall) stopCall();
   if (roomId) leaveRoom();
+  captureProductEvent('account_signed_out');
   const { error } = await supabaseClient.auth.signOut();
   if (error) showToast('Не удалось выйти: ' + error.message);
   else {
@@ -420,7 +474,19 @@ async function connectSocket() {
   if (socket && socket.connected) return;
   if (!window.io) throw new Error('Не загрузился модуль связи. Обнови страницу.');
   if (!socket) {
-    socket = window.io({ auth: { accessToken: authSession.access_token }, autoConnect: false, reconnection: true, reconnectionAttempts: Infinity, reconnectionDelay: 700, reconnectionDelayMax: 9000, randomizationFactor: 0.35, timeout: 12000 });
+    socket = window.io({
+      auth: {
+        accessToken: authSession.access_token,
+        posthogSessionId: getAnalyticsSessionId()
+      },
+      autoConnect: false,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 700,
+      reconnectionDelayMax: 9000,
+      randomizationFactor: 0.35,
+      timeout: 12000
+    });
     bindSocketEvents();
   }
   await new Promise((resolve, reject) => {
@@ -2318,11 +2384,16 @@ async function sendCommunityMessage(event) {
       reply_to:communityState.replyTarget?.id||null
     });
     if(error) throw error;
+    captureProductEvent('message_sent', {
+      chat_type: 'community',
+      has_reply: Boolean(communityState.replyTarget?.id)
+    });
     input.value='';
     clearCommunityReply();
     await loadCommunityMessages(conversationId);
     await loadCommunityConversations();
   } catch(error) {
+    captureProductEvent('message_send_failed', { chat_type: 'community', error_name: String(error?.name || 'Error').slice(0, 48) });
     showToast('Сообщение не отправлено: '+error.message);
   } finally { input.disabled=false; input.focus(); }
 }
@@ -3455,6 +3526,7 @@ async function toggleMic() {
   updateTileState(socket.id, { audio: isMicOn, video: isCameraOn });
   updateCallButtons();
   publishMediaState();
+  captureProductEvent('microphone_state_changed', { enabled: isMicOn });
 }
 
 async function toggleCamera() {
@@ -3510,6 +3582,7 @@ async function toggleCamera() {
   updateTileState(socket.id, { audio: isMicOn, video: isCameraOn });
   updateCallButtons();
   publishMediaState();
+  captureProductEvent('camera_state_changed', { enabled: isCameraOn });
 }
 
 function unlockRemoteAudioPlayback() {
@@ -3706,12 +3779,14 @@ async function startScreenShare() {
     updateTileState(socket.id, { audio: isMicOn, video: true, sharing: true });
     updateCallButtons();
     publishMediaState();
+    captureProductEvent('screen_share_started');
 
     const actual = screenTrack.getSettings ? screenTrack.getSettings() : {};
     const actualSize = actual.width && actual.height ? `${actual.width}×${actual.height}` : 'автоматическое разрешение';
     showToast(`Демонстрация экрана началась: ${actualSize}, до ${frameRate} FPS.`);
   } catch (error) {
     console.error('Screen share error:', error);
+    captureProductEvent('screen_share_failed', { error_name: String(error?.name || 'Error').slice(0, 48) });
 
     // Roll back any tracks already replaced so a partial failure cannot leave peers without camera video.
     for (const entry of changedSenders.reverse()) {
@@ -3745,6 +3820,7 @@ async function startScreenShare() {
 async function stopScreenShare() {
   if (!isSharing) return;
   isSharing = false;
+  captureProductEvent('screen_share_stopped');
   const cameraTrack = localStream && localStream.getVideoTracks()[0];
   const profile = getSelectedVideoProfile();
   for (const pc of peerConnections.values()) {
@@ -3911,6 +3987,7 @@ function stopCall() {
   publishMediaState();
   updateCallButtons();
   updateCallStage();
+  captureProductEvent('call_stopped', { with_camera: isCameraOn, with_screen_share: false });
   const audioSelect = $('#audioInputSelect');
   if (audioSelect) audioSelect.disabled = true;
   const meter = $('#micInputLevel');
@@ -4209,7 +4286,10 @@ $('#messageForm').addEventListener('submit', async (event) => {
       text,
       replyTo: replyTarget ? replyTarget.id : null
     });
-    if (!response.ok) showToast('Сообщение не отправлено.');
+    if (!response.ok) {
+      captureProductEvent('message_send_failed', { chat_type: 'room', error_name: 'ServerRejected' });
+      showToast('Сообщение не отправлено.');
+    }
     else {
       replyTarget = null;
       renderReplyPreview();
