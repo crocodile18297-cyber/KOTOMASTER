@@ -162,6 +162,8 @@ function initializeProductAnalytics(config, currentSession) {
       defaults: '2026-08-30',
       autocapture: false,
       disable_session_recording: true,
+      capture_performance: false,
+      logs: { captureConsoleLogs: false },
       capture_pageview: true
     });
     posthogInitialized = true;
