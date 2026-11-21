@@ -2973,11 +2973,9 @@ async function createPeerConnection(peerId) {
 
         const audio = document.createElement('audio');
         audio.autoplay = true;
-        audio.muted = locallyMutedPeers.has((participants.get(peerId)||{}).userId || peerId);
         audio.playsInline = true;
-        audio.muted = false;
         audio.volume = 1;
-        audio.muted = locallyMutedPeers.has(peerId);
+        audio.muted = locallyMutedPeers.has((participants.get(peerId)||{}).userId || peerId);
         audio.className = 'remote-audio-only';
         audio.dataset.peerId = peerId;
         audio.dataset.trackId = event.track.id;
