@@ -109,13 +109,15 @@ function readMutedPeers(){try{return new Set(JSON.parse(localStorage.getItem(KOT
 const locallyMutedPeers=readMutedPeers();
 function persistMutedPeers(){try{localStorage.setItem(KOTO_MUTED_PEERS_KEY,JSON.stringify([...locallyMutedPeers]));}catch(_error){}}
 function applyPeerMute(peerId){
-  const muted=locallyMutedPeers.has(peerId);
+  const stableId=(participants.get(peerId)||{}).userId || peerId;
+  const muted=locallyMutedPeers.has(stableId);
   (remoteAudioElements.get(peerId)||[]).forEach(audio=>{audio.muted=muted;});
   const tile=videoGrid?.querySelector('[data-peer-id="'+CSS.escape(peerId)+'"]');
   if(tile)tile.classList.toggle('peer-locally-muted',muted);
 }
 function togglePeerLocalMute(peerId){
-  if(locallyMutedPeers.has(peerId))locallyMutedPeers.delete(peerId);else locallyMutedPeers.add(peerId);
+  const stableId=(participants.get(peerId)||{}).userId || peerId;
+  if(locallyMutedPeers.has(stableId))locallyMutedPeers.delete(stableId);else locallyMutedPeers.add(stableId);
   persistMutedPeers();applyPeerMute(peerId);renderParticipants();
 }
 function openSettings(){applyKotoPrefs();$('#settingsModal').hidden=false;}
@@ -837,8 +839,8 @@ function renderParticipants() {
     state.textContent = member.inCall ? '● LIVE' : '●';
     row.append(avatar, name, state);
     if(member.id!==(socket&&socket.id)){
-      const mute=communityNode('button','member-local-mute',locallyMutedPeers.has(member.id)?'Со звуком':'Без звука');
-      mute.type='button';mute.setAttribute('aria-pressed',String(locallyMutedPeers.has(member.id)));
+      const mute=communityNode('button','member-local-mute',locallyMutedPeers.has(member.userId||member.id)?'Со звуком':'Без звука');
+      mute.type='button';mute.setAttribute('aria-pressed',String(locallyMutedPeers.has(member.userId||member.id)));
       mute.addEventListener('click',()=>togglePeerLocalMute(member.id));
       row.append(mute);
     }
@@ -858,8 +860,8 @@ function renderParticipants() {
       chipState.title = member.inCall ? 'В видеозвонке' : 'В комнате';
       chip.append(chipAvatar, chipName, chipState);
       if(member.id!==(socket&&socket.id)){
-        const mute=communityNode('button','mobile-local-mute',locallyMutedPeers.has(member.id)?'🔇':'🔊');
-        mute.type='button';mute.setAttribute('aria-label',locallyMutedPeers.has(member.id)?'Включить звук участника':'Выключить звук участника');
+        const mute=communityNode('button','mobile-local-mute',locallyMutedPeers.has(member.userId||member.id)?'🔇':'🔊');
+        mute.type='button';mute.setAttribute('aria-label',locallyMutedPeers.has(member.userId||member.id)?'Включить звук участника':'Выключить звук участника');
         mute.addEventListener('click',event=>{event.stopPropagation();togglePeerLocalMute(member.id);});
         chip.append(mute);
       }
@@ -1297,6 +1299,13 @@ async function renderGroupManageMembers(){
           catch(error){$('#groupManageError').textContent=error.message;}
         });
         row.append(muteButton);
+        const unmuteButton=communityNode('button','community-message-action','Снять мут');
+        unmuteButton.type='button';
+        unmuteButton.addEventListener('click',async()=>{
+          try{const {error}=await supabaseClient.rpc('unmute_group_member',{p_conversation_id:conversation.id,p_user_id:member.user_id});if(error)throw error;showToast('Ограничение снято, если оно было активно.');}
+          catch(error){$('#groupManageError').textContent=error.message;}
+        });
+        row.append(unmuteButton);
         const longMute=communityNode('button','community-message-action','На 1 час');
         longMute.type='button';
         longMute.addEventListener('click',async()=>{
@@ -2942,7 +2951,7 @@ async function createPeerConnection(peerId) {
 
         const audio = document.createElement('audio');
         audio.autoplay = true;
-        audio.muted = locallyMutedPeers.has(peerId);
+        audio.muted = locallyMutedPeers.has((participants.get(peerId)||{}).userId || peerId);
         audio.playsInline = true;
         audio.muted = false;
         audio.volume = 1;
