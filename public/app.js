@@ -1041,7 +1041,6 @@ function openMessageActionMenu(message, kind = 'room', trigger = null) {
   actions.className = 'message-action-menu-grid';
   actions.append(
     createMessageMenuButton('reply', '↩', 'Ответить', 'Цитировать сообщение'),
-    createMessageMenuButton('all-reactions', '☺', 'Все реакции', 'Выбрать эмодзи'),
     createMessageMenuButton('pin', '⌑', pinned ? 'Открепить' : 'Закрепить', 'Важное в чате')
   );
 
@@ -1067,11 +1066,6 @@ function openMessageActionMenu(message, kind = 'room', trigger = null) {
     : messagesList?.querySelector('[data-message-id="' + CSS.escape(String(message.id)) + '"]');
 
   const runAction = (action) => {
-    if (action === 'all-reactions') {
-      reactionGroup.classList.add('is-emphasized');
-      reactionGroup.querySelector('button')?.focus({ preventScroll: true });
-      return;
-    }
     const row = findMessageNode();
     const selector = community
       ? '[data-action="' + action + '"]'
