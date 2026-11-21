@@ -1024,7 +1024,7 @@ function openMessageActionMenu(message, kind = 'room', trigger = null) {
     reaction.textContent = emoji;
     reaction.setAttribute('aria-label', 'Поставить реакцию ' + emoji);
     reaction.addEventListener('click', async () => {
-      closeMessageActionMenu(false);
+      closeMessageActionMenu(true);
       if (community) {
         await toggleCommunityReaction(message.id, emoji);
       } else {
@@ -1071,7 +1071,7 @@ function openMessageActionMenu(message, kind = 'room', trigger = null) {
       ? '[data-action="' + action + '"]'
       : '.message-action[data-action="' + action + '"]';
     const legacyButton = row?.querySelector(selector);
-    closeMessageActionMenu(false);
+    closeMessageActionMenu(true);
     if (legacyButton) legacyButton.click();
   };
   panel.querySelectorAll('[data-menu-action]').forEach((button) => {
