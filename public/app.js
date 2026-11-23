@@ -47,7 +47,7 @@ let myName = '';
 let participants = new Map();
 let seenMessages = new Set();
 let peerConnections = new Map();
-let peerCallStats = new Map();
+
 let pendingIce = new Map();
 let localStream = null;
 let previewAudioStream = null;
@@ -3713,12 +3713,6 @@ function startPeerQualityMonitor(peerId, pc) {
         (participants.get(peerId) || {}).name,
         audioJitterMs, audioPacketLoss
       );
-      updateCallRealtimeStats(peerId, {
-        outgoingFps: encodedFps,
-        incomingFps: inboundVideoFps,
-        rttMs,
-        quality: level
-      });
       const qualityLabel = $('#rtcQualityText');
       if (qualityLabel && Number.isFinite(encodedFps) && encodedFps > 0) {
         qualityLabel.textContent = `${encodedFps.toFixed(0)} FPS · ${level === 'good' ? 'ХОРОШО' : level === 'medium' ? 'СРЕДНЕ' : 'СЛАБО'}`;
@@ -3987,8 +3981,6 @@ function closePeer(peerId) {
   }
   pendingIce.delete(peerId);
   peerConnectionPromises.delete(peerId);
-  peerCallStats.delete(peerId);
-  renderCallRealtimeStats();
 }
 
 function removeVideoTile(peerId) {
@@ -4014,7 +4006,6 @@ function updateCallButtons() {
   share.title = isSharing ? 'Остановить показ экрана' : 'Показать экран';
   $('#callStatusDot').classList.toggle('live', isInCall);
   $('#callStatusText').textContent = isInCall ? 'Ты в звонке' : 'Ты не в звонке';
-  renderCallRealtimeStats();
 }
 
 function publishMediaState() {
@@ -4305,74 +4296,6 @@ function updateRtcQualityIndicator(level, path, rttMs, videoPacketLoss, peerName
     `Качество: ${level === 'good' ? 'хорошее' : level === 'medium' ? 'среднее' : 'слабое'}`
   ].filter(Boolean);
   bars.title = details.join(' · ');
-}
-
-function updateCallRealtimeStats(peerId, sample) {
-  const previous = peerCallStats.get(peerId) || {};
-  peerCallStats.set(peerId, {
-    outgoingFps: Number.isFinite(sample.outgoingFps) && sample.outgoingFps > 0
-      ? sample.outgoingFps : previous.outgoingFps,
-    incomingFps: Number.isFinite(sample.incomingFps) && sample.incomingFps > 0
-      ? sample.incomingFps : previous.incomingFps,
-    rttMs: Number.isFinite(sample.rttMs) ? sample.rttMs : previous.rttMs,
-    quality: sample.quality || previous.quality || 'good',
-    updatedAt: Date.now()
-  });
-  renderCallRealtimeStats();
-}
-
-function renderCallRealtimeStats() {
-  const root = $('#callLiveStats');
-  if (!root) return;
-  const outgoingNode = $('#callOutgoingFps');
-  const incomingNode = $('#callIncomingFps');
-  const latencyNode = $('#callLatency');
-  const qualityNode = $('#callLiveQuality');
-  const now = Date.now();
-  const liveSamples = [...peerCallStats.entries()].filter(([peerId, sample]) => {
-    const member = participants.get(peerId);
-    return member && member.inCall && now - sample.updatedAt < 9000;
-  });
-
-  const cameraSending = isInCall && (isCameraOn || isSharing);
-  const outgoing = cameraSending
-    ? liveSamples.map(([, sample]) => sample.outgoingFps).filter(value => Number.isFinite(value) && value > 0)
-    : [];
-  const incoming = liveSamples
-    .filter(([peerId]) => {
-      const member = participants.get(peerId);
-      return peerId !== (socket && socket.id) && member && (member.video || member.sharing);
-    })
-    .map(([, sample]) => sample.incomingFps)
-    .filter(value => Number.isFinite(value) && value > 0);
-  const latency = liveSamples
-    .map(([, sample]) => sample.rttMs)
-    .filter(value => Number.isFinite(value) && value >= 0);
-  const qualityRank = { good: 0, medium: 1, poor: 2 };
-  const quality = liveSamples.reduce((worst, [, sample]) =>
-    (qualityRank[sample.quality] || 0) > (qualityRank[worst] || 0) ? sample.quality : worst, 'good');
-  const average = values => values.length
-    ? values.reduce((sum, value) => sum + value, 0) / values.length
-    : NaN;
-
-  const sendValue = outgoing.length ? Math.max(...outgoing) : NaN;
-  const receiveValue = average(incoming);
-  const latencyValue = average(latency);
-  outgoingNode.textContent = Number.isFinite(sendValue) ? String(Math.round(sendValue)) : '—';
-  incomingNode.textContent = Number.isFinite(receiveValue) ? String(Math.round(receiveValue)) : '—';
-  latencyNode.textContent = Number.isFinite(latencyValue) ? String(Math.round(latencyValue)) : '—';
-
-  const hasLiveStats = isInCall && liveSamples.length > 0;
-  root.dataset.quality = hasLiveStats ? quality : 'idle';
-  qualityNode.textContent = !isInCall
-    ? 'ОЖИДАНИЕ'
-    : !hasLiveStats
-      ? 'СОЕДИНЯЕМ'
-      : quality === 'good'
-        ? 'СТАБИЛЬНО'
-        : quality === 'medium'
-          ? 'СРЕДНЕЕ КАЧЕСТВО'
-          : 'СЛАБАЯ СВЯЗЬ';
 }
 
 async function startScreenShare() {
