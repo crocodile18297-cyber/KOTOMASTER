@@ -102,6 +102,95 @@ function readKotoPrefs(){
   catch(_error){return {accent:'#a47965',theme:'light',scale:'normal',sounds:true,animations:true};}
 }
 let kotoPrefs=readKotoPrefs();
+
+const KOTO_CALL_UI_PREFS_KEY='kotomaster-call-interface-prefs-v1';
+function readCallUiPrefs(){
+ const defaults={startMuted:false,showConnectionStatus:true,showCatAccents:true,echoCancellation:true,noiseSuppression:true,adaptiveQuality:true};
+ try{return {...defaults,...JSON.parse(localStorage.getItem(KOTO_CALL_UI_PREFS_KEY)||'{}')};}catch(_error){return defaults;}
+}
+let callUiPrefs=readCallUiPrefs();
+function saveCallUiPrefs(){try{localStorage.setItem(KOTO_CALL_UI_PREFS_KEY,JSON.stringify(callUiPrefs));}catch(_error){}}
+function setCallSwitchState(id,enabled){
+ const button=$('#'+id);if(!button)return;
+ button.setAttribute('aria-checked',enabled?'true':'false');
+ button.classList.toggle('is-on',Boolean(enabled));
+}
+function syncScreenShareFpsUi(){
+ const select=$('#screenShareFpsSelect');
+ const value=Number(select&&select.value)===60?60:30;
+ const label=$('#screenShareFpsValue');if(label)label.textContent=value+' FPS';
+ const summary=$('#callMenuFpsSummary');if(summary)summary.textContent=value+' FPS';
+ document.querySelectorAll('[data-screen-fps-choice]').forEach(button=>{
+  const active=Number(button.dataset.screenFpsChoice)===value;
+  button.setAttribute('aria-pressed',active?'true':'false');
+  button.classList.toggle('is-selected',active);
+ });
+}
+function syncCallUiControls(){
+ setCallSwitchState('adaptiveQualityToggle',callUiPrefs.adaptiveQuality);
+ setCallSwitchState('echoCancellationToggle',callUiPrefs.echoCancellation);
+ setCallSwitchState('noiseSuppressionToggle',callUiPrefs.noiseSuppression);
+ setCallSwitchState('startMutedToggle',callUiPrefs.startMuted);
+ setCallSwitchState('showConnectionToggle',callUiPrefs.showConnectionStatus);
+ setCallSwitchState('showCatAccentsToggle',callUiPrefs.showCatAccents);
+ const connection=$('#kmCallConnectionStatus');if(connection)connection.hidden=!callUiPrefs.showConnectionStatus;
+ const panel=$('#callPanel');if(panel)panel.classList.toggle('km-no-cat-accents',!callUiPrefs.showCatAccents);
+ syncScreenShareFpsUi();
+ const select=$('#videoResolutionSelect'),summary=$('#callMenuQualitySummary');
+ if(summary)summary.textContent=!select||select.value==='auto'?'Авто':select.value+'p';
+}
+async function applyMicrophoneProcessingSettings(){
+ const tracks=[...(localStream?localStream.getAudioTracks():[]),...(previewAudioStream?previewAudioStream.getAudioTracks():[])]
+  .filter((track,index,all)=>all.indexOf(track)===index&&track.readyState==='live');
+ const results=await Promise.allSettled(tracks.map(track=>track.applyConstraints({
+  echoCancellation:callUiPrefs.echoCancellation,noiseSuppression:callUiPrefs.noiseSuppression,autoGainControl:true
+ })));
+ if(results.some(result=>result.status==='rejected'))showToast('Браузер не смог применить все параметры обработки микрофона. Они сохранятся для следующего подключения.');
+}
+async function applyCurrentVideoProfileToSenders(){
+ if(!isInCall)return;
+ const profile=getSelectedVideoProfile();
+ const sharingTrack=isSharing&&screenStream?screenStream.getVideoTracks()[0]:null;
+ if(sharingTrack&&sharingTrack.readyState==='live'){
+  screenShareEffectiveFps=screenShareRequestedFps;
+  try{await sharingTrack.applyConstraints({frameRate:{ideal:screenShareEffectiveFps,max:screenShareEffectiveFps}});}catch(_error){}
+ }
+ for(const pc of peerConnections.values()){
+  if(!pc||pc.signalingState==='closed')continue;
+  const sender=findVideoSender(pc);if(!sender)continue;
+  const settings=sharingTrack&&sharingTrack.getSettings?sharingTrack.getSettings():{};
+  const frameRate=sharingTrack?screenShareEffectiveFps:profile.frameRate;
+  const bitrate=sharingTrack?getScreenShareBitrate(settings,frameRate):profile.bitrate;
+  await tuneVideoSender(sender,bitrate,frameRate,Boolean(sharingTrack),1);
+  pc._lastAdaptiveBitrate=bitrate;pc._lastScaleDown=1;pc._lastAdaptiveFrameRate=frameRate;
+ }
+}
+async function setCallUiPref(key){
+ const allowed=['startMuted','showConnectionStatus','showCatAccents','echoCancellation','noiseSuppression','adaptiveQuality'];
+ if(!allowed.includes(key))return;
+ callUiPrefs[key]=!callUiPrefs[key];saveCallUiPrefs();syncCallUiControls();
+ if(key==='echoCancellation'||key==='noiseSuppression')await applyMicrophoneProcessingSettings();
+ else if(key==='adaptiveQuality'&&!callUiPrefs.adaptiveQuality){
+  try{await applyCurrentVideoProfileToSenders();}catch(error){console.warn('Could not restore selected video profile:',error);}
+ }else if(key==='startMuted'&&callUiPrefs.startMuted&&isInCall&&isMicOn)await toggleMic();
+}
+function setSettingsTab(tab){
+ const audio=tab==='audio',at=$('#settingsAudioTab'),gt=$('#settingsGeneralTab'),ap=$('#settingsAudioPanel'),gp=$('#settingsGeneralPanel');
+ if(at){at.classList.toggle('is-active',audio);at.setAttribute('aria-selected',audio?'true':'false');}
+ if(gt){gt.classList.toggle('is-active',!audio);gt.setAttribute('aria-selected',audio?'false':'true');}
+ if(ap)ap.hidden=!audio;if(gp)gp.hidden=audio;
+}
+function startInterfaceFpsCounter(){
+ let frames=0,startedAt=0,frameId=0;
+ const measure=timestamp=>{
+  if(!startedAt)startedAt=timestamp;frames++;
+  const elapsed=timestamp-startedAt;
+  if(elapsed>=1000){const node=$('#callInterfaceFps');if(node)node.textContent=String(Math.round(frames*1000/elapsed));frames=0;startedAt=timestamp;}
+  frameId=requestAnimationFrame(measure);
+ };
+ frameId=requestAnimationFrame(measure);
+ window.addEventListener('pagehide',()=>cancelAnimationFrame(frameId),{once:true});
+}
 function playKotoNotificationSound(){
   if(!kotoPrefs.sounds || document.hidden) return;
   try{
@@ -152,7 +241,10 @@ function togglePeerLocalMute(peerId){
   if(locallyMutedPeers.has(stableId))locallyMutedPeers.delete(stableId);else locallyMutedPeers.add(stableId);
   persistMutedPeers();applyPeerMute(peerId);renderParticipants();
 }
-function openSettings(){applyKotoPrefs();$('#settingsModal').hidden=false;}
+function openSettings(){
+ applyKotoPrefs();syncCallUiControls();setSettingsTab('audio');
+ $('#settingsModal').hidden=false;refreshAudioInputDevices();
+}
 function closeSettings(){$('#settingsModal').hidden=true;}
 
 let supabaseClient = null;
@@ -2828,8 +2920,8 @@ function getSpeechAudioConstraints(deviceId = '') {
     ? navigator.mediaDevices.getSupportedConstraints()
     : {};
   const constraints = {
-    echoCancellation: true,
-    noiseSuppression: true,
+    echoCancellation: callUiPrefs.echoCancellation,
+    noiseSuppression: callUiPrefs.noiseSuppression,
     autoGainControl: true
   };
   if (deviceId) constraints.deviceId = { exact: deviceId };
@@ -3093,11 +3185,21 @@ async function selectAudioInput() {
     await refreshAudioInputDevices(selectedAudioDeviceId);
     const selectedOption = select.selectedOptions[0];
     const deviceName = selectedOption && selectedOption.textContent ? selectedOption.textContent : 'системный микрофон';
+    const testMessage=$('#micTestMessage'),testStatus=$('#micTestStatus'),testError=$('#micTestError');
+    const testButton=$('#micPreviewBtn');
+    if(testMessage)testMessage.textContent=isLiveCall?'Микрофон подключён к текущему звонку. Скажи что-нибудь и проверь индикатор.':'Говори в микрофон — индикатор покажет уровень сигнала.';
+    if(testStatus)testStatus.textContent='МИКРОФОН АКТИВЕН';
+    if(testError){testError.hidden=true;testError.textContent='';}
+    if(testButton)testButton.textContent='Проверить снова';
     showToast(isLiveCall
       ? `Микрофон переключён: ${deviceName}. Проверь индикатор уровня.`
       : `Микрофон готов: ${deviceName}. Говори и проверь индикатор уровня до звонка.`);
   } catch (error) {
     console.error('Microphone selection failed:', error);
+    const testStatus=$('#micTestStatus'),testMessage=$('#micTestMessage'),testError=$('#micTestError');
+    if(testStatus)testStatus.textContent='ПРОВЕРКА НЕ УДАЛАСЬ';
+    if(testMessage)testMessage.textContent='Проверь разрешение браузера и выбранное устройство.';
+    if(testError){testError.hidden=false;testError.textContent=error&&error.message?error.message:'Не удалось включить микрофон.';}
     for (const entry of changedSenders.reverse()) {
       try {
         if (entry.added) entry.pc.removeTrack(entry.sender);
@@ -3158,6 +3260,7 @@ async function startCall() {
     // Start the call as soon as audio is ready. Camera capture must not delay speech.
     localStream = new MediaStream(audioStream ? audioStream.getAudioTracks() : []);
     if (usedAudioPreview) previewAudioStream = null;
+    localStream.getAudioTracks().forEach(track => { track.enabled = !callUiPrefs.startMuted; });
     const activeAudioTrack = localStream.getAudioTracks()[0];
     if (activeAudioTrack && activeAudioTrack.getSettings) {
       selectedAudioDeviceId = activeAudioTrack.getSettings().deviceId || selectedAudioDeviceId;
@@ -3166,7 +3269,7 @@ async function startCall() {
 
     isInCall = true;
     activeCallStartedAt = Date.now();
-    isMicOn = localStream.getAudioTracks().length > 0;
+    isMicOn = localStream.getAudioTracks().some(track => track.enabled);
     isCameraOn = false;
     wasMicInterrupted = false;
     wasCameraInterrupted = false;
@@ -3267,7 +3370,7 @@ async function enableCameraAfterAudio(profile) {
     else if (error && error.name === 'NotFoundError') message = 'Камера не найдена. Звонок продолжится со звуком.';
     else if (error && error.name === 'NotReadableError') message = 'Камера занята другим приложением. Звонок продолжится со звуком.';
     showToast(message);
-    if (!isMicOn && isInCall) {
+    if ((!localStream || !localStream.getAudioTracks().length) && isInCall) {
       showToast('Не удалось подключить ни микрофон, ни камеру. Проверь разрешения браузера.');
       stopCall();
     }
@@ -3285,7 +3388,8 @@ function currentOutgoingVideoSettings() {
   return {
     bitrate: sharing ? getScreenShareBitrate(settings, frameRate) : profile.bitrate,
     frameRate,
-    keepTextSharp: sharing
+    keepTextSharp: sharing,
+    adaptive: callUiPrefs.adaptiveQuality
   };
 }
 
@@ -3451,6 +3555,7 @@ function startPeerQualityMonitor(peerId, pc) {
       const current = currentOutgoingVideoSettings();
       let ratio = 1;
 
+      if (current.adaptive) {
       if (current.keepTextSharp) {
         const requested = screenShareRequestedFps || current.frameRate;
         const available = selectedPair && Number(selectedPair.availableOutgoingBitrate) > 0
@@ -3568,6 +3673,8 @@ function startPeerQualityMonitor(peerId, pc) {
             pc._lastAdaptiveFrameRate = targetFrameRate;
           }
         }
+      }
+
       }
 
       let level = 'good';
@@ -5053,16 +5160,41 @@ $('#videoViewerZoom').addEventListener('click', () => {
 $('#videoViewerModal').addEventListener('click', (event) => {
   if (event.target === $('#videoViewerModal')) closeVideoViewer();
 });
-$('#videoResolutionSelect').addEventListener('change', changeVideoResolution);
-$('#videoQualityBoostBtn').addEventListener('click', toggleVideoQualityBoost);
-$('#screenShareFpsSelect').addEventListener('change', handleScreenShareFpsChange);
-$('#callAdvancedBtn').addEventListener('click', () => {
-  const panel = $('.call-quality');
-  const button = $('#callAdvancedBtn');
-  const open = panel.hidden;
-  panel.hidden = !open;
-  button.setAttribute('aria-expanded', String(open));
+$('#videoResolutionSelect').addEventListener('change',()=>{changeVideoResolution();syncCallUiControls();});
+$('#videoQualityBoostBtn').addEventListener('click',toggleVideoQualityBoost);
+$('#screenShareFpsSelect').addEventListener('change',()=>{handleScreenShareFpsChange();syncScreenShareFpsUi();});
+$('#screenShareFpsToggle').addEventListener('click',()=>{
+ const menu=$('#screenShareFpsMenu'),button=$('#screenShareFpsToggle'),open=menu.hidden;
+ menu.hidden=!open;button.setAttribute('aria-expanded',open?'true':'false');
 });
+document.querySelectorAll('[data-screen-fps-choice]').forEach(button=>button.addEventListener('click',()=>{
+ const select=$('#screenShareFpsSelect');if(!select)return;
+ select.value=Number(button.dataset.screenFpsChoice)===60?'60':'30';
+ handleScreenShareFpsChange();$('#screenShareFpsMenu').hidden=true;
+ $('#screenShareFpsToggle').setAttribute('aria-expanded','false');syncScreenShareFpsUi();
+}));
+$('#callAdvancedBtn').addEventListener('click',()=>{
+ const menu=$('#callMenu'),button=$('#callAdvancedBtn'),open=menu.hidden;
+ menu.hidden=!open;button.setAttribute('aria-expanded',open?'true':'false');
+});
+document.addEventListener('click',event=>{
+ if(!event.target.closest('.km-fps-picker')){const menu=$('#screenShareFpsMenu');if(menu)menu.hidden=true;$('#screenShareFpsToggle').setAttribute('aria-expanded','false');}
+ if(!event.target.closest('.km-call-menu-wrap')){const menu=$('#callMenu');if(menu)menu.hidden=true;$('#callAdvancedBtn').setAttribute('aria-expanded','false');}
+});
+$('#adaptiveQualityToggle').addEventListener('click',()=>setCallUiPref('adaptiveQuality'));
+$('#echoCancellationToggle').addEventListener('click',()=>setCallUiPref('echoCancellation'));
+$('#noiseSuppressionToggle').addEventListener('click',()=>setCallUiPref('noiseSuppression'));
+$('#startMutedToggle').addEventListener('click',()=>setCallUiPref('startMuted'));
+$('#showConnectionToggle').addEventListener('click',()=>setCallUiPref('showConnectionStatus'));
+$('#showCatAccentsToggle').addEventListener('click',()=>setCallUiPref('showCatAccents'));
+$('#openAudioSettingsBtn').addEventListener('click',()=>{
+ $('#callMenu').hidden=true;$('#callAdvancedBtn').setAttribute('aria-expanded','false');openSettings();
+});
+$('#refreshAudioDevicesBtn').addEventListener('click',()=>refreshAudioInputDevices());
+$('#settingsAudioTab').addEventListener('click',()=>setSettingsTab('audio'));
+$('#settingsGeneralTab').addEventListener('click',()=>setSettingsTab('general'));
+$('#settingsDoneBtn').addEventListener('click',closeSettings);
+syncCallUiControls();startInterfaceFpsCounter();
 try {
   $('#screenShareFpsSelect').value = String(getPreferredScreenShareFps());
 } catch (_error) {}
