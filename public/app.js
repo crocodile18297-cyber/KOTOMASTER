@@ -1090,6 +1090,8 @@ function enterWorkspace(data, preservePanel = false) {
   appScreen.hidden = false;
   switchPanel(preservePanel ? activePanel : 'chat');
   if (!preservePanel) $('#messageInput').focus();
+  const roomDetailsCode = $('#roomDetailsCode');
+  if (roomDetailsCode) roomDetailsCode.textContent = roomId;
 }
 
 function firstLetter(value) {
@@ -2616,21 +2618,33 @@ async function refreshCommunity() {
 }
 
 function switchPanel(panel) {
-  activePanel = ['call','community'].includes(panel) ? panel : 'chat';
+  activePanel = ['call', 'community'].includes(panel) ? panel : 'chat';
   panel = activePanel;
   const isCall = panel === 'call';
   const isCommunity = panel === 'community';
-  chatPanel.hidden = isCall || isCommunity;
+  const isChat = !isCall && !isCommunity;
+
+  // These are three sibling views. Only one is visible at a time.
+  chatPanel.hidden = !isChat;
   callPanel.hidden = !isCall;
   $('#communityPanel').hidden = !isCommunity;
-  document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.panel === panel));
+  appScreen.dataset.activePanel = panel;
 
-  $('#topbarTitle').textContent = isCall ? 'Общий звонок' : isCommunity ? 'Сообщения и друзья' : 'Основной чат';
+  document.querySelectorAll('.nav-item, .server-rail-button, .server-rail-home, .mobile-nav-button').forEach((item) => {
+    const selected = item.dataset.panel === panel;
+    item.classList.toggle('active', selected);
+    if (item.classList.contains('server-rail-button')) item.classList.toggle('is-active', selected);
+    if (item.classList.contains('server-rail-home')) item.classList.toggle('is-active', selected);
+    if (item.classList.contains('mobile-nav-button')) {
+      if (item.dataset.panel === panel) item.setAttribute('aria-current', 'page');
+      else item.removeAttribute('aria-current');
+    }
+  });
+
+  $('#topbarTitle').textContent = isCall ? 'Общий звонок' : isCommunity ? 'Друзья и личные чаты' : 'Основной чат';
   const searchBox = $('.chat-search-box');
-  if (searchBox) searchBox.hidden = isCall || isCommunity;
+  if (searchBox) searchBox.hidden = !isChat;
 
-  // The same room chat remains the single conversation surface; this shortcut
-  // only switches between that chat and the existing live WebRTC call screen.
   const quickSwitch = $('#mainPanelSwitchBtn');
   if (quickSwitch) {
     const targetPanel = isCall ? 'chat' : 'call';
@@ -2638,13 +2652,13 @@ function switchPanel(panel) {
     const icon = quickSwitch.querySelector('.panel-switch-icon');
     const label = quickSwitch.querySelector('span:last-child');
     if (icon) icon.textContent = targetPanel === 'chat' ? '☷' : '⌁';
-    if (label) label.textContent = targetPanel === 'chat' ? 'Основной чат' : 'Видеозвонок';
+    if (label) label.textContent = targetPanel === 'chat' ? 'Основной чат' : 'Открыть звонок';
     quickSwitch.title = targetPanel === 'chat' ? 'Вернуться в основной чат' : 'Открыть видеозвонок';
     quickSwitch.setAttribute('aria-label', quickSwitch.title);
   }
 
   if (isCommunity) refreshCommunity();
-  if (!isCall && !isCommunity && socket && socket.connected) {
+  if (isChat && socket && socket.connected) {
     markMessagesRead([...messageRecords.values()]
       .filter((message) => message.from !== socket.id)
       .map((message) => message.id));
@@ -2661,7 +2675,12 @@ function updateCallDescription() {
   } else {
     callDescription.textContent = 'Подключись, чтобы увидеть друзей и начать разговор.';
   }
-  $('#callNavBadge').hidden = inCallCount === 0;
+  const callIsLive = inCallCount > 0;
+  $('#callNavBadge').hidden = !callIsLive;
+  const railBadge = $('#callRailBadge');
+  const mobileBadge = $('#mobileCallBadge');
+  if (railBadge) { railBadge.hidden = !callIsLive; railBadge.textContent = callIsLive ? '•' : ''; }
+  if (mobileBadge) { mobileBadge.hidden = !callIsLive; mobileBadge.textContent = callIsLive ? '•' : ''; }
 }
 
 function updateCallStage() {
@@ -4766,7 +4785,7 @@ joinRoomForm.addEventListener('submit', async (event) => {
 
 roomInput.addEventListener('input', () => { roomInput.value = roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6); });
 
-document.querySelectorAll('.nav-item').forEach((item) => item.addEventListener('click', () => switchPanel(item.dataset.panel)));
+document.querySelectorAll('.nav-item, .server-rail-button, .server-rail-home, .mobile-nav-button').forEach((item) => item.addEventListener('click', () => switchPanel(item.dataset.panel)));
 $('#mainPanelSwitchBtn')?.addEventListener('click', (event) => switchPanel(event.currentTarget.dataset.panel));
 document.querySelectorAll('.community-tab').forEach((button)=>button.addEventListener('click',()=>setCommunityTab(button.dataset.communityTab)));
 $('#friendSearchInput').addEventListener('input',(event)=>{
@@ -4930,6 +4949,8 @@ if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
 }
 callPanel.addEventListener('click', unlockRemoteAudioPlayback);
 $('#copyRoomBtn').addEventListener('click', () => roomId && copyText(roomId));
+$('#copyRoomDetailsBtn')?.addEventListener('click', () => roomId && copyText(roomId));
+$('#railSettingsBtn')?.addEventListener('click', openSettings);
 $('#welcomeCopyBtn').addEventListener('click', () => roomId && copyText(roomId));
 $('#inviteBtn').addEventListener('click', () => { $('#modalRoomCode').textContent = roomId; inviteModal.hidden = false; });
 $('#closeInviteBtn').addEventListener('click', () => { inviteModal.hidden = true; });

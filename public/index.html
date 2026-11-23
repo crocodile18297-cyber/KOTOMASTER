@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#fff8f4">
   <meta name="description" content="KOTOMASTER — мессенджер с видеозвонками и демонстрацией экрана.">
   <title>KOTOMASTER — на связи по-кошачьи</title>
-  <link rel="stylesheet" href="/styles.css?v=20261123-peach-cats-main-ui">
+  <link rel="stylesheet" href="/styles.css?v=20261123-full-workspace">
   <script>
     !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],Object.defineProperty(u,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e}}),Object.defineProperty(u.people,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(){return u.toString(1)+".people (stub)"}}),o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagResult isFeatureEnabled get_distinct_id get_session_id reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset getGroups get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
   </script>
   <script src="/socket.io/socket.io.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2" defer></script>
-  <script src="/app.js?v=20261123-peach-cats-main-ui" defer></script>
+  <script src="/app.js?v=20261123-full-workspace" defer></script>
 </head>
 <body>
   <div class="ambient ambient-one"></div>
@@ -124,28 +124,52 @@
     </section>
   </main>
 
-  <main id="appScreen" class="app-screen" hidden>
+  <main id="appScreen" class="app-screen full-workspace" data-active-panel="chat" hidden>
+    <nav class="server-rail" aria-label="Основная навигация">
+      <button class="server-rail-home" type="button" data-panel="chat" aria-label="Основной чат" title="KOTOMASTER">K<span>🐾</span></button>
+      <div class="server-rail-divider"></div>
+      <button class="server-rail-button is-active" type="button" data-panel="chat" aria-label="Основной чат" title="Основной чат"><svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6a7.5 7.5 0 1 1 17-3.5Z"/><path d="M8 11h8m-8 4h5"/></svg></button>
+      <button class="server-rail-button" type="button" data-panel="call" aria-label="Видеозвонок" title="Видеозвонок"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3z"/></svg><span id="callRailBadge" hidden></span></button>
+      <button class="server-rail-button" type="button" data-panel="community" aria-label="Друзья и личные чаты" title="Друзья и личные чаты"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M20 8v6m3-3h-6"/></svg></button>
+      <div class="server-rail-spacer"></div>
+      <button class="server-rail-settings" type="button" id="railSettingsBtn" aria-label="Настройки" title="Настройки">⚙</button>
+    </nav>
+
     <aside class="sidebar">
       <div class="sidebar-brand brand">
-        <div class="brand-mark"><svg viewBox="0 0 64 64"><path d="M12 27 10 9l16 10a28 28 0 0 1 12 0L54 9l-2 18a23 23 0 1 1-40 0Z" fill="currentColor"/><path d="M23 33h.2M41 33h.2" stroke="#171126" stroke-width="6" stroke-linecap="round"/><path d="M29 41q3 3 6 0M32 40v4" fill="none" stroke="#171126" stroke-width="2.6" stroke-linecap="round"/></svg></div>
+        <div class="brand-mark"><svg viewBox="0 0 64 64"><path d="M12 27 10 9l16 10a28 28 0 0 1 12 0L54 9l-2 18a23 23 0 1 1-40 0Z" fill="currentColor"/><path d="M23 33h.2M41 33h.2" stroke="#48281f" stroke-width="6" stroke-linecap="round"/><path d="M29 41q3 3 6 0M32 40v4" fill="none" stroke="#48281f" stroke-width="2.6" stroke-linecap="round"/></svg></div>
         <span>KOTO<span class="brand-accent">MASTER</span></span>
       </div>
+      <div class="sidebar-server-heading"><div><span class="sidebar-overline">ТВОЁ ПРОСТРАНСТВО</span><strong>Моя команда</strong></div><span class="server-online-dot" title="Комната активна"></span></div>
 
-      <div class="sidebar-section-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
-      <button class="nav-item active" data-panel="chat"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6a7.5 7.5 0 1 1 17-3.5Z"/><path d="M8 11h8m-8 4h5"/></svg></span>Основной чат<span class="nav-indicator"></span></button>
-      <button class="nav-item" data-panel="call"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3z"/></svg></span>Видеокомната<span id="callNavBadge" class="nav-badge" hidden>LIVE</span></button>
-      <button class="nav-item" data-panel="community"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M20 8v6m3-3h-6"/></svg></span>Сообщения и друзья</button>
+      <div class="sidebar-section-label">ТЕКСТОВЫЕ КАНАЛЫ</div>
+      <button class="nav-item active" data-panel="chat" type="button">
+        <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6a7.5 7.5 0 1 1 17-3.5Z"/><path d="M8 11h8m-8 4h5"/></svg></span>
+        <span class="nav-copy"><strong>Основной чат</strong><small>Общая переписка комнаты</small></span><span class="nav-indicator"></span>
+      </button>
+      <div class="sidebar-section-label sidebar-section-spaced">ГОЛОСОВЫЕ КАНАЛЫ</div>
+      <button class="nav-item" data-panel="call" type="button">
+        <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3z"/></svg></span>
+        <span class="nav-copy"><strong>Общий звонок</strong><small>Камера и демонстрация экрана</small></span><span id="callNavBadge" class="nav-badge" hidden>LIVE</span>
+      </button>
+      <button class="nav-item" data-panel="community" type="button">
+        <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M20 8v6m3-3h-6"/></svg></span>
+        <span class="nav-copy"><strong>Друзья и личные чаты</strong><small>Контакты и личные диалоги</small></span>
+      </button>
 
       <div class="sidebar-room-block">
-        <div class="sidebar-section-label">ТВОЯ КОМНАТА</div>
+        <div class="sidebar-section-label">ТЕКУЩАЯ КОМНАТА</div>
         <div class="room-mini-card"><div class="room-mini-icon">⌂</div><div class="room-mini-info"><strong id="sidebarRoomCode">------</strong><small>Приватная комната</small></div><button id="copyRoomBtn" class="icon-button copy-mini" title="Скопировать код" aria-label="Скопировать код">▢</button></div>
       </div>
-
-      <div class="members-heading"><span>УЧАСТНИКИ</span><span id="memberCount" class="member-count">1/6</span></div>
-      <div id="memberList" class="member-list"></div>
+      <div class="sidebar-helper-card"><span class="helper-cat">ฅ</span><div><strong>Уютный уголок</strong><small>Общайся, звони и делись экраном.</small></div></div>
 
       <div class="sidebar-bottom">
-        <div class="profile-card"><div id="myAvatar" class="avatar avatar-me">К</div><div class="profile-info"><strong id="myName">Котик</strong><small><span class="online-dot"></span> В сети</small><small id="myUsername" class="profile-username"></small></div><button id="editProfileBtn" class="icon-button profile-edit-icon" title="Изменить профиль" aria-label="Изменить профиль">✎</button><button id="leaveRoomBtn" class="icon-button leave-icon" title="Выйти из комнаты" aria-label="Выйти из комнаты">↪</button></div>
+        <div class="profile-card">
+          <div id="myAvatar" class="avatar avatar-me">К</div>
+          <div class="profile-info"><strong id="myName">Котик</strong><small><span class="online-dot"></span> В сети</small><small id="myUsername" class="profile-username"></small></div>
+          <button id="editProfileBtn" class="icon-button profile-edit-icon" title="Изменить профиль" aria-label="Изменить профиль">✎</button>
+          <button id="leaveRoomBtn" class="icon-button leave-icon" title="Выйти из комнаты" aria-label="Выйти из комнаты">↪</button>
+        </div>
         <button id="signOutBtn" class="sign-out-button" type="button">Выйти из аккаунта</button>
         <div class="sidebar-caption">KOTOMASTER <span>v1.0</span></div>
       </div>
@@ -153,67 +177,69 @@
 
     <section class="workspace">
       <header class="topbar">
-        <div class="topbar-title"><div class="topbar-room-icon">✦</div><div><h2 id="topbarTitle">Основной чат</h2><p id="topbarSubtitle">Твоя комната · 1 участник</p></div></div>
+        <div class="topbar-title"><div class="topbar-room-icon"><span class="topbar-room-glyph">✦</span></div><div><h2 id="topbarTitle">Основной чат</h2><p id="topbarSubtitle">Моя команда · 1 участник</p></div></div>
         <div class="topbar-actions">
-          <label class="chat-search-box" for="chatSearchInput"><span aria-hidden="true">⌕</span><input id="chatSearchInput" type="search" placeholder="Найти в чате..." autocomplete="off" aria-label="Поиск по сообщениям"></label>
+          <label class="chat-search-box" for="chatSearchInput"><span aria-hidden="true">⌕</span><input id="chatSearchInput" type="search" placeholder="Найти в переписке..." autocomplete="off" aria-label="Поиск по сообщениям"></label>
           <button id="settingsBtn" class="notifications-button" type="button" aria-label="Настройки" title="Настройки">⚙</button>
           <button id="notificationsBtn" class="notifications-button" type="button" aria-label="Включить уведомления" title="Включить уведомления" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></svg></button>
-          <div class="secure-pill"><span>●</span> Комната по коду</div>
-          <button id="mainPanelSwitchBtn" class="panel-switch-button" type="button" data-panel="call" title="Открыть видеозвонок" aria-label="Открыть видеозвонок"><span class="panel-switch-icon" aria-hidden="true">⌁</span><span>Видеозвонок</span></button>
-          <button id="inviteBtn" class="invite-button"><span>＋</span> Пригласить</button>
+          <div class="secure-pill"><span>●</span> Приватная комната</div>
+          <button id="mainPanelSwitchBtn" class="panel-switch-button" type="button" data-panel="call" title="Открыть видеозвонок" aria-label="Открыть видеозвонок"><span class="panel-switch-icon" aria-hidden="true">⌁</span><span>Открыть звонок</span></button>
+          <button id="inviteBtn" class="invite-button" type="button"><span>＋</span> Пригласить</button>
         </div>
       </header>
+
+      <nav class="mobile-app-nav" aria-label="Навигация по приложению">
+        <button class="mobile-nav-button active" type="button" data-panel="chat"><span>☷</span><strong>Чат</strong></button>
+        <button class="mobile-nav-button" type="button" data-panel="call"><span>⌁</span><strong>Звонок</strong><i id="mobileCallBadge" hidden></i></button>
+        <button class="mobile-nav-button" type="button" data-panel="community"><span>♧</span><strong>Друзья</strong></button>
+      </nav>
       <div id="mobileMemberStrip" class="mobile-member-strip" aria-label="Участники комнаты"></div>
 
-      <section id="chatPanel" class="chat-panel">
-        <div class="chat-scroll" id="chatScroll">
-          <div id="pinnedMessageBanner" class="pinned-message-banner" hidden></div>
-          <div class="chat-welcome"><div class="welcome-icon">🐾</div><h3>Добро пожаловать в основной чат</h3><p>Вся переписка комнаты находится здесь. Во время звонка можно вернуться к сообщениям одной кнопкой.</p><div class="welcome-code"><span>КОД КОМНАТЫ</span><strong id="welcomeRoomCode">------</strong><button id="welcomeCopyBtn" title="Скопировать код" aria-label="Скопировать код">▢</button></div></div>
-          <div id="messagesList" class="messages-list"></div>
-          <div id="typingIndicator" class="typing-indicator" hidden></div>
-        </div>
-        <div id="replyPreview" class="reply-preview" hidden></div>
-        <form id="messageForm" class="composer">
-          <div class="composer-attach">✧</div><input id="messageInput" maxlength="1200" placeholder="Напиши что-нибудь приятное..." autocomplete="off"><span class="composer-hint">Enter ↵</span><button class="send-button" type="submit" aria-label="Отправить сообщение"><svg viewBox="0 0 24 24"><path d="m4 4 16 8-16 8 3-8-3-8Z"/><path d="M7 12h13"/></svg></button>
-        </form>
-      </section>
-
-      <section id="callPanel" class="call-panel" hidden>
-        <div class="call-heading"><div><div class="call-kicker"><span class="live-dot"></span> KOTO LIVE ROOM</div><h3>Общий звонок</h3><p id="callDescription">Подключись, чтобы увидеть друзей и начать разговор.</p></div><div class="call-room-chip"><span>ROOM</span><strong id="callRoomCode">------</strong></div></div>
-        <div id="callStage" class="call-stage">
-          <div id="videoGrid" class="video-grid"></div>
-          <div id="callEmptyState" class="call-empty-state"><div class="empty-cat">ฅ^•ﻌ•^ฅ</div><h4>Здесь пока тихо</h4><p>Включи камеру и микрофон, чтобы войти в звонок.</p><button id="startCallBtn" class="primary-button start-call-button"><span>▶</span> Войти в видеозвонок</button></div>
-        </div>
-        <div class="call-bottom">
-          <div class="call-status"><span id="callStatusDot" class="status-dot"></span><span id="callStatusText">Ты не в звонке</span></div>
-          <div class="call-control-dock">
-            <div class="call-control-cluster">
-              <button id="micBtn" class="call-control" title="Включить микрофон" aria-label="Включить микрофон" disabled><svg viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0m-7 7v3m-4 0h8"/></svg><span>Микрофон</span></button>
-              <button id="cameraBtn" class="call-control" title="Включить камеру" aria-label="Включить камеру" disabled><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3z"/></svg><span>Камера</span></button>
-            </div>
-            <div class="call-control-cluster share-control-cluster">
-              <button id="shareBtn" class="call-control share-control" title="Показать экран" aria-label="Показать экран" disabled><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2.5"/><path d="M8 21h8m-4-4v4m-3-9 2-2 2 2m-2-2v5"/></svg><span>Экран</span></button>
-              <label class="screen-fps-control" for="screenShareFpsSelect"><span>FPS</span><select id="screenShareFpsSelect" aria-label="Частота кадров демонстрации экрана"><option value="30" selected>30</option><option value="60">60</option></select></label>
-            </div>
-            <button id="callAdvancedBtn" class="call-control more-control" type="button" title="Дополнительные настройки" aria-label="Дополнительные настройки" aria-expanded="false"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg><span>Ещё</span></button>
-            <button id="leaveCallBtn" class="call-control hangup-control" title="Выйти из звонка" aria-label="Выйти из звонка" disabled><svg viewBox="0 0 24 24"><path d="M4 15q8-7 16 0l-2 4q-1 1-3 0l-2-2h-2l-2 2q-2 1-3 0l-2-4Z"/></svg><span>Завершить</span></button>
+      <div class="workspace-views">
+        <section id="chatPanel" class="chat-panel">
+          <header class="view-heading"><div><div class="view-overline">ОБЩАЯ ПЕРЕПИСКА</div><h3>Основной чат</h3><p>Все сообщения комнаты в одном месте</p></div><div class="view-heading-badge"><span class="view-status-dot"></span> Комната активна</div></header>
+          <div class="chat-scroll" id="chatScroll">
+            <div id="pinnedMessageBanner" class="pinned-message-banner" hidden></div>
+            <div class="chat-welcome"><div class="welcome-icon">🐾</div><h3>Добро пожаловать в основной чат</h3><p>Здесь находится общая переписка комнаты. Даже во время видеозвонка можно вернуться сюда одним нажатием.</p><div class="welcome-code"><span>КОД КОМНАТЫ</span><strong id="welcomeRoomCode">------</strong><button id="welcomeCopyBtn" title="Скопировать код" aria-label="Скопировать код">▢</button></div></div>
+            <div id="messagesList" class="messages-list"></div><div id="typingIndicator" class="typing-indicator" hidden></div>
           </div>
-          <div class="call-quality" hidden>
-            <label class="mic-input-control" for="audioInputSelect">МИКРОФОН <select id="audioInputSelect" aria-label="Выбор микрофона" disabled><option value="">Системный микрофон</option></select><span class="mic-input-meter" title="Уровень сигнала выбранного микрофона"><i id="micInputLevel"></i></span></label>
-            <button id="micPreviewBtn" class="mic-preview-button" type="button">ТЕСТ</button>
-            <button id="videoQualityBoostBtn" class="video-quality-boost-button" type="button" aria-pressed="false">ЧЁТЧЕ · ВЫКЛ</button>
-            <label class="resolution-control" for="videoResolutionSelect">КАЧЕСТВО <select id="videoResolutionSelect" aria-label="Разрешение видео"><option value="auto">Авто</option><option value="360">360p</option><option value="480">480p</option><option value="720" selected>720p</option><option value="1080">1080p</option></select></label>
-            <span id="rtcQualityBars" class="quality-bars" title="Ожидаем статистику соединения"><i></i><i></i><i></i></span><span id="rtcQualityText">WEBRTC</span>
-          </div>
-        </div>
-        <p class="call-tip">Подсказка: демонстрация экрана доступна в браузере по защищённому HTTPS-соединению или на localhost.</p>
-        <section class="call-history-panel" aria-labelledby="callHistoryTitle">
-          <div class="call-history-heading"><strong id="callHistoryTitle">Недавние звонки</strong><button id="clearCallHistoryBtn" type="button">Очистить</button></div>
-          <div id="callHistoryList" class="call-history-list"></div>
-          <p class="call-history-note">История хранится только в этом браузере.</p>
+          <div id="replyPreview" class="reply-preview" hidden></div>
+          <form id="messageForm" class="composer"><div class="composer-attach" aria-hidden="true">✧</div><input id="messageInput" maxlength="1200" placeholder="Напиши сообщение команде..." autocomplete="off"><span class="composer-hint">Enter ↵</span><button class="send-button" type="submit" aria-label="Отправить сообщение"><svg viewBox="0 0 24 24"><path d="m4 4 16 8-16 8 3-8-3-8Z"/><path d="M7 12h13"/></svg></button></form>
         </section>
 
-      <section id="communityPanel" class="community-panel" hidden>
+        <section id="callPanel" class="call-panel" hidden>
+          <header class="call-heading"><div><div class="call-kicker"><span class="live-dot"></span> KOTO LIVE ROOM</div><h3>Общий звонок</h3><p id="callDescription">Подключись к звонку, чтобы увидеть друзей и начать разговор.</p></div><div class="call-heading-actions"><div class="call-room-chip"><span>ROOM</span><strong id="callRoomCode">------</strong></div><span class="call-live-pill"><i></i> ЖИВОЙ ЗВОНОК</span></div></header>
+          <div class="call-layout">
+            <div id="callStage" class="call-stage">
+              <div class="call-stage-topline"><span><i class="live-dot"></i> ВИДЕОКОМНАТА</span><span class="call-stage-hint">Трансляция участников появится здесь</span></div>
+              <div id="videoGrid" class="video-grid"></div>
+              <div id="callEmptyState" class="call-empty-state"><div class="empty-cat">ฅ^•ﻌ•^ฅ</div><h4>Комната ждёт тебя</h4><p>Подключи микрофон и камеру, чтобы начать разговор с участниками.</p><button id="startCallBtn" class="primary-button start-call-button" type="button"><span>▶</span> Войти в видеозвонок</button></div>
+            </div>
+          </div>
+          <div class="call-bottom">
+            <div class="call-status"><span id="callStatusDot" class="status-dot"></span><span id="callStatusText">Ты не в звонке</span></div>
+            <div class="call-control-dock">
+              <div class="call-control-cluster">
+                <button id="micBtn" class="call-control" title="Включить микрофон" aria-label="Включить микрофон" disabled><svg viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0m-7 7v3m-4 0h8"/></svg><span>Микрофон</span></button>
+                <button id="cameraBtn" class="call-control" title="Включить камеру" aria-label="Включить камеру" disabled><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3z"/></svg><span>Камера</span></button>
+              </div>
+              <div class="call-control-cluster share-control-cluster"><button id="shareBtn" class="call-control share-control" title="Показать экран" aria-label="Показать экран" disabled><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2.5"/><path d="M8 21h8m-4-4v4m-3-9 2-2 2 2m-2-2v5"/></svg><span>Демонстрация</span></button><label class="screen-fps-control" for="screenShareFpsSelect"><span>FPS</span><select id="screenShareFpsSelect" aria-label="Частота кадров демонстрации экрана"><option value="30" selected>30</option><option value="60">60</option></select></label></div>
+              <button id="callAdvancedBtn" class="call-control more-control" type="button" title="Дополнительные настройки" aria-label="Дополнительные настройки" aria-expanded="false"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg><span>Ещё</span></button>
+              <button id="leaveCallBtn" class="call-control hangup-control" title="Выйти из звонка" aria-label="Выйти из звонка" disabled><svg viewBox="0 0 24 24"><path d="M4 15q8-7 16 0l-2 4q-1 1-3 0l-2-2h-2l-2 2q-2 1-3 0l-2-4Z"/></svg><span>Завершить</span></button>
+            </div>
+            <div class="call-quality" hidden>
+              <label class="mic-input-control" for="audioInputSelect">МИКРОФОН <select id="audioInputSelect" aria-label="Выбор микрофона" disabled><option value="">Системный микрофон</option></select><span class="mic-input-meter" title="Уровень сигнала выбранного микрофона"><i id="micInputLevel"></i></span></label>
+              <button id="micPreviewBtn" class="mic-preview-button" type="button">ТЕСТ</button>
+              <button id="videoQualityBoostBtn" class="video-quality-boost-button" type="button" aria-pressed="false">ЧЁТЧЕ · ВЫКЛ</button>
+              <label class="resolution-control" for="videoResolutionSelect">КАЧЕСТВО <select id="videoResolutionSelect" aria-label="Разрешение видео"><option value="auto">Авто</option><option value="360">360p</option><option value="480">480p</option><option value="720" selected>720p</option><option value="1080">1080p</option></select></label>
+              <span id="rtcQualityBars" class="quality-bars" title="Ожидаем статистику соединения"><i></i><i></i><i></i></span><span id="rtcQualityText">WEBRTC</span>
+            </div>
+          </div>
+          <details class="call-history-panel"><summary class="call-history-heading"><strong id="callHistoryTitle">Недавние звонки</strong><span>Развернуть</span></summary><button id="clearCallHistoryBtn" class="call-history-clear" type="button">Очистить историю</button><div id="callHistoryList" class="call-history-list"></div><p class="call-history-note">История хранится только в этом браузере.</p></details>
+          <p class="call-tip">Подсказка: демонстрация экрана доступна в браузере по защищённому HTTPS-соединению или на localhost.</p>
+        </section>
+
+              <section id="communityPanel" class="community-panel" hidden>
         <header class="community-header">
           <div><div class="call-kicker">KOTOMASTER COMMUNITY</div><h3>Сообщения и друзья</h3><p>Личные диалоги, группы и список контактов</p></div>
           <button id="newGroupBtn" class="invite-button" type="button">＋ Новая группа</button>
@@ -261,8 +287,18 @@
           </section>
         </div>
       </section>
+      </div>
+    </section>
 
-  <div id="settingsModal" class="community-modal" hidden>
+    <aside class="room-details-rail">
+      <header class="room-details-heading"><div><span class="sidebar-overline">ИНФОРМАЦИЯ</span><strong>Комната</strong></div><span class="room-private-icon">⌑</span></header>
+      <section class="room-details-code-card"><div class="room-details-code-icon">⌂</div><div><span>КОД ПОДКЛЮЧЕНИЯ</span><strong id="roomDetailsCode">------</strong></div><button id="copyRoomDetailsBtn" type="button" aria-label="Скопировать код комнаты" title="Скопировать код">▢</button></section>
+      <div class="room-details-members-heading"><div><strong>Участники</strong><small>Кто сейчас в комнате</small></div><span id="memberCount" class="member-count">1/6</span></div>
+      <div id="memberList" class="member-list"></div>
+      <div class="room-details-footer"><div class="room-details-footer-icon">🐾</div><div><strong>Приватное пространство</strong><small>Подключиться можно только по коду комнаты.</small></div></div>
+    </aside>
+
+      <div id="settingsModal" class="community-modal" hidden>
     <section class="community-modal-card settings-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
       <button id="closeSettingsBtn" class="community-modal-close" type="button" aria-label="Закрыть">×</button>
       <div class="call-kicker">KOTOMASTER PERSONAL</div>
@@ -339,11 +375,8 @@
       <button class="primary-button" type="submit"><span>＋</span> Создать группу</button>
     </form>
   </div>
-      </section>
-    </section>
-  </main>
 
-  <div id="videoViewerModal" class="video-viewer-modal" hidden>
+  </main><div id="videoViewerModal" class="video-viewer-modal" hidden>
     <div class="video-viewer-shell" role="dialog" aria-modal="true" aria-label="Увеличенный просмотр видео">
       <header class="video-viewer-header">
         <strong id="videoViewerTitle">Демонстрация экрана</strong>
