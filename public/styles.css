@@ -5760,3 +5760,8 @@ html[data-koto-animations="off"] #appScreen .km-fps-card,
 html[data-koto-animations="off"] #appScreen .km-fps-menu,
 html[data-koto-animations="off"] #appScreen .km-call-menu,
 html[data-koto-animations="off"] #settingsModal .km-settings-dialog { animation:none!important; transition:none!important; }
+
+html.km-no-cat-accents #settingsModal .km-settings-avatar,
+html.km-no-cat-accents #settingsModal .km-title-paw,
+html.km-no-cat-accents #appScreen .km-call-menu .km-cat-icon,
+html.km-no-cat-accents #appScreen .km-call-menu .km-menu-paw { display:none!important; }
