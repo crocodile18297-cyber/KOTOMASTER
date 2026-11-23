@@ -3291,6 +3291,13 @@ function startPeerQualityMonitor(peerId, pc) {
           screenShareEffectiveFps = nextFps;
           const activeTrack = screenStream && screenStream.getVideoTracks()[0];
           const activeSettings = activeTrack && activeTrack.getSettings ? activeTrack.getSettings() : {};
+          if (activeTrack && activeTrack.readyState === 'live') {
+            try {
+              await activeTrack.applyConstraints({ frameRate: { ideal: nextFps, max: nextFps } });
+            } catch (_error) {
+              // Some display sources have a fixed capture cadence; the sender FPS cap still applies.
+            }
+          }
           const nextBitrate = getScreenShareBitrate(activeSettings, nextFps);
           await tuneVideoSender(sender, nextBitrate, nextFps, true);
           pc._lastAdaptiveBitrate = nextBitrate;
@@ -4118,6 +4125,7 @@ async function stopScreenShare() {
     localTile.classList.remove('sharing');
     localTile.classList.toggle('has-video', isCameraOn);
   }
+  updateScreenShareFpsBadge(socket && socket.id, NaN);
   updateCallButtons();
   publishMediaState();
   showToast('Демонстрация экрана остановлена.');
@@ -4381,8 +4389,10 @@ function updateScreenShareFpsBadge(peerId, measuredFps) {
   badge.hidden = false;
   const fps = Number(measuredFps);
   const value = Number.isFinite(fps) && fps > 0
-    ? `${Math.round(fps)} FPS`
-    : (local ? `цель ${screenShareEffectiveFps} FPS` : 'измеряем FPS');
+    ? (local
+      ? `${Math.round(fps)} FPS / ЛИМИТ ${screenShareEffectiveFps}`
+      : `${Math.round(fps)} FPS`)
+    : (local ? `ЦЕЛЬ ${screenShareEffectiveFps} FPS` : 'ИЗМЕРЯЕМ FPS');
   badge.textContent = `ЭКРАН · ${value}`;
   badge.title = local
     ? `Отправляется: ${Number.isFinite(fps) && fps > 0 ? Math.round(fps) + ' FPS' : 'ожидание статистики'}; выбранный режим: ${screenShareRequestedFps} FPS`
@@ -4768,6 +4778,13 @@ $('#videoViewerModal').addEventListener('click', (event) => {
 $('#videoResolutionSelect').addEventListener('change', changeVideoResolution);
 $('#videoQualityBoostBtn').addEventListener('click', toggleVideoQualityBoost);
 $('#screenShareFpsSelect').addEventListener('change', handleScreenShareFpsChange);
+$('#callAdvancedBtn').addEventListener('click', () => {
+  const panel = $('.call-quality');
+  const button = $('#callAdvancedBtn');
+  const open = panel.hidden;
+  panel.hidden = !open;
+  button.setAttribute('aria-expanded', String(open));
+});
 try {
   $('#screenShareFpsSelect').value = String(getPreferredScreenShareFps());
 } catch (_error) {}
