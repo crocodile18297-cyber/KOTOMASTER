@@ -158,10 +158,25 @@ let supabaseClient = null;
 let authSession = null;
 let authMode = 'signin';
 let authReady = false;
+let authInitializationPromise = null;
+let authInitializationError = null;
 let authProfile = null;
 let passwordRecoveryPending = false;
 let posthogInitialized = false;
 let posthogIdentity = null;
+
+async function ensureSupabaseAuthReady() {
+  if (authInitializationPromise) {
+    const initialized = await authInitializationPromise;
+    if (!initialized) {
+      throw authInitializationError || new Error('Не удалось подключить авторизацию. Обнови страницу и попробуй снова.');
+    }
+  }
+  if (!authReady || !supabaseClient || !supabaseClient.auth) {
+    throw new Error('Авторизация ещё загружается. Подожди немного и попробуй снова.');
+  }
+  return supabaseClient;
+}
 
 function initializeProductAnalytics(config, currentSession) {
   if (!config?.posthogProjectToken || !config?.posthogApiHost ||
@@ -272,9 +287,10 @@ async function initializeSupabase() {
   authSession = data.session;
   updateProductAnalyticsIdentity(authSession?.user?.id || null);
   if (authSession?.access_token) {
+    // TURN credential discovery must not block email/password authentication.
+    // The call setup waits for rtcConfigPromise when it actually creates peer connections.
     rtcConfigPromise = Promise.resolve(rtcConfigPromise)
       .then(() => loadAuthenticatedTurnServers(authSession));
-    await rtcConfigPromise;
   }
   supabaseClient.auth.onAuthStateChange((event, session) => {
     const previousToken = authSession?.access_token;
@@ -377,6 +393,7 @@ async function handleAuthSubmit(event) {
   if (authMode === 'recovery' && password.length < 8) { errorNode.textContent = 'Новый пароль должен содержать не менее 8 символов.'; return; }
   setBusy(button, true, authMode === 'signup' ? 'Создаём аккаунт…' : authMode === 'recovery' ? 'Сохраняем…' : 'Входим…');
   try {
+    await ensureSupabaseAuthReady();
     if (authMode === 'recovery') {
       const { error } = await supabaseClient.auth.updateUser({ password });
       if (error) throw error;
@@ -491,6 +508,7 @@ async function handlePasswordRecovery() {
   const button = $('#forgotPasswordBtn');
   button.disabled = true;
   try {
+    await ensureSupabaseAuthReady();
     const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
       redirectTo: window.location.origin
     });
@@ -4838,13 +4856,25 @@ rtcConfigPromise = (async function loadConfig() {
 refreshAudioInputDevices();
 updateCallButtons();
 updateVideoQualityBoostButton();
-initializeSupabase().then(async () => {
-  if (authSession?.user) {
+authInitializationPromise = initializeSupabase()
+  .then(() => {
+    authInitializationError = null;
+    return true;
+  })
+  .catch((error) => {
+    authReady = false;
+    authInitializationError = error;
+    console.error('KOTOMASTER auth initialization failed:', error);
+    $('#authError').textContent = error.message || 'Не удалось подключить авторизацию.';
+    return false;
+  });
+
+authInitializationPromise.then(async (initialized) => {
+  if (initialized && authSession?.user) {
     await loadMyProfile();
     await loadRemoteCallHistory().catch((error)=>console.warn('Could not load remote call history:',error));
     restoreSavedRoom();
   }
 }).catch((error) => {
-  console.error('KOTOMASTER auth initialization failed:', error);
-  $('#authError').textContent = error.message || 'Не удалось подключить авторизацию.';
+  console.warn('Post-auth initialization skipped:', error?.name || 'Error');
 });
