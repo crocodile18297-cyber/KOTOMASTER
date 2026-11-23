@@ -3031,6 +3031,14 @@ function startMicInputMeter(track) {
       const level = Math.max(0, Math.min(100, Math.round(rms * 260)));
       const meter = $('#micInputLevel');
       if (meter) meter.style.width = `${level}%`;
+      const testStatus=$('#micTestStatus'),testMessage=$('#micTestMessage');
+      if(track.enabled===false){
+        if(testStatus)testStatus.textContent='МИКРОФОН ВЫКЛЮЧЕН';
+        if(testMessage)testMessage.textContent='Сейчас микрофон выключен. Включи его в панели звонка, чтобы проверить сигнал.';
+      }else{
+        if(testStatus)testStatus.textContent=level>5?'МИКРОФОН АКТИВЕН':'СЛУШАЕМ МИКРОФОН';
+        if(testMessage)testMessage.textContent=level>5?'Микрофон работает — сигнал обнаружен.':'Слушаем микрофон… скажи что-нибудь.';
+      }
       if (micMeterContext && micMeterContext.state === 'suspended') {
         micMeterContext.resume().catch(() => {});
       }
