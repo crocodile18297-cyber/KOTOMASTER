@@ -167,6 +167,30 @@ let passwordRecoveryPending = false;
 let posthogInitialized = false;
 let posthogIdentity = null;
 
+async function fetchWithTimeout(resource, options = {}, timeoutMs = 12000, timeoutMessage = 'Сервер не ответил вовремя.') {
+  const controller = new AbortController();
+  const callerSignal = options.signal ||
+    (typeof Request !== 'undefined' && resource instanceof Request ? resource.signal : null);
+  const abortFromCaller = () => controller.abort(callerSignal?.reason);
+  if (callerSignal?.aborted) controller.abort(callerSignal.reason);
+  else callerSignal?.addEventListener('abort', abortFromCaller, { once: true });
+
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(resource, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted && !callerSignal?.aborted) {
+      const timeoutError = new Error(timeoutMessage);
+      timeoutError.name = 'NetworkTimeoutError';
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    callerSignal?.removeEventListener('abort', abortFromCaller);
+  }
+}
+
 async function retrySupabaseAuthInitialization() {
   if (!authRecoveryPromise) {
     authRecoveryPromise = initializeSupabase()
@@ -299,7 +323,12 @@ async function loadAuthenticatedTurnServers(session) {
 }
 
 async function initializeSupabase() {
-  const response = await fetch('/api/config', { cache: 'no-store' });
+  const response = await fetchWithTimeout(
+    '/api/config',
+    { cache: 'no-store' },
+    12000,
+    'Сервер KOTOMASTER не ответил за 12 секунд. Проверь подключение и обнови страницу.'
+  );
   if (!response.ok) throw new Error('Не удалось загрузить настройки сервиса.');
   const config = await response.json();
   appConfig = { ...appConfig, ...config };
@@ -308,7 +337,15 @@ async function initializeSupabase() {
     throw new Error('Авторизация не настроена. Обнови страницу позже.');
   }
   supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabasePublishableKey, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    global: {
+      fetch: (resource, options = {}) => fetchWithTimeout(
+        resource,
+        options,
+        12000,
+        'Supabase не ответил за 12 секунд. Проверь интернет или попробуй отключить VPN.'
+      )
+    }
   });
   const { data, error } = await supabaseClient.auth.getSession();
   if (error) throw error;
@@ -481,6 +518,7 @@ async function handleAuthSubmit(event) {
 
 function authErrorMessage(error) {
   const message = String(error?.message || 'Не удалось выполнить запрос.');
+  if (error?.name === 'NetworkTimeoutError') return message;
   if (/invalid login credentials/i.test(message)) return 'Неверная почта или пароль.';
   if (/user already registered/i.test(message)) return 'Этот адрес уже зарегистрирован. Попробуй войти.';
   if (/password should be at least/i.test(message)) return 'Пароль должен содержать не менее 8 символов.';
