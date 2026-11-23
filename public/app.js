@@ -135,6 +135,7 @@ function syncCallUiControls(){
  setCallSwitchState('showCatAccentsToggle',callUiPrefs.showCatAccents);
  const connection=$('#kmCallConnectionStatus');if(connection)connection.hidden=!callUiPrefs.showConnectionStatus;
  const panel=$('#callPanel');if(panel)panel.classList.toggle('km-no-cat-accents',!callUiPrefs.showCatAccents);
+ document.documentElement.classList.toggle('km-no-cat-accents',!callUiPrefs.showCatAccents);
  syncScreenShareFpsUi();
  const select=$('#videoResolutionSelect'),summary=$('#callMenuQualitySummary');
  if(summary)summary.textContent=!select||select.value==='auto'?'Авто':select.value+'p';
@@ -170,8 +171,11 @@ async function setCallUiPref(key){
  if(!allowed.includes(key))return;
  callUiPrefs[key]=!callUiPrefs[key];saveCallUiPrefs();syncCallUiControls();
  if(key==='echoCancellation'||key==='noiseSuppression')await applyMicrophoneProcessingSettings();
- else if(key==='adaptiveQuality'&&!callUiPrefs.adaptiveQuality){
-  try{await applyCurrentVideoProfileToSenders();}catch(error){console.warn('Could not restore selected video profile:',error);}
+ else if(key==='adaptiveQuality'){
+  screenSharePressureSamples=0;screenShareHealthySamples=0;
+  if(!callUiPrefs.adaptiveQuality){
+   try{await applyCurrentVideoProfileToSenders();}catch(error){console.warn('Could not restore selected video profile:',error);}
+  }
  }else if(key==='startMuted'&&callUiPrefs.startMuted&&isInCall&&isMicOn)await toggleMic();
 }
 function setSettingsTab(tab){
@@ -3144,7 +3148,7 @@ async function selectAudioInput() {
     captured = await captureAudioInput(requestedDeviceId);
     const nextTrack = captured.getAudioTracks()[0];
     if (!nextTrack) throw new Error('Браузер не вернул аудиодорожку микрофона.');
-    nextTrack.enabled = true;
+    nextTrack.enabled = isLiveCall ? isMicOn : true;
     attachLocalAudioTrackLifecycle(nextTrack);
     if (isLiveCall) {
       for (const pc of peerConnections.values()) {
@@ -3167,8 +3171,8 @@ async function selectAudioInput() {
       localStream.addTrack(nextTrack);
       captured = null;
       previousTracks.forEach((track) => { track.onended = null; track.stop(); });
-      isMicOn = true;
-      updateTileState(socket.id, { audio: true, video: isCameraOn });
+      isMicOn = nextTrack.enabled;
+      updateTileState(socket.id, { audio: isMicOn, video: isCameraOn });
       updateCallButtons();
       publishMediaState();
     } else {
@@ -5197,6 +5201,7 @@ $('#settingsDoneBtn').addEventListener('click',closeSettings);
 syncCallUiControls();startInterfaceFpsCounter();
 try {
   $('#screenShareFpsSelect').value = String(getPreferredScreenShareFps());
+  syncScreenShareFpsUi();
 } catch (_error) {}
 $('#audioInputSelect').addEventListener('change', selectAudioInput);
 $('#micPreviewBtn').addEventListener('click', selectAudioInput);
