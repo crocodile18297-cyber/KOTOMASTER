@@ -160,20 +160,48 @@ let authMode = 'signin';
 let authReady = false;
 let authInitializationPromise = null;
 let authInitializationError = null;
+let authRecoveryPromise = null;
+let authStateSubscription = null;
 let authProfile = null;
 let passwordRecoveryPending = false;
 let posthogInitialized = false;
 let posthogIdentity = null;
 
+async function retrySupabaseAuthInitialization() {
+  if (!authRecoveryPromise) {
+    authRecoveryPromise = initializeSupabase()
+      .then(() => {
+        authInitializationError = null;
+        return true;
+      })
+      .catch((error) => {
+        authReady = false;
+        authInitializationError = error;
+        console.error('KOTOMASTER auth initialization retry failed:', error);
+        return false;
+      })
+      .finally(() => {
+        authRecoveryPromise = null;
+      });
+  }
+  return authRecoveryPromise;
+}
+
 async function ensureSupabaseAuthReady() {
+  if (authReady && supabaseClient?.auth) return supabaseClient;
+
+  // Wait for the normal page-start initialization, if it was started.
   if (authInitializationPromise) {
     const initialized = await authInitializationPromise;
-    if (!initialized) {
-      throw authInitializationError || new Error('Не удалось подключить авторизацию. Обнови страницу и попробуй снова.');
-    }
+    if (initialized && authReady && supabaseClient?.auth) return supabaseClient;
   }
-  if (!authReady || !supabaseClient || !supabaseClient.auth) {
-    throw new Error('Авторизация ещё загружается. Подожди немного и попробуй снова.');
+
+  // Recover when a synchronous script error skipped the startup call,
+  // or when the first initialization completed without a usable auth client.
+  const recovered = await retrySupabaseAuthInitialization();
+  if (!recovered || !authReady || !supabaseClient?.auth) {
+    const message = authInitializationError?.message;
+    throw new Error(message || 'Не удалось запустить авторизацию. Обнови страницу и попробуй снова.');
   }
   return supabaseClient;
 }
@@ -292,7 +320,11 @@ async function initializeSupabase() {
     rtcConfigPromise = Promise.resolve(rtcConfigPromise)
       .then(() => loadAuthenticatedTurnServers(authSession));
   }
-  supabaseClient.auth.onAuthStateChange((event, session) => {
+  if (authStateSubscription) {
+    authStateSubscription.unsubscribe();
+    authStateSubscription = null;
+  }
+  const authListenerResult = supabaseClient.auth.onAuthStateChange((event, session) => {
     const previousToken = authSession?.access_token;
     authSession = session;
     updateProductAnalyticsIdentity(session?.user?.id || null);
@@ -332,7 +364,9 @@ async function initializeSupabase() {
       if (roomId) leaveRoom();
     }
   });
+  authStateSubscription = authListenerResult?.data?.subscription || null;
   authReady = true;
+  authInitializationError = null;
   updateAuthInterface();
 }
 
