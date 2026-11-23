@@ -12,7 +12,7 @@
   </script>
   <script src="/socket.io/socket.io.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2" defer></script>
-  <script src="/app.js?v=20261123-screenshare-fps" defer></script>
+  <script src="/app.js?v=20261123-discord-call-ui" defer></script>
 </head>
 <body>
   <div class="ambient ambient-one"></div>
@@ -183,12 +183,27 @@
           <div id="videoGrid" class="video-grid"></div>
           <div id="callEmptyState" class="call-empty-state"><div class="empty-cat">ฅ^•ﻌ•^ฅ</div><h4>Здесь пока тихо</h4><p>Включи камеру и микрофон, чтобы войти в звонок.</p><button id="startCallBtn" class="primary-button start-call-button"><span>▶</span> Войти в видеозвонок</button></div>
         </div>
-        <div class="call-bottom"><div class="call-status"><span id="callStatusDot" class="status-dot"></span><span id="callStatusText">Ты не в звонке</span></div><div class="call-controls">
-          <button id="micBtn" class="call-control" title="Включить микрофон" aria-label="Включить микрофон" disabled><svg viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0m-7 7v3m-4 0h8"/></svg><span>Микрофон</span></button>
-          <button id="cameraBtn" class="call-control" title="Включить камеру" aria-label="Включить камеру" disabled><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3z"/></svg><span>Камера</span></button>
-          <button id="shareBtn" class="call-control share-control" title="Показать экран" aria-label="Показать экран" disabled><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2.5"/><path d="M8 21h8m-4-4v4m-3-9 2-2 2 2m-2-2v5"/></svg><span>Экран</span></button>
-          <button id="leaveCallBtn" class="call-control hangup-control" title="Выйти из звонка" aria-label="Выйти из звонка" disabled><svg viewBox="0 0 24 24"><path d="M4 15q8-7 16 0l-2 4q-1 1-3 0l-2-2h-2l-2 2q-2 1-3 0l-2-4Z"/></svg><span>Завершить</span></button>
-        </div><div class="call-quality"><label class="mic-input-control" for="audioInputSelect">МИКРОФОН <select id="audioInputSelect" aria-label="Выбор микрофона" disabled><option value="">Системный микрофон</option></select><span class="mic-input-meter" title="Уровень сигнала выбранного микрофона"><i id="micInputLevel"></i></span></label><button id="micPreviewBtn" class="mic-preview-button" type="button">ТЕСТ</button><button id="videoQualityBoostBtn" class="video-quality-boost-button" type="button" aria-pressed="false">ЧЁТЧЕ · ВЫКЛ</button><label class="resolution-control" for="videoResolutionSelect">КАЧЕСТВО <select id="videoResolutionSelect" aria-label="Разрешение видео"><option value="auto">Авто</option><option value="360">360p</option><option value="480">480p</option><option value="720" selected>720p</option><option value="1080">1080p</option></select></label><span id="rtcQualityBars" class="quality-bars" title="Ожидаем статистику соединения"><i></i><i></i><i></i></span> <span id="rtcQualityText">WEBRTC</span></div></div>
+        <div class="call-bottom">
+          <div class="call-status"><span id="callStatusDot" class="status-dot"></span><span id="callStatusText">Ты не в звонке</span></div>
+          <div class="call-control-dock">
+            <div class="call-control-cluster">
+              <button id="micBtn" class="call-control" title="Включить микрофон" aria-label="Включить микрофон" disabled><svg viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0m-7 7v3m-4 0h8"/></svg><span>Микрофон</span></button>
+              <button id="cameraBtn" class="call-control" title="Включить камеру" aria-label="Включить камеру" disabled><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3z"/></svg><span>Камера</span></button>
+            </div>
+            <div class="call-control-cluster share-control-cluster">
+              <button id="shareBtn" class="call-control share-control" title="Показать экран" aria-label="Показать экран" disabled><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2.5"/><path d="M8 21h8m-4-4v4m-3-9 2-2 2 2m-2-2v5"/></svg><span>Экран</span></button>
+              <label class="screen-fps-control" for="screenShareFpsSelect"><span>FPS</span><select id="screenShareFpsSelect" aria-label="Частота кадров демонстрации экрана"><option value="30" selected>30</option><option value="60">60</option></select></label>
+            </div>
+            <button id="leaveCallBtn" class="call-control hangup-control" title="Выйти из звонка" aria-label="Выйти из звонка" disabled><svg viewBox="0 0 24 24"><path d="M4 15q8-7 16 0l-2 4q-1 1-3 0l-2-2h-2l-2 2q-2 1-3 0l-2-4Z"/></svg><span>Завершить</span></button>
+          </div>
+          <div class="call-quality">
+            <label class="mic-input-control" for="audioInputSelect">МИКРОФОН <select id="audioInputSelect" aria-label="Выбор микрофона" disabled><option value="">Системный микрофон</option></select><span class="mic-input-meter" title="Уровень сигнала выбранного микрофона"><i id="micInputLevel"></i></span></label>
+            <button id="micPreviewBtn" class="mic-preview-button" type="button">ТЕСТ</button>
+            <button id="videoQualityBoostBtn" class="video-quality-boost-button" type="button" aria-pressed="false">ЧЁТЧЕ · ВЫКЛ</button>
+            <label class="resolution-control" for="videoResolutionSelect">КАЧЕСТВО <select id="videoResolutionSelect" aria-label="Разрешение видео"><option value="auto">Авто</option><option value="360">360p</option><option value="480">480p</option><option value="720" selected>720p</option><option value="1080">1080p</option></select></label>
+            <span id="rtcQualityBars" class="quality-bars" title="Ожидаем статистику соединения"><i></i><i></i><i></i></span><span id="rtcQualityText">WEBRTC</span>
+          </div>
+        </div>
         <p class="call-tip">Подсказка: демонстрация экрана доступна в браузере по защищённому HTTPS-соединению или на localhost.</p>
         <section class="call-history-panel" aria-labelledby="callHistoryTitle">
           <div class="call-history-heading"><strong id="callHistoryTitle">Недавние звонки</strong><button id="clearCallHistoryBtn" type="button">Очистить</button></div>
