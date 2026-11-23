@@ -3288,3 +3288,1400 @@ body:has(#joinScreen:not([hidden])) .ambient { opacity: .035; }
 #joinScreen .form-error { color: #b65d4c; }
 #joinScreen .join-bottom { color: #a18477; }
 #joinScreen .join-bottom b { color: #c8795d; }
+
+
+
+/* =========================================================
+   KOTOMASTER full workspace redesign
+   A structured messenger shell: app rail / channels / view / room members.
+   Existing room chat, community messaging and WebRTC nodes remain live.
+   ========================================================= */
+
+:root {
+  --km-peach-50: #fffaf6;
+  --km-peach-100: #fff1e8;
+  --km-peach-150: #fbe8dc;
+  --km-peach-200: #f4d6c5;
+  --km-peach-300: #e9b99e;
+  --km-apricot: #e99a78;
+  --km-terracotta: #bd765b;
+  --km-coffee: #754b3d;
+  --km-cocoa: #48281f;
+  --km-chocolate: #321b16;
+  --km-ink: #52372d;
+  --km-muted: #987969;
+  --km-border: #ead5c8;
+  --km-olive: #91a574;
+  --accent: #bd765b;
+}
+
+html, body {
+  min-height: 100%;
+}
+body:has(#appScreen:not([hidden])) {
+  margin: 0;
+  overflow: hidden;
+  color: var(--km-ink);
+  background: #3b2119 !important;
+  background-image:
+    radial-gradient(ellipse at 10% 0%, rgba(239, 168, 135, .17), transparent 38%),
+    radial-gradient(ellipse at 90% 100%, rgba(89, 49, 36, .24), transparent 38%) !important;
+}
+body:has(#appScreen:not([hidden])) .ambient { opacity: .025; }
+
+#appScreen.full-workspace {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 68px 246px minmax(0, 1fr) 248px;
+  grid-template-rows: minmax(0, 1fr);
+  width: min(1680px, calc(100vw - 30px));
+  height: min(960px, calc(100dvh - 30px));
+  min-height: 620px;
+  margin: 15px auto;
+  overflow: hidden;
+  border: 1px solid rgba(255, 222, 204, .33);
+  border-radius: 23px;
+  color: var(--km-ink);
+  background: var(--km-peach-100);
+  box-shadow: 0 32px 100px rgba(20, 8, 4, .42);
+  backdrop-filter: blur(22px);
+}
+#appScreen.full-workspace[hidden] { display: none !important; }
+
+/* Leftmost application rail. */
+#appScreen .server-rail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 11px;
+  padding: 15px 8px;
+  background: var(--km-chocolate);
+  border-right: 1px solid rgba(255, 224, 207, .09);
+}
+#appScreen .server-rail-home,
+#appScreen .server-rail-button,
+#appScreen .server-rail-settings {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 15px;
+  color: #f7d8c6;
+  background: #59372b;
+  cursor: pointer;
+  transition: border-radius .16s ease, background .16s ease, transform .16s ease;
+}
+#appScreen .server-rail-home {
+  color: var(--km-cocoa);
+  background: var(--km-apricot);
+  font-size: 19px;
+  font-weight: 900;
+}
+#appScreen .server-rail-home span {
+  position: absolute;
+  right: -5px;
+  bottom: -4px;
+  font-size: 14px;
+}
+#appScreen .server-rail-button svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#appScreen .server-rail-button:hover,
+#appScreen .server-rail-settings:hover {
+  border-radius: 12px;
+  color: #fff;
+  background: #81503d;
+  transform: translateY(-1px);
+}
+#appScreen .server-rail-button.is-active {
+  border-radius: 12px;
+  color: var(--km-cocoa);
+  background: #f2b18f;
+  box-shadow: 0 6px 18px rgba(16, 7, 4, .18);
+}
+#appScreen .server-rail-button.is-active::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 9px;
+  bottom: 9px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: #f8d9c5;
+}
+#appScreen .server-rail-divider {
+  width: 29px;
+  height: 1px;
+  background: rgba(250, 215, 194, .17);
+}
+#appScreen .server-rail-spacer { flex: 1; }
+#appScreen .server-rail-settings {
+  color: #d5a992;
+  background: transparent;
+  font-size: 20px;
+}
+
+/* Channel / room sidebar. */
+#appScreen.full-workspace > .sidebar {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 14px 13px;
+  overflow: hidden;
+  color: #fff0e7;
+  background: #48281f;
+  border-right: 1px solid rgba(248, 197, 170, .14);
+}
+#appScreen .sidebar-brand {
+  padding: 0 4px 24px;
+  color: #fff4eb;
+  font-size: 16px;
+}
+#appScreen .sidebar-brand .brand-mark {
+  width: 38px;
+  height: 38px;
+  color: #563225;
+  background: #f4b18f;
+  border: 1px solid rgba(255, 235, 220, .48);
+  border-radius: 13px;
+  box-shadow: 0 7px 21px rgba(25, 10, 6, .18);
+}
+#appScreen .brand-accent { color: #f3b18f; }
+#appScreen .sidebar-server-heading {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 23px;
+  padding: 11px 12px;
+  border: 1px solid rgba(251, 209, 187, .16);
+  border-radius: 13px;
+  background: #603a2e;
+}
+#appScreen .sidebar-server-heading > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+#appScreen .sidebar-overline {
+  display: block;
+  color: #c99b86;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 1.15px;
+}
+#appScreen .sidebar-server-heading strong {
+  color: #fff2e9;
+  font-size: 12px;
+  font-weight: 800;
+}
+#appScreen .server-online-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: #b4c58d;
+  box-shadow: 0 0 10px rgba(180, 197, 141, .45);
+}
+#appScreen .sidebar-section-label {
+  margin: 0 0 9px 7px;
+  color: #c99b86;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 1.15px;
+}
+#appScreen .sidebar-section-spaced { margin-top: 24px; }
+#appScreen .nav-item {
+  width: 100%;
+  min-width: 0;
+  min-height: 53px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 3px 0;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: #e8cbbb;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background .16s ease, border-color .16s ease, transform .16s ease;
+}
+#appScreen .nav-item:hover {
+  color: #fff7f1;
+  background: rgba(255, 229, 211, .09);
+}
+#appScreen .nav-item.active {
+  color: #4f2c21;
+  border-color: rgba(255, 235, 221, .5);
+  background: #f3b18f;
+  box-shadow: 0 6px 18px rgba(25, 10, 6, .15);
+}
+#appScreen .nav-icon {
+  width: 25px;
+  height: 25px;
+  flex: 0 0 25px;
+  display: grid;
+  place-items: center;
+  color: #f0b28f;
+}
+#appScreen .nav-item.active .nav-icon { color: #613929; }
+#appScreen .nav-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#appScreen .nav-copy {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+#appScreen .nav-copy strong {
+  overflow: hidden;
+  color: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#appScreen .nav-copy small {
+  overflow: hidden;
+  color: #d2ad9b;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#appScreen .nav-item.active .nav-copy small { color: #79503d; }
+#appScreen .nav-indicator { display: none; }
+#appScreen .nav-badge {
+  margin-left: auto;
+  padding: 4px 6px;
+  border-radius: 6px;
+  color: #fff;
+  background: #8b644d;
+  font-size: 7px;
+  letter-spacing: .45px;
+}
+#appScreen .sidebar-room-block {
+  margin-top: 27px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(248, 197, 170, .12);
+}
+#appScreen .room-mini-card {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid rgba(244, 177, 143, .19);
+  border-radius: 12px;
+  color: #fff0e7;
+  background: #603a2e;
+}
+#appScreen .room-mini-icon {
+  width: 33px;
+  height: 33px;
+  flex: 0 0 33px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #563426;
+  background: #e99b78;
+}
+#appScreen .room-mini-info { min-width: 0; flex: 1; }
+#appScreen .room-mini-info strong {
+  display: block;
+  color: #fff4ed;
+  font: 800 11px 'Plus Jakarta Sans', sans-serif;
+  letter-spacing: 1px;
+}
+#appScreen .room-mini-info small {
+  display: block;
+  margin-top: 4px;
+  color: #d8b5a3;
+  font-size: 8px;
+}
+#appScreen .copy-mini { color: #f0c8b2; }
+#appScreen .sidebar-helper-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 23px;
+  padding: 11px;
+  border: 1px solid rgba(248, 197, 170, .13);
+  border-radius: 13px;
+  background: rgba(255, 232, 215, .055);
+}
+#appScreen .helper-cat {
+  width: 33px;
+  height: 33px;
+  flex: 0 0 33px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #563426;
+  background: #f3c2a6;
+  font-size: 19px;
+}
+#appScreen .sidebar-helper-card strong,
+#appScreen .sidebar-helper-card small { display: block; }
+#appScreen .sidebar-helper-card strong { color: #f8e5d8; font-size: 9px; }
+#appScreen .sidebar-helper-card small {
+  margin-top: 4px;
+  color: #d5b09f;
+  font-size: 8px;
+  line-height: 1.45;
+}
+#appScreen .sidebar-bottom {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid rgba(248, 197, 170, .12);
+}
+#appScreen .profile-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid rgba(244, 177, 143, .16);
+  border-radius: 13px;
+  background: #603a2e;
+}
+#appScreen .profile-card strong { color: #fff1e8; }
+#appScreen .profile-info small { color: #d9b19f; }
+#appScreen .profile-username { color: #efc7b0 !important; }
+#appScreen .profile-edit-icon,
+#appScreen .leave-icon {
+  color: #edc7b3;
+  border-color: rgba(244, 177, 143, .2);
+  background: rgba(255, 255, 255, .06);
+}
+#appScreen .sign-out-button {
+  width: 100%;
+  margin-top: 7px;
+  padding: 8px;
+  border: 1px solid rgba(244, 177, 143, .16);
+  border-radius: 9px;
+  color: #e3bca8;
+  background: rgba(255,255,255,.035);
+  font-size: 9px;
+  cursor: pointer;
+}
+#appScreen .sign-out-button:hover { background: rgba(255,255,255,.08); color: #fff4eb; }
+#appScreen .sidebar-caption {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 4px 0;
+  color: #c99b86;
+  font-size: 8px;
+}
+
+/* Main content column. */
+#appScreen > .workspace {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #52372d;
+  background: #fff2e9;
+}
+#appScreen .topbar {
+  min-height: 72px;
+  flex: 0 0 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 21px;
+  border-bottom: 1px solid rgba(140, 98, 83, .15);
+  background: #fffaf6;
+}
+#appScreen .topbar-title { min-width: 0; display: flex; align-items: center; gap: 12px; }
+#appScreen .topbar-room-icon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #edd2c3;
+  border-radius: 12px;
+  color: #80533f;
+  background: #f8e1d4;
+}
+#appScreen .topbar-room-glyph { font-size: 20px; }
+#appScreen .topbar-title h2 {
+  margin: 0;
+  overflow: hidden;
+  color: #56372b;
+  font: 800 14px 'Plus Jakarta Sans', sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#appScreen .topbar-title p { margin: 4px 0 0; color: #9b7b6c; font-size: 9px; }
+#appScreen .topbar-actions { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+#appScreen .chat-search-box {
+  min-width: 150px;
+  max-width: 230px;
+  height: 36px;
+  border-color: #ead6ca;
+  border-radius: 10px;
+  color: #aa8775;
+  background: #fff3ec;
+}
+#appScreen .chat-search-box input { min-width: 0; color: #59382c; font-size: 10px; }
+#appScreen .chat-search-box input::placeholder { color: #b29385; }
+#appScreen .secure-pill { color: #967261; font-size: 9px; white-space: nowrap; }
+#appScreen .secure-pill span { color: #92a779; }
+#appScreen .notifications-button {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border: 1px solid #ecd9ce;
+  border-radius: 10px;
+  color: #805b49;
+  background: #fff8f3;
+}
+#appScreen .invite-button {
+  min-height: 36px;
+  color: #fff7f1;
+  border-color: #d98e70;
+  border-radius: 10px;
+  background: #d88b6a;
+}
+#appScreen .invite-button:hover { background: #c67b5b; }
+
+/* One obvious, contextual route between the main room chat and call. */
+#appScreen .panel-switch-button {
+  min-height: 37px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid #e8c5b2;
+  border-radius: 10px;
+  color: #704638;
+  background: #f7e2d6;
+  font-size: 9px;
+  font-weight: 900;
+  white-space: nowrap;
+  cursor: pointer;
+}
+#appScreen .panel-switch-button:hover { background: #f0d0be; }
+#appScreen .panel-switch-icon { font-size: 15px; }
+
+/* Desktop uses the left channel navigation. Mobile uses the compact bottom bar. */
+#appScreen .mobile-app-nav { display: none; }
+#appScreen .mobile-member-strip { display: none; }
+#appScreen .workspace-views {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+#appScreen .workspace-views > #chatPanel,
+#appScreen .workspace-views > #callPanel,
+#appScreen .workspace-views > #communityPanel {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+#appScreen .workspace-views > [hidden] { display: none !important; }
+
+/* Unified main chat. */
+#appScreen #chatPanel {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  background: #fff3eb;
+}
+#appScreen .view-heading {
+  min-height: 88px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 30px 15px;
+  border-bottom: 1px solid rgba(140, 98, 83, .10);
+  background: #fff7f1;
+}
+#appScreen .view-overline {
+  color: #a97961;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 1.35px;
+}
+#appScreen .view-heading h3 {
+  margin: 5px 0 3px;
+  color: #56372b;
+  font: 800 17px 'Plus Jakarta Sans', sans-serif;
+}
+#appScreen .view-heading p { margin: 0; color: #a08476; font-size: 9px; }
+#appScreen .view-heading-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 11px;
+  border: 1px solid #dfe7d2;
+  border-radius: 20px;
+  color: #73865a;
+  background: #f0f4e9;
+  font-size: 8px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+#appScreen .view-status-dot { width: 6px; height: 6px; border-radius: 50%; background: #91a574; }
+#appScreen .chat-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px clamp(16px, 3vw, 42px) 19px;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+}
+#appScreen .chat-welcome {
+  width: min(620px, 100%);
+  margin: 4px auto 25px;
+  padding: 22px 18px;
+  border: 1px solid #efd9ca;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #fffaf6, #fff0e7);
+  box-shadow: 0 8px 24px rgba(95, 55, 38, .035);
+}
+#appScreen .welcome-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #f0d9c9;
+  border-radius: 14px;
+  color: #80533f;
+  background: #f8e1d4;
+  font-size: 21px;
+}
+#appScreen .chat-welcome h3 { color: #58372b; font: 800 15px 'Plus Jakarta Sans', sans-serif; }
+#appScreen .chat-welcome p { color: #9b7b6c; font-size: 10px; line-height: 1.65; }
+#appScreen .welcome-code { border-color: #ead2c5; background: #fff8f3; }
+#appScreen .welcome-code strong { color: #754b3d; }
+#appScreen .messages-list { width: min(900px, 100%); gap: 17px; padding-bottom: 18px; }
+#appScreen .message-row { gap: 11px; }
+#appScreen .message-content { max-width: min(78%, 650px); }
+#appScreen .message-avatar {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border: 1px solid rgba(164, 121, 101, .16);
+  border-radius: 50%;
+  color: #684335;
+  background: linear-gradient(145deg, #f9d8c4, #e99b78);
+  font-size: 11px;
+}
+#appScreen .message-meta { color: #9c7a6c; font-size: 9px; }
+#appScreen .message-meta strong { color: #684638; font-size: 10px; }
+#appScreen .message-bubble {
+  padding: 11px 14px;
+  border: 1px solid #ead7ca;
+  border-radius: 15px 15px 15px 5px;
+  color: #67483b;
+  background: #fffdfa;
+  font-size: 12px;
+  line-height: 1.65;
+  box-shadow: 0 3px 12px rgba(88, 48, 34, .04);
+}
+#appScreen .mine .message-bubble {
+  border-color: #edc3ae;
+  border-radius: 15px 15px 5px 15px;
+  color: #543326;
+  background: #f6d5c3;
+}
+#appScreen .composer {
+  min-height: 78px;
+  flex: 0 0 auto;
+  gap: 10px;
+  padding: 13px clamp(14px, 3vw, 35px) max(13px, env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(140, 98, 83, .13);
+  background: #fffaf6;
+}
+#appScreen .composer-attach {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-color: #ead2c5;
+  border-radius: 11px;
+  color: #a36f56;
+  background: #f8e6dc;
+}
+#appScreen .composer input {
+  height: 46px;
+  border-color: #e7d0c3;
+  border-radius: 13px;
+  color: #59382c;
+  background: #fffdfb;
+  font-size: 12px;
+}
+#appScreen .composer input:focus { border-color: #d99a7d; box-shadow: 0 0 0 3px rgba(217, 154, 125, .13); }
+#appScreen .composer-hint { color: #b29385; }
+#appScreen .send-button {
+  width: 43px;
+  height: 43px;
+  flex: 0 0 43px;
+  border-radius: 13px;
+  color: #fff5ed;
+  background: #d98d6d;
+  box-shadow: 0 5px 13px rgba(176, 100, 69, .17);
+}
+#appScreen .send-button:hover { background: #c77a5a; }
+
+/* Full video room. */
+#appScreen #callPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 18px 20px 15px;
+  overflow: hidden;
+  background: #fff1e8;
+}
+#appScreen .call-heading {
+  min-height: 70px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 13px;
+  padding: 0 2px;
+}
+#appScreen .call-heading h3 {
+  margin: 5px 0 3px;
+  color: #58372a;
+  font: 800 18px 'Plus Jakarta Sans', sans-serif;
+}
+#appScreen .call-heading p { max-width: 520px; color: #987466; font-size: 9px; line-height: 1.5; }
+#appScreen .call-kicker { color: #a36d56; }
+#appScreen .call-heading-actions { display: flex; align-items: center; gap: 10px; }
+#appScreen .call-room-chip { border-color: #ead0c1; background: #fff8f3; }
+#appScreen .call-room-chip span { color: #a18477; }
+#appScreen .call-room-chip strong { color: #805442; }
+#appScreen .call-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid #e3cfc0;
+  border-radius: 20px;
+  color: #936b55;
+  background: #fff8f3;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .65px;
+  white-space: nowrap;
+}
+#appScreen .call-live-pill i { width: 6px; height: 6px; border-radius: 50%; background: #94a878; }
+#appScreen .call-layout {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+}
+#appScreen #callStage {
+  min-width: 0;
+  min-height: 260px;
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(113, 76, 64, .18);
+  border-radius: 20px;
+  background: linear-gradient(180deg, #ffc0a4 0%, #f3a17b 37%, #a77c68 38%, #704e43 63%, #3f2119 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 12px 32px rgba(95, 49, 32, .10);
+}
+#appScreen #callStage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .13;
+  background-image: radial-gradient(rgba(255,248,241,.7) .7px, transparent .8px);
+  background-size: 26px 26px;
+}
+#appScreen .call-stage-topline {
+  position: absolute;
+  z-index: 3;
+  top: 13px;
+  left: 14px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  pointer-events: none;
+}
+#appScreen .call-stage-topline > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255,236,224,.28);
+  border-radius: 9px;
+  color: #fff5ec;
+  background: rgba(66, 36, 26, .43);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .9px;
+}
+#appScreen .call-stage-hint { color: rgba(255,246,239,.8); font-size: 8px; text-shadow: 0 1px 5px rgba(31,12,7,.3); }
+#appScreen .video-grid {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: center;
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 47%), 1fr));
+  grid-auto-rows: minmax(220px, 1fr);
+  gap: 12px;
+  padding: 48px 16px 16px;
+}
+#appScreen .video-tile {
+  min-width: 0;
+  min-height: 220px;
+  overflow: hidden;
+  border: 1px solid rgba(255,237,224,.45);
+  border-radius: 17px;
+  background: #4b3028;
+  box-shadow: 0 13px 35px rgba(42,19,12,.23);
+}
+#appScreen .video-tile video { width: 100%; height: 100%; min-height: 220px; object-fit: cover; background: #3c241c; }
+#appScreen .video-tile.sharing video { object-fit: contain; }
+#appScreen .video-tile .tile-avatar {
+  width: 82px;
+  height: 82px;
+  border: 1px solid rgba(255,236,221,.35);
+  border-radius: 50%;
+  color: #613d2e;
+  background: linear-gradient(145deg, #f7cfb9, #e99572);
+  font: 800 27px 'Plus Jakarta Sans', sans-serif;
+  box-shadow: 0 8px 26px rgba(31,14,9,.22);
+}
+#appScreen .video-tile .tile-label {
+  left: 11px;
+  bottom: 11px;
+  padding: 7px 10px;
+  border-color: rgba(255,236,223,.22);
+  border-radius: 10px;
+  color: #fff4eb;
+  background: rgba(59,32,24,.79);
+  font-size: 9px;
+}
+#appScreen .video-tile .tile-label .tile-mic { color: #e7bba4; }
+#appScreen .video-tile .tile-label .tile-mic.on { color: #c1d39a; }
+#appScreen .video-fps-badge {
+  top: auto;
+  right: 11px;
+  bottom: 11px;
+  left: auto;
+  padding: 8px 11px;
+  border-color: rgba(255,230,215,.25);
+  border-radius: 11px;
+  color: #fff3eb;
+  background: rgba(58,31,23,.88);
+  font-size: 9px;
+  box-shadow: 0 7px 20px rgba(30,14,8,.18);
+}
+#appScreen .call-empty-state {
+  z-index: 2;
+  color: #fff4eb;
+  padding: 35px 18px;
+  background: radial-gradient(ellipse at 50% 45%, rgba(73,40,28,.13), transparent 56%);
+}
+#appScreen .call-empty-state h4 { color: #fff7f1; font: 800 16px 'Plus Jakarta Sans', sans-serif; }
+#appScreen .call-empty-state p { max-width: 350px; color: rgba(255,241,232,.88); font-size: 10px; line-height: 1.6; }
+#appScreen .empty-cat { color: #ffe0cb; font-size: 44px; text-shadow: 0 5px 22px rgba(70,35,22,.28); }
+#appScreen .start-call-button {
+  width: auto;
+  min-height: 44px;
+  margin-top: 18px;
+  padding: 0 18px;
+  border-radius: 12px;
+  color: #fff8f2;
+  background: #a75f49 !important;
+  box-shadow: 0 10px 26px rgba(71,31,20,.25) !important;
+}
+#appScreen .call-bottom {
+  min-height: 84px;
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(120px,1fr) auto minmax(110px,1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 12px 4px 4px;
+}
+#appScreen .call-status { justify-self: start; color: #8f6b5c; font-size: 9px; }
+#appScreen .status-dot { background: #c5a99a; }
+#appScreen .status-dot.live { background: #93a875; box-shadow: 0 0 10px rgba(147,168,117,.45); }
+#appScreen .call-control-dock { display: flex; align-items: center; justify-content: center; gap: 8px; }
+#appScreen .call-control-cluster {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px;
+  border: 1px solid #ead7ca;
+  border-radius: 15px;
+  background: #fffaf6;
+  box-shadow: 0 7px 22px rgba(88,48,34,.08);
+}
+#appScreen .call-control {
+  min-width: 62px;
+  min-height: 52px;
+  padding: 5px 9px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  color: #795747;
+  background: #f5e3d9;
+}
+#appScreen .call-control:hover:not(:disabled) {
+  border-color: #e5bba7;
+  color: #563629;
+  background: #efd4c5;
+}
+#appScreen .call-control.active { color: #718253; border-color: #d5dfc6; background: #edf2e5; }
+#appScreen .call-control span { font-size: 7px; }
+#appScreen .share-control-cluster { border-color: #d98b6b; background: #e99572; }
+#appScreen .share-control-cluster .call-control { color: #512d22; background: transparent; }
+#appScreen .share-control-cluster .share-control.active { color: #fff8f1; background: rgba(89,48,35,.18); }
+#appScreen .screen-fps-control {
+  display: flex;
+  min-width: 72px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 8px;
+  border-left: 1px solid rgba(91,47,34,.18);
+  color: #512d22;
+  font-size: 9px;
+  font-weight: 900;
+}
+#appScreen .screen-fps-control select {
+  width: 42px;
+  min-height: 33px;
+  padding: 0 4px;
+  border: 1px solid rgba(91,47,34,.20);
+  border-radius: 8px;
+  color: #512d22;
+  background: #fff4ec;
+  font-size: 10px;
+  font-weight: 900;
+}
+#appScreen .hangup-control:not(:disabled) {
+  min-width: 86px;
+  color: #fff3ea;
+  border-color: #704034;
+  background: #6a382c;
+}
+#appScreen .hangup-control:not(:disabled):hover { color: #fff; background: #814737; }
+#appScreen .call-quality {
+  justify-self: end;
+  color: #8e6b5d;
+  letter-spacing: .3px;
+}
+#appScreen .call-quality select { border-color: #ead3c5; color: #684638; background: #fff9f5; }
+#appScreen .call-history-panel {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  padding: 8px 12px;
+  border: 1px solid #ead6ca;
+  border-radius: 12px;
+  background: #fff8f3;
+}
+#appScreen .call-history-panel > summary { display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; }
+#appScreen .call-history-panel > summary::-webkit-details-marker { display: none; }
+#appScreen .call-history-heading strong { color: #674638; font-size: 9px; }
+#appScreen .call-history-heading span { color: #a47965; font-size: 8px; }
+#appScreen .call-history-clear { margin-top: 8px; color: #a47965; background: transparent; border: 0; cursor: pointer; font-size: 9px; }
+#appScreen .call-tip { margin: 7px 0 0; color: #a18477; font-size: 8px; }
+
+/* Friends and DMs remain a separate community area, not a second room chat. */
+#appScreen #communityPanel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  overflow: hidden;
+  background: #fff3eb;
+}
+#appScreen #communityPanel[hidden] { display: none !important; }
+#appScreen .community-header { flex: 0 0 auto; padding: 2px 2px 13px; }
+#appScreen .community-header h3 { color: #56372b; font: 800 18px 'Plus Jakarta Sans',sans-serif; }
+#appScreen .community-header p { color: #987969; font-size: 9px; }
+#appScreen .community-tabs { border-color: #ead5c8; background: #fffaf6; }
+#appScreen .community-tab { color: #8e6a59; }
+#appScreen .community-tab.active { color: #744b3a; background: #f7dfd2; }
+#appScreen .community-layout {
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: minmax(190px, 265px) minmax(0,1fr);
+  gap: 10px;
+  margin-top: 10px;
+}
+#appScreen .community-list-panel,
+#appScreen .community-chat-panel {
+  border-color: #ead5c8;
+  background: #fffaf6;
+  border-radius: 14px;
+}
+#appScreen .community-list-panel { padding: 11px; }
+#appScreen .community-chat-panel { display: flex; flex-direction: column; }
+#appScreen .community-chat-heading { background: #fffaf6; border-color: #ead9ce; }
+#appScreen .community-chat-heading strong { color: #58372b; }
+#appScreen .community-chat-heading small { color: #9b7b6c; }
+#appScreen .community-messages { background: #fffdfb; }
+#appScreen .community-message { border-color: #ead8cd; background: #fff; }
+#appScreen .community-message.is-own { border-color: #edc8b4; background: #fff0e7; }
+#appScreen .community-message p { color: #563d31; }
+#appScreen .community-composer { background: #fffaf6; border-color: #ead9ce; }
+#appScreen .community-composer input { border-color: #e7d0c3; background: #fffdfb; color: #59382c; }
+#appScreen .community-composer button { background: #d88b6a; }
+
+/* Right-side room information and live roster. */
+#appScreen > .room-details-rail {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 14px;
+  overflow: hidden;
+  border-left: 1px solid #ead4c7;
+  color: #614337;
+  background: #fbede4;
+}
+#appScreen .room-details-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 17px;
+}
+#appScreen .room-details-heading strong {
+  display: block;
+  margin-top: 4px;
+  color: #58372b;
+  font: 800 13px 'Plus Jakarta Sans',sans-serif;
+}
+#appScreen .room-private-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #ead2c3;
+  border-radius: 10px;
+  color: #94664f;
+  background: #fff7f1;
+}
+#appScreen .room-details-code-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid #ead1c3;
+  border-radius: 13px;
+  background: #fff8f3;
+}
+#appScreen .room-details-code-icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #704638;
+  background: #f5d8c7;
+}
+#appScreen .room-details-code-card > div:nth-child(2) { min-width: 0; flex: 1; }
+#appScreen .room-details-code-card span {
+  display: block;
+  color: #9b7968;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .7px;
+}
+#appScreen .room-details-code-card strong {
+  display: block;
+  margin-top: 3px;
+  color: #59382c;
+  font: 800 12px 'Plus Jakarta Sans',sans-serif;
+  letter-spacing: 1.1px;
+}
+#appScreen .room-details-code-card button {
+  width: 29px;
+  height: 29px;
+  flex: 0 0 29px;
+  border: 1px solid #ead8cd;
+  border-radius: 8px;
+  color: #8d604c;
+  background: #fff;
+  cursor: pointer;
+}
+#appScreen .room-details-members-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 24px 1px 10px;
+}
+#appScreen .room-details-members-heading strong { display: block; color: #59382c; font-size: 11px; font-weight: 900; }
+#appScreen .room-details-members-heading small { display: block; margin-top: 3px; color: #a18477; font-size: 8px; }
+#appScreen .room-details-members-heading .member-count {
+  padding: 5px 7px;
+  border: 1px solid #e5d3c6;
+  border-radius: 8px;
+  color: #805a47;
+  background: #fff8f3;
+  font-size: 8px;
+}
+#appScreen .room-details-rail .member-list {
+  min-height: 0;
+  max-height: none;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  overflow-y: auto;
+}
+#appScreen .room-details-rail .member-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  color: #654638;
+  background: rgba(255, 250, 246, .65);
+}
+#appScreen .room-details-rail .member-row:hover { border-color: #edd8ca; background: #fffaf6; }
+#appScreen .room-details-rail .avatar {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 50%;
+  color: #684335;
+  background: linear-gradient(145deg, #f9d8c4, #e99b78);
+}
+#appScreen .room-details-rail .member-name {
+  min-width: 0;
+  flex: 1;
+  color: #644638;
+  font-size: 9px;
+}
+#appScreen .room-details-rail .member-state { color: #a88a7b; font-size: 8px; }
+#appScreen .room-details-rail .member-state.in-call { color: #839765; }
+#appScreen .room-details-rail .member-local-mute {
+  min-height: 29px;
+  padding: 4px 6px;
+  border-color: #e8d1c3;
+  border-radius: 7px;
+  color: #84604d;
+  background: #fff8f3;
+  font-size: 8px;
+}
+#appScreen .room-details-footer {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: auto;
+  padding: 11px 9px;
+  border: 1px solid #ead5c8;
+  border-radius: 12px;
+  background: #fff8f3;
+}
+#appScreen .room-details-footer-icon {
+  width: 31px;
+  height: 31px;
+  flex: 0 0 31px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #f7e2d6;
+}
+#appScreen .room-details-footer strong { display: block; color: #6a493b; font-size: 8px; }
+#appScreen .room-details-footer small { display: block; margin-top: 3px; color: #a18477; font-size: 7px; line-height: 1.4; }
+
+/* Desktop width adjustments. */
+@media (max-width: 1380px) {
+  #appScreen.full-workspace { grid-template-columns: 62px 225px minmax(0,1fr) 220px; }
+  #appScreen .topbar { padding-inline: 14px; }
+  #appScreen .topbar-actions { gap: 6px; }
+  #appScreen .secure-pill { display: none; }
+  #appScreen .call-panel { padding-inline: 15px; }
+  #appScreen .room-details-rail { padding-inline: 11px; }
+}
+@media (max-width: 1120px) {
+  #appScreen.full-workspace { grid-template-columns: 60px 220px minmax(0,1fr); }
+  #appScreen > .room-details-rail { display: none; }
+  #appScreen .workspace-views { min-width: 0; }
+}
+
+/* Mobile: keep the actual chat/call controls visible and switch with a bottom nav. */
+@media (max-width: 740px) {
+  body:has(#appScreen:not([hidden])) { overflow: hidden; }
+  #appScreen.full-workspace {
+    width: 100%;
+    height: 100dvh;
+    min-height: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: minmax(0,1fr);
+    grid-template-rows: minmax(0,1fr);
+    border: 0;
+    border-radius: 0;
+  }
+  #appScreen > .server-rail,
+  #appScreen > .sidebar,
+  #appScreen > .room-details-rail { display: none !important; }
+  #appScreen > .workspace {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    grid-column: 1;
+    grid-row: 1;
+  }
+  #appScreen .topbar {
+    min-height: 62px;
+    height: 62px;
+    flex: 0 0 62px;
+    gap: 7px;
+    padding: 0 10px;
+  }
+  #appScreen .topbar-title { gap: 7px; }
+  #appScreen .topbar-room-icon { width: 32px; height: 32px; flex: 0 0 32px; }
+  #appScreen .topbar-title h2 { font-size: 11px; }
+  #appScreen .topbar-title p { font-size: 8px; }
+  #appScreen .topbar-actions { gap: 5px; }
+  #appScreen .chat-search-box,
+  #appScreen .secure-pill,
+  #appScreen #notificationsBtn,
+  #appScreen #settingsBtn,
+  #appScreen #mainPanelSwitchBtn { display: none !important; }
+  #appScreen .invite-button { width: 36px; min-width: 36px; min-height: 36px; justify-content: center; padding: 0; font-size: 0; }
+  #appScreen .invite-button span { font-size: 17px; }
+  #appScreen .mobile-app-nav {
+    position: absolute;
+    z-index: 40;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: calc(62px + env(safe-area-inset-bottom));
+    display: grid;
+    grid-template-columns: repeat(3,1fr);
+    align-items: center;
+    gap: 4px;
+    padding: 5px 12px max(7px, env(safe-area-inset-bottom));
+    border-top: 1px solid #ead5c8;
+    background: rgba(255, 250, 246, .97);
+    backdrop-filter: blur(18px);
+  }
+  #appScreen .mobile-nav-button {
+    position: relative;
+    min-width: 0;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    color: #8c6d5d;
+    background: transparent;
+    cursor: pointer;
+  }
+  #appScreen .mobile-nav-button > span { font-size: 17px; line-height: 1; }
+  #appScreen .mobile-nav-button strong { font-size: 10px; font-weight: 900; }
+  #appScreen .mobile-nav-button.active {
+    border-color: #ecd3c4;
+    color: #704638;
+    background: #f8e5d9;
+  }
+  #appScreen .mobile-nav-button i {
+    position: absolute;
+    top: 7px;
+    right: calc(50% - 21px);
+    width: 7px;
+    height: 7px;
+    border: 1px solid #fffaf6;
+    border-radius: 50%;
+    background: #91a574;
+  }
+  #appScreen .mobile-member-strip {
+    min-height: 46px;
+    flex: 0 0 46px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 10px;
+    overflow-x: auto;
+    border-bottom: 1px solid #ead9ce;
+    background: #fbede4;
+    scrollbar-width: none;
+  }
+  #appScreen .mobile-member-strip::-webkit-scrollbar { display: none; }
+  #appScreen .mobile-member-chip {
+    min-height: 32px;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 7px 3px 4px;
+    border: 1px solid #ead5c8;
+    border-radius: 20px;
+    color: #755143;
+    background: #fff8f3;
+  }
+  #appScreen .mobile-member-avatar {
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: #f3c6ad;
+    color: #684335;
+    font-size: 9px;
+    font-weight: 900;
+  }
+  #appScreen .mobile-member-name { font-size: 9px; font-weight: 800; }
+  #appScreen .mobile-member-state { width: 6px; height: 6px; border-radius: 50%; background: #b6c394; }
+  #appScreen .mobile-member-state.in-call { background: #df9877; }
+  #appScreen .mobile-local-mute {
+    width: 27px;
+    height: 27px;
+    min-width: 27px;
+    border: 0;
+    border-radius: 50%;
+    background: #f6e2d7;
+    font-size: 11px;
+  }
+  #appScreen .workspace-views { min-height: 0; flex: 1; padding-bottom: 62px; }
+  #appScreen .view-heading { min-height: 70px; padding: 12px 14px; }
+  #appScreen .view-heading h3 { font-size: 14px; }
+  #appScreen .view-heading p { font-size: 8px; }
+  #appScreen .view-heading-badge { padding: 6px 8px; font-size: 7px; }
+  #appScreen .chat-scroll { padding: 12px 10px 10px; }
+  #appScreen .chat-welcome { margin: 2px auto 14px; padding: 14px 12px; }
+  #appScreen .chat-welcome h3 { font-size: 13px; }
+  #appScreen .chat-welcome p { font-size: 9px; }
+  #appScreen .messages-list { gap: 12px; }
+  #appScreen .message-content { max-width: min(82%, 540px); }
+  #appScreen .message-avatar { width: 29px; height: 29px; flex-basis: 29px; }
+  #appScreen .message-bubble { padding: 9px 11px; font-size: 11px; }
+  #appScreen .composer {
+    min-height: 62px;
+    gap: 6px;
+    padding: 7px 9px max(9px, env(safe-area-inset-bottom));
+  }
+  #appScreen .composer-attach { display: none; }
+  #appScreen .composer input { height: 43px; min-height: 43px; font-size: 11px; }
+  #appScreen .composer-hint { display: none; }
+  #appScreen .send-button { width: 40px; height: 40px; flex-basis: 40px; }
+  #appScreen #callPanel { padding: 10px 9px 8px; }
+  #appScreen .call-heading { min-height: 58px; margin-bottom: 8px; }
+  #appScreen .call-heading h3 { font-size: 15px; }
+  #appScreen .call-heading p { max-width: 210px; font-size: 8px; }
+  #appScreen .call-heading-actions { gap: 5px; }
+  #appScreen .call-live-pill { display: none; }
+  #appScreen .call-room-chip { padding: 6px 8px; }
+  #appScreen .call-layout { min-height: 0; }
+  #appScreen #callStage { min-height: 0; border-radius: 14px; }
+  #appScreen .call-stage-topline { top: 8px; left: 8px; right: 8px; }
+  #appScreen .call-stage-topline > span:first-child { padding: 5px 7px; font-size: 7px; }
+  #appScreen .call-stage-hint { display: none; }
+  #appScreen .video-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(145px, 46%),1fr));
+    grid-auto-rows: minmax(125px,1fr);
+    gap: 6px;
+    padding: 38px 6px 6px;
+  }
+  #appScreen .video-tile,
+  #appScreen .video-tile video { min-height: 125px; }
+  #appScreen .video-tile .tile-avatar { width: 58px; height: 58px; font-size: 20px; }
+  #appScreen .video-tile .tile-label { left: 6px; bottom: 6px; padding: 5px 7px; font-size: 8px; }
+  #appScreen .video-fps-badge { right: 6px; bottom: 6px; max-width: calc(100% - 12px); padding: 5px 7px; font-size: 7px; }
+  #appScreen .call-bottom {
+    min-height: 0;
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 7px;
+    padding: 8px 0 2px;
+  }
+  #appScreen .call-status { justify-self: center; font-size: 8px; }
+  #appScreen .call-control-dock { width: 100%; flex-wrap: wrap; gap: 5px; }
+  #appScreen .call-control-cluster { padding: 3px; gap: 2px; border-radius: 12px; }
+  #appScreen .call-control { min-width: 44px; width: 47px; min-height: 46px; padding: 3px; border-radius: 9px; }
+  #appScreen .call-control svg { width: 16px; height: 16px; }
+  #appScreen .call-control span { font-size: 6px; }
+  #appScreen .screen-fps-control { min-width: 59px; padding-inline: 4px; }
+  #appScreen .screen-fps-control select { width: 35px; min-height: 29px; }
+  #appScreen .hangup-control:not(:disabled) { min-width: 70px; width: 70px; }
+  #appScreen .call-quality { position: static; width: 100%; justify-content: center; gap: 5px; margin-top: 3px; padding: 8px; font-size: 6px; }
+  #appScreen .call-history-panel { margin-top: 5px; padding: 6px 9px; }
+  #appScreen .call-tip { display: none; }
+  #appScreen #communityPanel { padding: 10px; }
+  #appScreen .community-header { padding-bottom: 9px; }
+  #appScreen .community-header h3 { font-size: 15px; }
+  #appScreen .community-header p { font-size: 8px; }
+  #appScreen .community-layout { grid-template-columns: minmax(105px, 34%) minmax(0,1fr); gap: 6px; }
+  #appScreen .community-list-panel { padding: 6px; }
+  #appScreen .community-person-item,
+  #appScreen .community-conversation-item { padding: 7px 5px; }
+  #appScreen .community-conversation-copy strong,
+  #appScreen .community-person-copy strong { font-size: 9px; }
+  #appScreen .community-conversation-copy small,
+  #appScreen .community-person-copy small { font-size: 7px; }
+  #appScreen .community-messages { padding: 8px; }
+  #appScreen .community-message { max-width: 90%; padding: 7px 8px; }
+  #appScreen .community-message p { font-size: 9px; }
+  #appScreen .community-composer { gap: 4px; padding: 6px; }
+  #appScreen .community-composer > button { width: 29px; height: 32px; }
+  #appScreen .community-composer input { height: 34px; padding-inline: 6px; font-size: 9px; }
+}
+@media (max-width: 390px) {
+  #appScreen .topbar { padding-inline: 7px; }
+  #appScreen .topbar-title { gap: 5px; }
+  #appScreen .topbar-room-icon { width: 29px; height: 29px; flex-basis: 29px; }
+  #appScreen .topbar-title h2 { font-size: 10px; }
+  #appScreen .topbar-title p { font-size: 7px; }
+  #appScreen .topbar-actions { gap: 3px; }
+  #appScreen .call-heading p { max-width: 165px; }
+  #appScreen .call-control-dock { gap: 3px; }
+  #appScreen .call-control { min-width: 41px; width: 43px; }
+  #appScreen .hangup-control:not(:disabled) { min-width: 64px; width: 64px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #appScreen .server-rail-button,
+  #appScreen .nav-item,
+  #appScreen .mobile-nav-button,
+  #appScreen .call-control { transition: none !important; }
+}
