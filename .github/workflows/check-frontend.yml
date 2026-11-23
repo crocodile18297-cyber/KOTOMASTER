@@ -2,7 +2,7 @@ name: Check JavaScript syntax
 
 on:
   push:
-    branches: [main, feature/full-messenger-platform, feature/magicpath-call-experience]
+    branches: [main, feature/full-messenger-platform, feature/magicpath-call-experience, fix/exact-magicpath-fps-settings]
     paths:
       - "public/*.js"
       - "public/*.html"
