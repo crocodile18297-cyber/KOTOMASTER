@@ -208,23 +208,33 @@
         </section>
 
         <section id="callPanel" class="call-panel" hidden>
-          <header class="call-heading"><div><div class="call-kicker"><span class="live-dot"></span> KOTO LIVE ROOM</div><h3>Общий звонок</h3><p id="callDescription">Подключись к звонку, чтобы увидеть друзей и начать разговор.</p></div><div class="call-heading-actions"><div class="call-room-chip"><span>ROOM</span><strong id="callRoomCode">------</strong></div><span class="call-live-pill"><i></i> ЖИВОЙ ЗВОНОК</span><button id="callSettingsBtn" class="call-settings-button" type="button" aria-label="Общие настройки KOTOMASTER" title="Общие настройки">⚙</button></div></header>
+          <header class="call-heading">
+            <div>
+              <div class="call-kicker"><span class="live-dot"></span> KOTO LIVE ROOM</div>
+              <h3>Общий звонок</h3>
+              <p id="callDescription">Подключись к звонку, чтобы увидеть друзей и начать разговор.</p>
+            </div>
+            <div class="call-heading-actions">
+              <div class="call-room-chip"><span>ROOM</span><strong id="callRoomCode">------</strong></div>
+              <span class="call-live-pill"><i></i> ЖИВОЙ ЗВОНОК</span>
+            </div>
+          </header>
           <div class="call-layout">
             <div id="callStage" class="call-stage">
               <div class="call-stage-topline"><span><i class="live-dot"></i> ВИДЕОКОМНАТА</span><span class="call-stage-hint">Трансляция участников появится здесь</span></div>
-              <div id="callLiveStats" class="call-live-stats" aria-label="Статистика видеосвязи" aria-live="polite" data-quality="idle">
-                <div class="call-live-metric"><span>ОТПРАВКА</span><strong><b id="callOutgoingFps">—</b><small>FPS</small></strong></div>
-                <div class="call-live-metric"><span>ПРИЁМ</span><strong><b id="callIncomingFps">—</b><small>FPS</small></strong></div>
-                <div class="call-live-metric call-live-latency"><span>ЗАДЕРЖКА</span><strong><b id="callLatency">—</b><small>мс</small></strong></div>
-                <span id="callLiveQuality" class="call-live-quality">ОЖИДАНИЕ</span>
-              </div>
               <div id="videoGrid" class="video-grid"></div>
               <div id="callEmptyState" class="call-empty-state"><div class="empty-cat">ฅ^•ﻌ•^ฅ</div><h4>Комната ждёт тебя</h4><p>Подключи микрофон и камеру, чтобы начать разговор с участниками.</p><button id="startCallBtn" class="primary-button start-call-button" type="button"><span>▶</span> Войти в видеозвонок</button></div>
+              <div class="km-fps-card" aria-label="Частота кадров интерфейса">
+                <div class="km-fps-copy"><div class="km-fps-label">FPS ИНТЕРФЕЙСА</div><div class="km-fps-value"><span id="callInterfaceFps">—</span><small>FPS</small></div></div>
+                <div class="km-fps-bars" aria-hidden="true"><i style="height:8px"></i><i style="height:13px"></i><i style="height:10px"></i><i style="height:18px"></i><i style="height:14px"></i><i style="height:22px"></i><i style="height:17px"></i><i style="height:24px"></i></div>
+              </div>
+              <span class="km-stage-paw km-stage-paw-one" aria-hidden="true">🐾</span>
+              <span class="km-stage-paw km-stage-paw-two" aria-hidden="true">🐾</span>
             </div>
             <aside class="call-participants-panel" aria-label="Участники видеозвонка">
-              <div class="call-participants-heading"><div><small>ТВОЯ КОМНАТА</small><strong>Участники</strong></div><span id="callParticipantCount">0</span></div>
+              <div class="call-participants-heading"><div><small>УЧАСТНИКИ</small><strong>В звонке</strong></div><span id="callParticipantCount">0</span></div>
               <div id="callParticipantList" class="call-participant-list"><div class="call-participants-empty"><span>🐈</span><strong>Пока здесь тихо</strong><small>Участники появятся после входа</small></div></div>
-              <div class="call-panel-footer"><span>🐾</span><div><strong>Кото-комната</strong><small>Всё для комфортного общения</small></div></div>
+              <div class="call-panel-footer"><span>🐾</span><div><strong>Кото-комната</strong><small>Комфортное общение</small></div></div>
             </aside>
           </div>
           <div class="call-bottom">
@@ -234,25 +244,47 @@
                 <button id="micBtn" class="call-control" title="Включить микрофон" aria-label="Включить микрофон" disabled><svg viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0m-7 7v3m-4 0h8"/></svg><span>Микрофон</span></button>
                 <button id="cameraBtn" class="call-control" title="Включить камеру" aria-label="Включить камеру" disabled><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3z"/></svg><span>Камера</span></button>
               </div>
-              <div class="call-control-cluster share-control-cluster"><button id="shareBtn" class="call-control share-control" title="Показать экран" aria-label="Показать экран" disabled><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2.5"/><path d="M8 21h8m-4-4v4m-3-9 2-2 2 2m-2-2v5"/></svg><span>Демонстрация</span></button><label class="screen-fps-control" for="screenShareFpsSelect"><span>FPS</span><select id="screenShareFpsSelect" aria-label="Частота кадров демонстрации экрана"><option value="30" selected>30</option><option value="60">60</option></select></label></div>
-              <button id="callAdvancedBtn" class="call-control more-control" type="button" title="Дополнительные настройки" aria-label="Дополнительные настройки" aria-expanded="false"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg><span>Ещё</span></button>
+              <div class="call-control-cluster share-control-cluster">
+                <button id="shareBtn" class="call-control share-control" title="Показать экран" aria-label="Показать экран" disabled><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2.5"/><path d="M8 21h8m-4-4v4m-3-9 2-2 2 2m-2-2v5"/></svg><span>Демонстрация</span></button>
+                <div class="km-fps-picker">
+                  <button id="screenShareFpsToggle" class="km-fps-toggle" type="button" aria-expanded="false" aria-controls="screenShareFpsMenu"><span id="screenShareFpsValue">30 FPS</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button>
+                  <div id="screenShareFpsMenu" class="km-fps-menu" hidden>
+                    <div class="km-fps-menu-title">Целевой режим трансляции</div>
+                    <button type="button" class="km-fps-option" data-screen-fps-choice="30" aria-pressed="true"><span><b>30 FPS</b><small>Стабильность и экономия сети</small></span><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></button>
+                    <button type="button" class="km-fps-option" data-screen-fps-choice="60" aria-pressed="false"><span><b>60 FPS</b><small>Более плавное движение</small></span><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></button>
+                    <div class="km-fps-menu-note">Фактическая частота может снижаться, если сеть или устройство не справляются.</div>
+                  </div>
+                  <select id="screenShareFpsSelect" aria-label="Частота кадров демонстрации экрана" hidden><option value="30">30</option><option value="60">60</option></select>
+                </div>
+              </div>
+              <div class="km-call-menu-wrap">
+                <button id="callAdvancedBtn" class="call-control more-control" type="button" title="Дополнительные настройки" aria-label="Дополнительные настройки" aria-expanded="false" aria-controls="callMenu"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg><span>Ещё</span></button>
+                <div id="callMenu" class="km-call-menu" hidden>
+                  <div class="km-call-menu-heading">
+                    <svg class="km-cat-icon" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="31" fill="#F9D6C4"/><path d="M12 26 10 9q0-3 4-1l14 10M52 26l2-17q0-3-4-1L36 18" fill="#F6C4A9" stroke="#553126" stroke-width="2.2" stroke-linejoin="round"/><path d="M15 25Q15 12 32 12t17 13v12q0 17-17 17T15 37Z" fill="#F6C4A9" stroke="#553126" stroke-width="2"/><path d="M13 22 14 12l10 7M51 22l-1-10-10 7" fill="#FFF0E6"/><ellipse cx="24" cy="32" rx="2.4" ry="3.1" fill="#40251D"/><ellipse cx="40" cy="32" rx="2.4" ry="3.1" fill="#40251D"/><path d="M29 39q3-3 6 0l-3 3Z" fill="#9B5147"/><path d="M32 42q-3 5-7 1m7-1q3 5 7 1" fill="none" stroke="#553126" stroke-width="1.7" stroke-linecap="round"/></svg>
+                    <div><strong>Настройки звонка</strong><small>Качество и параметры видео</small></div>
+                    <span class="km-menu-paw" aria-hidden="true">🐾</span>
+                  </div>
+                  <label class="km-menu-label" for="videoResolutionSelect">Качество видео</label>
+                  <select id="videoResolutionSelect" aria-label="Качество видео">
+                    <option value="auto">Автоматически</option><option value="720">720p · HD</option><option value="1080">1080p · Full HD</option>
+                  </select>
+                  <button id="adaptiveQualityToggle" class="km-menu-switch" type="button" role="switch" aria-checked="true">
+                    <span><b>Автоподстройка качества</b><small>Снижать качество при слабой сети</small></span><span class="km-switch-track"><i></i></span>
+                  </button>
+                  <div class="km-menu-divider"></div>
+                  <button id="openAudioSettingsBtn" class="km-menu-audio" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 13l2 1-2 4-2-1a8 8 0 0 1-2 1l-.3 2h-4L10 18a8 8 0 0 1-2-1l-2 1-2-4 2-1v-2l-2-1 2-4 2 1a8 8 0 0 1 2-1l.3-2h4L15 6a8 8 0 0 1 2 1l2-1 2 4-2 1z"/></svg>Проверить микрофон и звук</button>
+                  <div class="km-call-menu-footer"><span>Цель: <b id="callMenuFpsSummary">30 FPS</b></span><span>Качество: <b id="callMenuQualitySummary">Авто</b></span></div>
+                </div>
+              </div>
               <button id="leaveCallBtn" class="call-control hangup-control" title="Выйти из звонка" aria-label="Выйти из звонка" disabled><svg viewBox="0 0 24 24"><path d="M4 15q8-7 16 0l-2 4q-1 1-3 0l-2-2h-2l-2 2q-2 1-3 0l-2-4Z"/></svg><span>Завершить</span></button>
-            </div>
-            <div class="call-quality" hidden>
-              <div class="call-quality-heading"><strong>НАСТРОЙКИ ЗВОНКА</strong><span>Звук и качество трансляции</span></div>
-              <label class="mic-input-control" for="audioInputSelect">МИКРОФОН <select id="audioInputSelect" aria-label="Выбор микрофона" disabled><option value="">Системный микрофон</option></select><span class="mic-input-meter" title="Уровень сигнала выбранного микрофона"><i id="micInputLevel"></i></span></label>
-              <button id="micPreviewBtn" class="mic-preview-button" type="button">ТЕСТ</button>
-              <button id="videoQualityBoostBtn" class="video-quality-boost-button" type="button" aria-pressed="false">ЧЁТЧЕ · ВЫКЛ</button>
-              <label class="resolution-control" for="videoResolutionSelect">КАЧЕСТВО <select id="videoResolutionSelect" aria-label="Разрешение видео"><option value="auto">Авто</option><option value="360">360p</option><option value="480">480p</option><option value="720" selected>720p</option><option value="1080">1080p</option></select></label>
-              <span id="rtcQualityBars" class="quality-bars" title="Ожидаем статистику соединения"><i></i><i></i><i></i></span><span id="rtcQualityText">WEBRTC</span>
-              <p class="call-quality-note">Изменения применяются к текущему WebRTC-соединению. Доступность настроек зависит от устройства и браузера.</p>
             </div>
           </div>
           <details class="call-history-panel"><summary class="call-history-heading"><strong id="callHistoryTitle">Недавние звонки</strong><span>Развернуть</span></summary><button id="clearCallHistoryBtn" class="call-history-clear" type="button">Очистить историю</button><div id="callHistoryList" class="call-history-list"></div><p class="call-history-note">История хранится только в этом браузере.</p></details>
           <p class="call-tip">Подсказка: демонстрация экрана доступна в браузере по защищённому HTTPS-соединению или на localhost.</p>
         </section>
 
-              <section id="communityPanel" class="community-panel" hidden>
+        <section id="communityPanel" class="community-panel" hidden>
         <header class="community-header">
           <div><div class="call-kicker">KOTOMASTER COMMUNITY</div><h3>Сообщения и друзья</h3><p>Личные диалоги, группы и список контактов</p></div>
           <button id="newGroupBtn" class="invite-button" type="button">＋ Новая группа</button>
@@ -311,43 +343,84 @@
       <div class="room-details-footer"><div class="room-details-footer-icon">🐾</div><div><strong>Приватное пространство</strong><small>Подключиться можно только по коду комнаты.</small></div></div>
     </aside>
 
-      <div id="settingsModal" class="community-modal" hidden>
-    <section class="community-modal-card settings-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
-      <button id="closeSettingsBtn" class="community-modal-close" type="button" aria-label="Закрыть">×</button>
-      <div class="call-kicker">KOTOMASTER PERSONAL</div>
-      <h3 id="settingsTitle">Настройки</h3>
-      <section class="settings-section">
-        <strong>Цвет интерфейса</strong>
-        <div class="settings-swatches" role="group" aria-label="Цвет интерфейса">
-          <button type="button" data-accent="#a47965" aria-label="Терракотовый" title="Терракотовый"></button>
-          <button type="button" data-accent="#8b78d6" aria-label="Лавандовый" title="Лавандовый"></button>
-          <button type="button" data-accent="#438d9a" aria-label="Бирюзовый" title="Бирюзовый"></button>
-          <button type="button" data-accent="#518b68" aria-label="Зелёный" title="Зелёный"></button>
-          <button type="button" data-accent="#c16c8a" aria-label="Розовый" title="Розовый"></button>
-          <button type="button" data-accent="#5275b9" aria-label="Синий" title="Синий"></button>
+      <div id="settingsModal" class="community-modal km-settings-overlay" hidden>
+    <section class="community-modal-card settings-card km-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="km-settings-header">
+        <div class="km-settings-avatar"><svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="31" fill="#F9D6C4"/><path d="M12 26 10 9q0-3 4-1l14 10M52 26l2-17q0-3-4-1L36 18" fill="#F6C4A9" stroke="#553126" stroke-width="2.2" stroke-linejoin="round"/><path d="M15 25Q15 12 32 12t17 13v12q0 17-17 17T15 37Z" fill="#F6C4A9" stroke="#553126" stroke-width="2"/><path d="M13 22 14 12l10 7M51 22l-1-10-10 7" fill="#FFF0E6"/><ellipse cx="24" cy="32" rx="2.4" ry="3.1" fill="#40251D"/><ellipse cx="40" cy="32" rx="2.4" ry="3.1" fill="#40251D"/><path d="M29 39q3-3 6 0l-3 3Z" fill="#9B5147"/><path d="M32 42q-3 5-7 1m7-1q3 5 7 1" fill="none" stroke="#553126" stroke-width="1.7" stroke-linecap="round"/></svg></div>
+        <div class="km-settings-title-wrap"><div class="km-settings-title-row"><h3 id="settingsTitle">Настройки KOTOMASTER</h3><span class="km-title-paw" aria-hidden="true">🐾</span></div><p>Настрой устройства и внешний вид под себя</p></div>
+        <button id="closeSettingsBtn" class="community-modal-close km-settings-close" type="button" aria-label="Закрыть настройки">×</button>
+      </div>
+      <div class="km-settings-tabs" role="tablist" aria-label="Разделы настроек">
+        <button id="settingsAudioTab" class="is-active" type="button" role="tab" aria-selected="true" aria-controls="settingsAudioPanel">Звук и микрофон</button>
+        <button id="settingsGeneralTab" type="button" role="tab" aria-selected="false" aria-controls="settingsGeneralPanel">Общие</button>
+      </div>
+      <div id="settingsAudioPanel" class="km-settings-panel" role="tabpanel" aria-labelledby="settingsAudioTab">
+        <div class="km-settings-field">
+          <label for="audioInputSelect">УСТРОЙСТВО ВВОДА</label>
+          <select id="audioInputSelect" aria-label="Выбор микрофона" disabled><option value="">Системный микрофон</option></select>
+          <button id="refreshAudioDevicesBtn" class="km-refresh-devices" type="button">Обновить список устройств</button>
         </div>
-      </section>
-      <section class="settings-section">
-        <strong>Тема</strong>
-        <div class="settings-choice-row">
-          <button type="button" data-theme-choice="light">Светлая</button>
-          <button type="button" data-theme-choice="dark">Тёмная</button>
-          <button type="button" data-theme-choice="system">Системная</button>
+        <div class="km-mic-test-card">
+          <div class="km-mic-test-header">
+            <svg class="km-cat-icon" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="31" fill="#F9D6C4"/><path d="M12 26 10 9q0-3 4-1l14 10M52 26l2-17q0-3-4-1L36 18" fill="#E88E6D" stroke="#553126" stroke-width="2.2" stroke-linejoin="round"/><path d="M15 25Q15 12 32 12t17 13v12q0 17-17 17T15 37Z" fill="#E88E6D" stroke="#553126" stroke-width="2"/><path d="M13 22 14 12l10 7M51 22l-1-10-10 7" fill="#FFF0E6"/><ellipse cx="24" cy="32" rx="2.4" ry="3.1" fill="#40251D"/><ellipse cx="40" cy="32" rx="2.4" ry="3.1" fill="#40251D"/><path d="M29 39q3-3 6 0l-3 3Z" fill="#9B5147"/><path d="M32 42q-3 5-7 1m7-1q3 5 7 1" fill="none" stroke="#553126" stroke-width="1.7" stroke-linecap="round"/></svg>
+            <div><strong>Проверка микрофона</strong><p id="micTestMessage">Нажми «Проверить микрофон», чтобы проверить уровень сигнала.</p></div>
+          </div>
+          <div class="km-mic-level-track"><i id="micInputLevel"></i></div>
+          <div class="km-mic-test-actions"><span id="micTestStatus">МИКРОФОН НЕ ПРОВЕРЯЕТСЯ</span><button id="micPreviewBtn" type="button">Проверить микрофон</button></div>
+          <p id="micTestError" class="km-mic-error" role="status" hidden></p>
         </div>
-      </section>
-      <section class="settings-section">
-        <strong>Размер интерфейса</strong>
-        <div class="settings-choice-row">
-          <button type="button" data-scale-choice="compact">Компактный</button>
-          <button type="button" data-scale-choice="normal">Обычный</button>
-          <button type="button" data-scale-choice="large">Крупный</button>
+        <div class="km-audio-switch-grid">
+          <button id="echoCancellationToggle" class="km-setting-switch" type="button" role="switch" aria-checked="true"><span><b>Подавление эха</b><small>Меньше обратного звука</small></span><span class="km-switch-track"><i></i></span></button>
+          <button id="noiseSuppressionToggle" class="km-setting-switch" type="button" role="switch" aria-checked="true"><span><b>Шумоподавление</b><small>Меньше фонового шума</small></span><span class="km-switch-track"><i></i></span></button>
         </div>
-      </section>
-      <section class="settings-section settings-toggles">
-        <label><span>Звуки интерфейса</span><input id="settingSounds" type="checkbox" checked></label>
-        <label><span>Анимации</span><input id="settingAnimations" type="checkbox" checked></label>
-      </section>
-      <p class="settings-note">Настройки сохраняются на этом устройстве.</p>
+        <p class="km-settings-hint">Для доступа к микрофону открой сайт по HTTPS и разреши браузеру использовать выбранное устройство.</p>
+      </div>
+      <div id="settingsGeneralPanel" class="km-settings-panel" role="tabpanel" aria-labelledby="settingsGeneralTab" hidden>
+        <div class="km-general-switches">
+          <button id="startMutedToggle" class="km-setting-switch" type="button" role="switch" aria-checked="false"><span><b>Отключать микрофон при входе</b><small>При включении микрофон будет выключен в начале звонка</small></span><span class="km-switch-track"><i></i></span></button>
+          <button id="showConnectionToggle" class="km-setting-switch" type="button" role="switch" aria-checked="true"><span><b>Показывать статус соединения</b><small>Индикатор активного звонка в верхней части</small></span><span class="km-switch-track"><i></i></span></button>
+          <button id="showCatAccentsToggle" class="km-setting-switch" type="button" role="switch" aria-checked="true"><span><b>Кото-акценты</b><small>Лапки и декоративные элементы в звонке</small></span><span class="km-switch-track"><i></i></span></button>
+        </div>
+        <div class="km-general-extra">
+          <button id="videoQualityBoostBtn" class="video-quality-boost-button" type="button" aria-pressed="false">ЧЁТЧЕ · ВЫКЛ</button>
+          <span>Повышенная чёткость демонстрации экрана</span>
+        </div>
+        <details class="km-appearance-settings">
+          <summary>Внешний вид и интерфейс</summary>
+          <section class="settings-section">
+            <strong>Цвет интерфейса</strong>
+            <div class="settings-swatches" role="group" aria-label="Цвет интерфейса">
+              <button type="button" data-accent="#a47965" aria-label="Терракотовый" title="Терракотовый"></button>
+              <button type="button" data-accent="#8b78d6" aria-label="Лавандовый" title="Лавандовый"></button>
+              <button type="button" data-accent="#438d9a" aria-label="Бирюзовый" title="Бирюзовый"></button>
+              <button type="button" data-accent="#518b68" aria-label="Зелёный" title="Зелёный"></button>
+              <button type="button" data-accent="#c16c8a" aria-label="Розовый" title="Розовый"></button>
+              <button type="button" data-accent="#5275b9" aria-label="Синий" title="Синий"></button>
+            </div>
+          </section>
+          <section class="settings-section">
+            <strong>Тема</strong>
+            <div class="settings-choice-row">
+              <button type="button" data-theme-choice="light">Светлая</button>
+              <button type="button" data-theme-choice="dark">Тёмная</button>
+              <button type="button" data-theme-choice="system">Системная</button>
+            </div>
+          </section>
+          <section class="settings-section">
+            <strong>Размер интерфейса</strong>
+            <div class="settings-choice-row">
+              <button type="button" data-scale-choice="compact">Компактный</button>
+              <button type="button" data-scale-choice="normal">Обычный</button>
+              <button type="button" data-scale-choice="large">Крупный</button>
+            </div>
+          </section>
+          <section class="settings-section settings-toggles">
+            <label><span>Звуки интерфейса</span><input id="settingSounds" type="checkbox" checked></label>
+            <label><span>Анимации</span><input id="settingAnimations" type="checkbox" checked></label>
+          </section>
+        </details>
+      </div>
+      <div class="km-settings-footer"><span>Изменения сохраняются на этом устройстве</span><button id="settingsDoneBtn" type="button">Готово</button></div>
     </section>
   </div>
   <div id="groupManageModal" class="community-modal" hidden>
