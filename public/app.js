@@ -160,20 +160,87 @@ let authMode = 'signin';
 let authReady = false;
 let authInitializationPromise = null;
 let authInitializationError = null;
+let authRecoveryPromise = null;
+let authStateSubscription = null;
 let authProfile = null;
 let passwordRecoveryPending = false;
 let posthogInitialized = false;
 let posthogIdentity = null;
 
+async function fetchWithTimeout(resource, options = {}, timeoutMs = 12000, timeoutMessage = 'Сервер не ответил вовремя.') {
+  const controller = new AbortController();
+  const callerSignal = options.signal ||
+    (typeof Request !== 'undefined' && resource instanceof Request ? resource.signal : null);
+  const abortFromCaller = () => controller.abort(callerSignal?.reason);
+  if (callerSignal?.aborted) controller.abort(callerSignal.reason);
+  else callerSignal?.addEventListener('abort', abortFromCaller, { once: true });
+
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(resource, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted && !callerSignal?.aborted) {
+      const timeoutError = new Error(timeoutMessage);
+      timeoutError.name = 'NetworkTimeoutError';
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    callerSignal?.removeEventListener('abort', abortFromCaller);
+  }
+}
+
+function waitForPromiseWithTimeout(promise, timeoutMs, timeoutMessage) {
+  let timeoutId = null;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const error = new Error(timeoutMessage);
+      error.name = 'NetworkTimeoutError';
+      reject(error);
+    }, timeoutMs);
+  });
+  return Promise.race([Promise.resolve(promise), timeout])
+    .finally(() => {
+      if (timeoutId) clearTimeout(timeoutId);
+    });
+}
+
+async function retrySupabaseAuthInitialization() {
+  if (!authRecoveryPromise) {
+    authRecoveryPromise = initializeSupabase()
+      .then(() => {
+        authInitializationError = null;
+        return true;
+      })
+      .catch((error) => {
+        authReady = false;
+        authInitializationError = error;
+        console.error('KOTOMASTER auth initialization retry failed:', error);
+        return false;
+      })
+      .finally(() => {
+        authRecoveryPromise = null;
+      });
+  }
+  return authRecoveryPromise;
+}
+
 async function ensureSupabaseAuthReady() {
+  if (authReady && supabaseClient?.auth) return supabaseClient;
+
+  // Wait for the normal page-start initialization, if it was started.
   if (authInitializationPromise) {
     const initialized = await authInitializationPromise;
-    if (!initialized) {
-      throw authInitializationError || new Error('Не удалось подключить авторизацию. Обнови страницу и попробуй снова.');
-    }
+    if (initialized && authReady && supabaseClient?.auth) return supabaseClient;
   }
-  if (!authReady || !supabaseClient || !supabaseClient.auth) {
-    throw new Error('Авторизация ещё загружается. Подожди немного и попробуй снова.');
+
+  // Recover when a synchronous script error skipped the startup call,
+  // or when the first initialization completed without a usable auth client.
+  const recovered = await retrySupabaseAuthInitialization();
+  if (!recovered || !authReady || !supabaseClient?.auth) {
+    const message = authInitializationError?.message;
+    throw new Error(message || 'Не удалось запустить авторизацию. Обнови страницу и попробуй снова.');
   }
   return supabaseClient;
 }
@@ -271,7 +338,12 @@ async function loadAuthenticatedTurnServers(session) {
 }
 
 async function initializeSupabase() {
-  const response = await fetch('/api/config', { cache: 'no-store' });
+  const response = await fetchWithTimeout(
+    '/api/config',
+    { cache: 'no-store' },
+    12000,
+    'Сервер KOTOMASTER не ответил за 12 секунд. Проверь подключение и обнови страницу.'
+  );
   if (!response.ok) throw new Error('Не удалось загрузить настройки сервиса.');
   const config = await response.json();
   appConfig = { ...appConfig, ...config };
@@ -280,9 +352,21 @@ async function initializeSupabase() {
     throw new Error('Авторизация не настроена. Обнови страницу позже.');
   }
   supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabasePublishableKey, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    global: {
+      fetch: (resource, options = {}) => fetchWithTimeout(
+        resource,
+        options,
+        12000,
+        'Supabase не ответил за 12 секунд. Проверь интернет или попробуй отключить VPN.'
+      )
+    }
   });
-  const { data, error } = await supabaseClient.auth.getSession();
+  const { data, error } = await waitForPromiseWithTimeout(
+    supabaseClient.auth.getSession(),
+    15000,
+    'Supabase не завершил проверку сессии за 15 секунд. Проверь соединение с интернетом и попробуй ещё раз.'
+  );
   if (error) throw error;
   authSession = data.session;
   updateProductAnalyticsIdentity(authSession?.user?.id || null);
@@ -292,7 +376,11 @@ async function initializeSupabase() {
     rtcConfigPromise = Promise.resolve(rtcConfigPromise)
       .then(() => loadAuthenticatedTurnServers(authSession));
   }
-  supabaseClient.auth.onAuthStateChange((event, session) => {
+  if (authStateSubscription) {
+    authStateSubscription.unsubscribe();
+    authStateSubscription = null;
+  }
+  const authListenerResult = supabaseClient.auth.onAuthStateChange((event, session) => {
     const previousToken = authSession?.access_token;
     authSession = session;
     updateProductAnalyticsIdentity(session?.user?.id || null);
@@ -332,7 +420,9 @@ async function initializeSupabase() {
       if (roomId) leaveRoom();
     }
   });
+  authStateSubscription = authListenerResult?.data?.subscription || null;
   authReady = true;
+  authInitializationError = null;
   updateAuthInterface();
 }
 
@@ -447,6 +537,7 @@ async function handleAuthSubmit(event) {
 
 function authErrorMessage(error) {
   const message = String(error?.message || 'Не удалось выполнить запрос.');
+  if (error?.name === 'NetworkTimeoutError') return message;
   if (/invalid login credentials/i.test(message)) return 'Неверная почта или пароль.';
   if (/user already registered/i.test(message)) return 'Этот адрес уже зарегистрирован. Попробуй войти.';
   if (/password should be at least/i.test(message)) return 'Пароль должен содержать не менее 8 символов.';
