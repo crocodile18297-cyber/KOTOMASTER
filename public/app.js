@@ -2630,8 +2630,11 @@ function switchPanel(panel) {
   $('#communityPanel').hidden = !isCommunity;
   appScreen.dataset.activePanel = panel;
 
-  document.querySelectorAll('.nav-item, .server-rail-button, .mobile-nav-button').forEach((item) => {
-    item.classList.toggle('active', item.dataset.panel === panel);
+  document.querySelectorAll('.nav-item, .server-rail-button, .server-rail-home, .mobile-nav-button').forEach((item) => {
+    const selected = item.dataset.panel === panel;
+    item.classList.toggle('active', selected);
+    if (item.classList.contains('server-rail-button')) item.classList.toggle('is-active', selected);
+    if (item.classList.contains('server-rail-home')) item.classList.toggle('is-active', selected);
     if (item.classList.contains('mobile-nav-button')) {
       if (item.dataset.panel === panel) item.setAttribute('aria-current', 'page');
       else item.removeAttribute('aria-current');
@@ -2676,8 +2679,8 @@ function updateCallDescription() {
   $('#callNavBadge').hidden = !callIsLive;
   const railBadge = $('#callRailBadge');
   const mobileBadge = $('#mobileCallBadge');
-  if (railBadge) railBadge.hidden = !callIsLive;
-  if (mobileBadge) mobileBadge.hidden = !callIsLive;
+  if (railBadge) { railBadge.hidden = !callIsLive; railBadge.textContent = callIsLive ? '•' : ''; }
+  if (mobileBadge) { mobileBadge.hidden = !callIsLive; mobileBadge.textContent = callIsLive ? '•' : ''; }
 }
 
 function updateCallStage() {
@@ -4782,7 +4785,7 @@ joinRoomForm.addEventListener('submit', async (event) => {
 
 roomInput.addEventListener('input', () => { roomInput.value = roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6); });
 
-document.querySelectorAll('.nav-item, .server-rail-button, .mobile-nav-button').forEach((item) => item.addEventListener('click', () => switchPanel(item.dataset.panel)));
+document.querySelectorAll('.nav-item, .server-rail-button, .server-rail-home, .mobile-nav-button').forEach((item) => item.addEventListener('click', () => switchPanel(item.dataset.panel)));
 $('#mainPanelSwitchBtn')?.addEventListener('click', (event) => switchPanel(event.currentTarget.dataset.panel));
 document.querySelectorAll('.community-tab').forEach((button)=>button.addEventListener('click',()=>setCommunityTab(button.dataset.communityTab)));
 $('#friendSearchInput').addEventListener('input',(event)=>{
