@@ -4471,7 +4471,18 @@ function getScreenShareBitrate(settings = {}, frameRate = 30) {
   return Math.max(1500000, Math.min(8000000, Math.round(target)));
 }
 
-function updateLiveFpsFromTrack(track) {const SCREEN_SHARE_FPS_STEPS = [15, 20, 24, 30, 45, 60];
+function updateLiveFpsFromTrack(track) {
+  if (!track || typeof track.getSettings !== 'function') return;
+  const settings = track.getSettings();
+  const fps = Number(settings.frameRate);
+  const label = $('#rtcQualityText');
+  if (label && Number.isFinite(fps) && fps > 0) {
+    label.textContent = `${Math.round(fps)} FPS · КАМЕРА`;
+    label.title = `Камера сейчас сообщает ${Math.round(fps)} кадров/с`;
+  }
+}
+
+const SCREEN_SHARE_FPS_STEPS = [15, 20, 24, 30, 45, 60];
 
 function getPreferredScreenShareFps() {
   const control = $('#screenShareFpsSelect');
@@ -4559,17 +4570,6 @@ async function handleScreenShareFpsChange() {
   } else {
     screenShareEffectiveFps = selected;
     showToast(`Для следующей трансляции выбрано до ${selected} FPS.`);
-  }
-}
-
-
-  if (!track || typeof track.getSettings !== 'function') return;
-  const settings = track.getSettings();
-  const fps = Number(settings.frameRate);
-  const label = $('#rtcQualityText');
-  if (label && Number.isFinite(fps) && fps > 0) {
-    label.textContent = `${Math.round(fps)} FPS · КАМЕРА`;
-    label.title = `Камера сейчас сообщает ${Math.round(fps)} кадров/с`;
   }
 }
 
