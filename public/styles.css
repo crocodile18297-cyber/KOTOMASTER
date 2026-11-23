@@ -2472,3 +2472,156 @@ html[data-koto-theme="dark"] .message-action-menu-owner { border-color:#49372e; 
 @keyframes km-action-panel-in { from{opacity:0;transform:translateY(8px) scale(.98)} to{opacity:1;transform:translateY(0) scale(1)} }
 @keyframes km-action-sheet-in { from{opacity:.6;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
 
+
+
+/* Discord-inspired video call control dock */
+.call-bottom {
+  min-height: 88px;
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) auto minmax(110px, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 12px 4px 4px;
+}
+.call-status { justify-self: start; min-width: 0; font-size: 10px; letter-spacing: .1px; }
+.call-control-dock { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.call-control-cluster {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 17px;
+  background: #202127;
+  box-shadow: 0 7px 22px rgba(0,0,0,.22);
+}
+.call-control {
+  width: 54px;
+  min-width: 54px;
+  min-height: 52px;
+  display: grid;
+  place-items: center;
+  gap: 0;
+  padding: 6px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #e1e3e6;
+  transition: background .16s ease, color .16s ease, transform .16s ease;
+}
+.call-control svg { width: 23px; height: 23px; stroke-width: 2; }
+.call-control span { display: none; }
+.call-control:hover:not(:disabled) { transform: none; background: rgba(255,255,255,.09); color: #fff; }
+.call-control.active { color: #fff; background: #3c3f48; border-color: transparent; }
+.call-control:disabled { opacity: .38; }
+.hangup-control:not(:disabled) {
+  width: 58px;
+  min-width: 58px;
+  border-radius: 15px;
+  background: #d83b4b;
+  color: #fff;
+}
+.hangup-control:not(:disabled):hover { background: #ed4657; }
+.screen-fps-control {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border-left: 1px solid rgba(255,255,255,.12);
+  color: #aeb0b8;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .4px;
+}
+.screen-fps-control select {
+  width: 55px;
+  min-height: 32px;
+  padding: 0 6px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 9px;
+  outline: none;
+  background: #292b32;
+  color: #f2f3f5;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.call-quality {
+  justify-self: end;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 100%;
+  letter-spacing: .4px;
+}
+.video-fps-badge {
+  position: absolute;
+  z-index: 4;
+  top: 10px;
+  left: 10px;
+  max-width: calc(100% - 20px);
+  overflow: hidden;
+  padding: 6px 9px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 8px;
+  background: rgba(20,22,27,.86);
+  color: #f2f3f5;
+  font: 800 10px/1.2 system-ui, sans-serif;
+  letter-spacing: .45px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  backdrop-filter: blur(10px);
+}
+.video-fps-badge[hidden] { display: none !important; }
+.video-tile.sharing video { object-fit: contain; background: #08090b; }
+@media (max-width: 900px) {
+  .call-bottom {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 9px;
+    padding-top: 10px;
+  }
+  .call-status { justify-self: center; order: 2; }
+  .call-control-dock { order: 1; width: 100%; gap: 8px; }
+  .call-quality { order: 3; justify-self: center; justify-content: center; }
+}
+@media (max-width: 480px) {
+  .call-control-dock { gap: 6px; }
+  .call-control-cluster { gap: 2px; padding: 4px; border-radius: 14px; }
+  .call-control { width: 46px; min-width: 46px; min-height: 46px; }
+  .call-control svg { width: 21px; height: 21px; }
+  .hangup-control:not(:disabled) { width: 50px; min-width: 50px; }
+  .screen-fps-control { padding-inline: 6px; gap: 3px; }
+  .screen-fps-control select { width: 49px; }
+  .call-quality { font-size: 7px; gap: 6px; }
+}
+
+
+.call-bottom { position: relative; }
+.more-control { background: #292b32; }
+.more-control[aria-expanded="true"] { background: #41444d; color: #fff; }
+.call-quality {
+  position: absolute;
+  z-index: 12;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: flex;
+  width: min(650px, calc(100% - 12px));
+  padding: 13px 15px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 14px;
+  background: #202127;
+  box-shadow: 0 14px 42px rgba(0,0,0,.38);
+}
+.call-quality[hidden] { display: none !important; }
+@media (max-width: 900px) {
+  .call-quality {
+    position: static;
+    width: min(100%, 650px);
+    justify-self: center;
+    order: 3;
+    margin-top: 0;
+  }
+}
