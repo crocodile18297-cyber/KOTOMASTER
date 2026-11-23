@@ -61,7 +61,13 @@ let wasMicInterrupted = false;
 let wasCameraInterrupted = false;
 let videoQualityBoostEnabled = (() => { try { return localStorage.getItem('kotomaster-video-quality-boost') === '1'; } catch (_error) { return false; } })();
 let resumeCallAfterRestore = false;
-let appConfig = { iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }], iceTransportPolicy: 'all', maxRoomSize: 6 };
+let appConfig = {
+  iceServers: [
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }
+  ],
+  iceTransportPolicy: 'all',
+  maxRoomSize: 6
+};
 let rtcConfigPromise = null;
 let peerConnectionPromises = new Map();
 let remoteAudioElements = new Map();
@@ -198,6 +204,9 @@ function captureWebRtcDiagnostic(stage, error, peerConnection = null) {
     stage: String(stage).slice(0, 48),
     error_name: errorName
   };
+  if (error && Number.isInteger(error.errorCode)) {
+    properties.error_code = error.errorCode;
+  }
   if (peerConnection) {
     const connectionState = String(peerConnection.connectionState || '').slice(0, 24);
     const iceState = String(peerConnection.iceConnectionState || '').slice(0, 24);
@@ -759,6 +768,16 @@ function bindSocketEvents() {
   });
   socket.on('connect', async () => {
     if (!roomId || participants.has(socket.id)) return;
+
+    // A new Socket.IO ID invalidates the old signalling identity. Recreate P2P peers
+    // after rejoining rather than reusing connections negotiated against the old ID.
+    const stalePeerIds = Array.from(peerConnections.keys());
+    stalePeerIds.forEach((peerId) => {
+      closePeer(peerId);
+      removeVideoTile(peerId);
+    });
+    pendingIce.clear();
+
     const reconnectRoom = roomId;
     try {
       const response = await emitWithAck('room:join', { name: myName, roomId: reconnectRoom, clientId: tabClientId });
@@ -3063,9 +3082,10 @@ function scheduleIceRestart(peerId, pc) {
     if (!isInCall || pc.signalingState === 'closed') return;
     if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') return;
 
-    if ((pc._iceRestartAttempts || 0) >= 2) {
+    if ((pc._iceRestartAttempts || 0) >= 4) {
       const member = participants.get(peerId);
-      showToast(`Связь с ${member && member.name ? member.name : 'участником'} не восстановилась. Возможно, этой сети нужен TURN-сервер.`);
+      captureWebRtcDiagnostic('ice_restart_exhausted', { name: 'IceRestartExhausted' }, pc);
+      showToast(`Связь с ${member && member.name ? member.name : 'участником'} не восстановилась. Сеть может блокировать прямое соединение.`);
       return;
     }
 
@@ -3163,7 +3183,17 @@ function startPeerQualityMonitor(peerId, pc) {
       let path = '';
       if (selectedPair && typeof stats.get === 'function') {
         const localCandidate = stats.get(selectedPair.localCandidateId);
+        const remoteCandidate = stats.get(selectedPair.remoteCandidateId);
         path = localCandidate && localCandidate.candidateType === 'relay' ? 'TURN' : 'P2P';
+        if (selectedPair.id !== pc._lastReportedCandidatePairId) {
+          pc._lastReportedCandidatePairId = selectedPair.id;
+          captureProductEvent('webrtc_route_selected', {
+            route: path,
+            local_candidate_type: String(localCandidate?.candidateType || 'unknown').slice(0, 16),
+            remote_candidate_type: String(remoteCandidate?.candidateType || 'unknown').slice(0, 16),
+            protocol: String(localCandidate?.protocol || '').slice(0, 8)
+          });
+        }
       }
 
       const sender = findVideoSender(pc);
@@ -3349,6 +3379,21 @@ async function createPeerConnection(peerId) {
         socket.emit('rtc:signal', { to: peerId, signal: { candidate: event.candidate } });
       }
     };
+    pc._lastIceCandidateErrorAt = 0;
+    pc.onicecandidateerror = (event) => {
+      const now = Date.now();
+      if (now - pc._lastIceCandidateErrorAt < 5000) return;
+      pc._lastIceCandidateErrorAt = now;
+      captureWebRtcDiagnostic('ice_candidate', {
+        name: 'IceCandidateError',
+        errorCode: Number.isInteger(event.errorCode) ? event.errorCode : 0
+      }, pc);
+    };
+    pc.onicegatheringstatechange = () => {
+      captureProductEvent('webrtc_ice_gathering_state_changed', {
+        state: String(pc.iceGatheringState || '').slice(0, 20)
+      });
+    };
 
     pc.ontrack = (event) => {
       const currentMember = participants.get(peerId) || member;
@@ -3498,6 +3543,8 @@ function closePeer(peerId) {
   if (pc) {
     pc.ontrack = null;
     pc.onicecandidate = null;
+    pc.onicecandidateerror = null;
+    pc.onicegatheringstatechange = null;
     pc.onconnectionstatechange = null;
     pc.oniceconnectionstatechange = null;
     pc.onnegotiationneeded = null;
