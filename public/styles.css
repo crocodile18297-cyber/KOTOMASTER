@@ -4685,3 +4685,26 @@ body:has(#appScreen:not([hidden])) .ambient { opacity: .025; }
   #appScreen .mobile-nav-button,
   #appScreen .call-control { transition: none !important; }
 }
+
+
+/* Live activity dots on the desktop rail and mobile navigation. */
+#appScreen .server-rail-button { overflow: visible; }
+#appScreen #callRailBadge {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid #321b16;
+  border-radius: 50%;
+  color: transparent;
+  background: #91a574;
+  box-shadow: 0 0 0 2px rgba(50,27,22,.45);
+}
+#appScreen .mobile-nav-button i {
+  display: block;
+  color: transparent;
+}
+#appScreen .mobile-nav-button i[hidden] { display: none !important; }
+#appScreen .server-rail-button.is-active { position: relative; }
