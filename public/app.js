@@ -191,6 +191,21 @@ async function fetchWithTimeout(resource, options = {}, timeoutMs = 12000, timeo
   }
 }
 
+function waitForPromiseWithTimeout(promise, timeoutMs, timeoutMessage) {
+  let timeoutId = null;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const error = new Error(timeoutMessage);
+      error.name = 'NetworkTimeoutError';
+      reject(error);
+    }, timeoutMs);
+  });
+  return Promise.race([Promise.resolve(promise), timeout])
+    .finally(() => {
+      if (timeoutId) clearTimeout(timeoutId);
+    });
+}
+
 async function retrySupabaseAuthInitialization() {
   if (!authRecoveryPromise) {
     authRecoveryPromise = initializeSupabase()
@@ -347,7 +362,11 @@ async function initializeSupabase() {
       )
     }
   });
-  const { data, error } = await supabaseClient.auth.getSession();
+  const { data, error } = await waitForPromiseWithTimeout(
+    supabaseClient.auth.getSession(),
+    15000,
+    'Supabase не завершил проверку сессии за 15 секунд. Проверь соединение с интернетом и попробуй ещё раз.'
+  );
   if (error) throw error;
   authSession = data.session;
   updateProductAnalyticsIdentity(authSession?.user?.id || null);
