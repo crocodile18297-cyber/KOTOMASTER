@@ -2597,3 +2597,31 @@ html[data-koto-theme="dark"] .message-action-menu-owner { border-color:#49372e; 
   .screen-fps-control select { width: 49px; }
   .call-quality { font-size: 7px; gap: 6px; }
 }
+
+
+.call-bottom { position: relative; }
+.more-control { background: #292b32; }
+.more-control[aria-expanded="true"] { background: #41444d; color: #fff; }
+.call-quality {
+  position: absolute;
+  z-index: 12;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: flex;
+  width: min(650px, calc(100% - 12px));
+  padding: 13px 15px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 14px;
+  background: #202127;
+  box-shadow: 0 14px 42px rgba(0,0,0,.38);
+}
+.call-quality[hidden] { display: none !important; }
+@media (max-width: 900px) {
+  .call-quality {
+    position: static;
+    width: min(100%, 650px);
+    justify-self: center;
+    order: 3;
+    margin-top: 0;
+  }
+}
