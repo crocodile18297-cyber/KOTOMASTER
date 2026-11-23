@@ -77,7 +77,8 @@ app.get('/api/config', (_req, res) => {
       'stun:stun.l.google.com:19302',
       'stun:stun1.l.google.com:19302',
       'stun:stun2.l.google.com:19302',
-      'stun:stun3.l.google.com:19302'
+      'stun:stun3.l.google.com:19302',
+      'stun:stun.cloudflare.com:3478'
     ]
   }];
   const turnUrls = String(process.env.TURN_URLS || process.env.TURN_URL || '')
