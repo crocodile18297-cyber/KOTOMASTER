@@ -4613,13 +4613,46 @@ function openVideoViewer(tile) {
   title.textContent = label ? label.textContent : 'Видео участника';
   modal.hidden = false;
   modal.classList.remove('zoomed');
-  $('#videoViewerZoom').textContent = 'Увеличить';
+  $('#videoViewerZoom').textContent = 'На весь экран';
+
+  // The expand button is a direct user gesture, so request native fullscreen immediately.
+  // If the browser does not support it, the fixed viewer still fills the available viewport.
+  if (typeof modal.requestFullscreen === 'function') {
+    const request = modal.requestFullscreen();
+    if (request && typeof request.catch === 'function') request.catch(() => {});
+  }
   viewerVideo.play().catch(() => {});
+}
+
+function toggleVideoViewerFullscreen() {
+  const modal = $('#videoViewerModal');
+  if (!modal || modal.hidden) return;
+
+  if (document.fullscreenElement === modal) {
+    if (typeof document.exitFullscreen === 'function') {
+      const exit = document.exitFullscreen();
+      if (exit && typeof exit.catch === 'function') exit.catch(() => {});
+    }
+    return;
+  }
+
+  if (typeof modal.requestFullscreen === 'function') {
+    const request = modal.requestFullscreen();
+    if (request && typeof request.catch === 'function') {
+      request.catch(() => showToast('Браузер не разрешил полный экран. Просмотр остаётся открытым.'));
+    }
+  } else {
+    showToast('Просмотр уже занимает весь экран.');
+  }
 }
 
 function closeVideoViewer() {
   const modal = $('#videoViewerModal');
   const viewerVideo = $('#videoViewerVideo');
+  if (document.fullscreenElement === modal && typeof document.exitFullscreen === 'function') {
+    const exit = document.exitFullscreen();
+    if (exit && typeof exit.catch === 'function') exit.catch(() => {});
+  }
   viewerVideo.pause();
   viewerVideo.srcObject = null;
   viewerStream = null;
@@ -5087,10 +5120,12 @@ $('#cameraBtn').addEventListener('click', toggleCamera);
 $('#shareBtn').addEventListener('click', () => isSharing ? stopScreenShare() : startScreenShare());
 $('#leaveCallBtn').addEventListener('click', stopCall);
 $('#videoViewerClose').addEventListener('click', closeVideoViewer);
-$('#videoViewerZoom').addEventListener('click', () => {
+$('#videoViewerZoom').addEventListener('click', toggleVideoViewerFullscreen);
+document.addEventListener('fullscreenchange', () => {
   const modal = $('#videoViewerModal');
-  const zoomed = modal.classList.toggle('zoomed');
-  $('#videoViewerZoom').textContent = zoomed ? 'Уместить' : 'Увеличить';
+  const button = $('#videoViewerZoom');
+  if (!modal || !button) return;
+  button.textContent = document.fullscreenElement === modal ? 'Выйти из полного экрана' : 'На весь экран';
 });
 $('#videoViewerModal').addEventListener('click', (event) => {
   if (event.target === $('#videoViewerModal')) closeVideoViewer();
