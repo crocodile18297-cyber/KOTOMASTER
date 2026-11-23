@@ -208,13 +208,24 @@
         </section>
 
         <section id="callPanel" class="call-panel" hidden>
-          <header class="call-heading"><div><div class="call-kicker"><span class="live-dot"></span> KOTO LIVE ROOM</div><h3>Общий звонок</h3><p id="callDescription">Подключись к звонку, чтобы увидеть друзей и начать разговор.</p></div><div class="call-heading-actions"><div class="call-room-chip"><span>ROOM</span><strong id="callRoomCode">------</strong></div><span class="call-live-pill"><i></i> ЖИВОЙ ЗВОНОК</span></div></header>
+          <header class="call-heading"><div><div class="call-kicker"><span class="live-dot"></span> KOTO LIVE ROOM</div><h3>Общий звонок</h3><p id="callDescription">Подключись к звонку, чтобы увидеть друзей и начать разговор.</p></div><div class="call-heading-actions"><div class="call-room-chip"><span>ROOM</span><strong id="callRoomCode">------</strong></div><span class="call-live-pill"><i></i> ЖИВОЙ ЗВОНОК</span><button id="callSettingsBtn" class="call-settings-button" type="button" aria-label="Общие настройки KOTOMASTER" title="Общие настройки">⚙</button></div></header>
           <div class="call-layout">
             <div id="callStage" class="call-stage">
               <div class="call-stage-topline"><span><i class="live-dot"></i> ВИДЕОКОМНАТА</span><span class="call-stage-hint">Трансляция участников появится здесь</span></div>
+              <div id="callLiveStats" class="call-live-stats" aria-label="Статистика видеосвязи" aria-live="polite" data-quality="idle">
+                <div class="call-live-metric"><span>ОТПРАВКА</span><strong><b id="callOutgoingFps">—</b><small>FPS</small></strong></div>
+                <div class="call-live-metric"><span>ПРИЁМ</span><strong><b id="callIncomingFps">—</b><small>FPS</small></strong></div>
+                <div class="call-live-metric call-live-latency"><span>ЗАДЕРЖКА</span><strong><b id="callLatency">—</b><small>мс</small></strong></div>
+                <span id="callLiveQuality" class="call-live-quality">ОЖИДАНИЕ</span>
+              </div>
               <div id="videoGrid" class="video-grid"></div>
               <div id="callEmptyState" class="call-empty-state"><div class="empty-cat">ฅ^•ﻌ•^ฅ</div><h4>Комната ждёт тебя</h4><p>Подключи микрофон и камеру, чтобы начать разговор с участниками.</p><button id="startCallBtn" class="primary-button start-call-button" type="button"><span>▶</span> Войти в видеозвонок</button></div>
             </div>
+            <aside class="call-participants-panel" aria-label="Участники видеозвонка">
+              <div class="call-participants-heading"><div><small>ТВОЯ КОМНАТА</small><strong>Участники</strong></div><span id="callParticipantCount">0</span></div>
+              <div id="callParticipantList" class="call-participant-list"><div class="call-participants-empty"><span>🐈</span><strong>Пока здесь тихо</strong><small>Участники появятся после входа</small></div></div>
+              <div class="call-panel-footer"><span>🐾</span><div><strong>Кото-комната</strong><small>Всё для комфортного общения</small></div></div>
+            </aside>
           </div>
           <div class="call-bottom">
             <div class="call-status"><span id="callStatusDot" class="status-dot"></span><span id="callStatusText">Ты не в звонке</span></div>
@@ -228,11 +239,13 @@
               <button id="leaveCallBtn" class="call-control hangup-control" title="Выйти из звонка" aria-label="Выйти из звонка" disabled><svg viewBox="0 0 24 24"><path d="M4 15q8-7 16 0l-2 4q-1 1-3 0l-2-2h-2l-2 2q-2 1-3 0l-2-4Z"/></svg><span>Завершить</span></button>
             </div>
             <div class="call-quality" hidden>
+              <div class="call-quality-heading"><strong>НАСТРОЙКИ ЗВОНКА</strong><span>Звук и качество трансляции</span></div>
               <label class="mic-input-control" for="audioInputSelect">МИКРОФОН <select id="audioInputSelect" aria-label="Выбор микрофона" disabled><option value="">Системный микрофон</option></select><span class="mic-input-meter" title="Уровень сигнала выбранного микрофона"><i id="micInputLevel"></i></span></label>
               <button id="micPreviewBtn" class="mic-preview-button" type="button">ТЕСТ</button>
               <button id="videoQualityBoostBtn" class="video-quality-boost-button" type="button" aria-pressed="false">ЧЁТЧЕ · ВЫКЛ</button>
               <label class="resolution-control" for="videoResolutionSelect">КАЧЕСТВО <select id="videoResolutionSelect" aria-label="Разрешение видео"><option value="auto">Авто</option><option value="360">360p</option><option value="480">480p</option><option value="720" selected>720p</option><option value="1080">1080p</option></select></label>
               <span id="rtcQualityBars" class="quality-bars" title="Ожидаем статистику соединения"><i></i><i></i><i></i></span><span id="rtcQualityText">WEBRTC</span>
+              <p class="call-quality-note">Изменения применяются к текущему WebRTC-соединению. Доступность настроек зависит от устройства и браузера.</p>
             </div>
           </div>
           <details class="call-history-panel"><summary class="call-history-heading"><strong id="callHistoryTitle">Недавние звонки</strong><span>Развернуть</span></summary><button id="clearCallHistoryBtn" class="call-history-clear" type="button">Очистить историю</button><div id="callHistoryList" class="call-history-list"></div><p class="call-history-note">История хранится только в этом браузере.</p></details>

@@ -47,6 +47,7 @@ let myName = '';
 let participants = new Map();
 let seenMessages = new Set();
 let peerConnections = new Map();
+let peerCallStats = new Map();
 let pendingIce = new Map();
 let localStream = null;
 let previewAudioStream = null;
@@ -1101,10 +1102,14 @@ function firstLetter(value) {
 function renderParticipants() {
   const list = $('#memberList');
   const mobileList = $('#mobileMemberStrip');
+  const callList = $('#callParticipantList');
+  const callCount = $('#callParticipantCount');
   list.replaceChildren();
   if (mobileList) mobileList.replaceChildren();
+  if (callList) callList.replaceChildren();
   const entries = Array.from(participants.values());
   $('#memberCount').textContent = `${entries.length}/${appConfig.maxRoomSize || 6}`;
+  if (callCount) callCount.textContent = String(entries.length);
   $('#topbarSubtitle').textContent = `Твоя комната · ${entries.length} ${pluralize(entries.length, 'участник', 'участника', 'участников')}`;
 
   entries.forEach((member) => {
@@ -1128,6 +1133,51 @@ function renderParticipants() {
       row.append(mute);
     }
     list.append(row);
+
+    if (callList) {
+      const callRow = document.createElement('div');
+      const isSelf = member.id === (socket && socket.id);
+      callRow.className = `call-participant-row${member.inCall ? ' is-live' : ''}${isSelf ? ' is-self' : ''}`;
+      callRow.dataset.mic = member.audio ? 'on' : 'off';
+      callRow.dataset.video = member.video ? 'on' : 'off';
+      callRow.dataset.sharing = member.sharing ? 'on' : 'off';
+
+      const callAvatar = document.createElement('span');
+      callAvatar.className = 'call-person-avatar';
+      callAvatar.textContent = firstLetter(member.name);
+
+      const callCopy = document.createElement('span');
+      callCopy.className = 'call-person-copy';
+      const callName = document.createElement('strong');
+      callName.textContent = member.name + (isSelf ? ' · ты' : '');
+      const callState = document.createElement('small');
+      callState.textContent = member.sharing
+        ? 'Демонстрирует экран'
+        : member.video
+          ? 'Камера включена'
+          : member.audio
+            ? 'С микрофоном'
+            : member.inCall
+              ? 'В видеозвонке'
+              : 'В комнате';
+      callCopy.append(callName, callState);
+
+      const callFlags = document.createElement('span');
+      callFlags.className = 'call-participant-flags';
+      [
+        ['МИК', Boolean(member.audio), 'Микрофон'],
+        ['КАМ', Boolean(member.video), 'Камера'],
+        ['ЭКР', Boolean(member.sharing), 'Демонстрация экрана']
+      ].forEach(([label, enabled, description]) => {
+        const flag = document.createElement('i');
+        flag.className = `call-media-flag${enabled ? ' is-active' : ''}`;
+        flag.textContent = label;
+        flag.title = `${description}: ${enabled ? 'включено' : 'выключено'}`;
+        callFlags.append(flag);
+      });
+      callRow.append(callAvatar, callCopy, callFlags);
+      callList.append(callRow);
+    }
 
     if (mobileList) {
       const chip = document.createElement('div');
@@ -3544,6 +3594,12 @@ function startPeerQualityMonitor(peerId, pc) {
         (participants.get(peerId) || {}).name,
         audioJitterMs, audioPacketLoss
       );
+      updateCallRealtimeStats(peerId, {
+        outgoingFps: encodedFps,
+        incomingFps: inboundVideoFps,
+        rttMs,
+        quality: level
+      });
       const qualityLabel = $('#rtcQualityText');
       if (qualityLabel && Number.isFinite(encodedFps) && encodedFps > 0) {
         qualityLabel.textContent = `${encodedFps.toFixed(0)} FPS · ${level === 'good' ? 'ХОРОШО' : level === 'medium' ? 'СРЕДНЕ' : 'СЛАБО'}`;
@@ -3812,6 +3868,8 @@ function closePeer(peerId) {
   }
   pendingIce.delete(peerId);
   peerConnectionPromises.delete(peerId);
+  peerCallStats.delete(peerId);
+  renderCallRealtimeStats();
 }
 
 function removeVideoTile(peerId) {
@@ -3837,6 +3895,7 @@ function updateCallButtons() {
   share.title = isSharing ? 'Остановить показ экрана' : 'Показать экран';
   $('#callStatusDot').classList.toggle('live', isInCall);
   $('#callStatusText').textContent = isInCall ? 'Ты в звонке' : 'Ты не в звонке';
+  renderCallRealtimeStats();
 }
 
 function publishMediaState() {
@@ -4129,6 +4188,73 @@ function updateRtcQualityIndicator(level, path, rttMs, videoPacketLoss, peerName
   bars.title = details.join(' · ');
 }
 
+function updateCallRealtimeStats(peerId, sample) {
+  const previous = peerCallStats.get(peerId) || {};
+  peerCallStats.set(peerId, {
+    outgoingFps: Number.isFinite(sample.outgoingFps) && sample.outgoingFps > 0
+      ? sample.outgoingFps : previous.outgoingFps,
+    incomingFps: Number.isFinite(sample.incomingFps) && sample.incomingFps > 0
+      ? sample.incomingFps : previous.incomingFps,
+    rttMs: Number.isFinite(sample.rttMs) ? sample.rttMs : previous.rttMs,
+    quality: sample.quality || previous.quality || 'good',
+    updatedAt: Date.now()
+  });
+  renderCallRealtimeStats();
+}
+
+function renderCallRealtimeStats() {
+  const root = $('#callLiveStats');
+  if (!root) return;
+  const outgoingNode = $('#callOutgoingFps');
+  const incomingNode = $('#callIncomingFps');
+  const latencyNode = $('#callLatency');
+  const qualityNode = $('#callLiveQuality');
+  const now = Date.now();
+  const liveSamples = [...peerCallStats.entries()].filter(([peerId, sample]) => {
+    const member = participants.get(peerId);
+    return member && member.inCall && now - sample.updatedAt < 9000;
+  });
+
+  const cameraSending = isInCall && (isCameraOn || isSharing);
+  const outgoing = cameraSending
+    ? liveSamples.map(([, sample]) => sample.outgoingFps).filter(value => Number.isFinite(value) && value > 0)
+    : [];
+  const incoming = liveSamples
+    .filter(([peerId]) => {
+      const member = participants.get(peerId);
+      return peerId !== (socket && socket.id) && member && (member.video || member.sharing);
+    })
+    .map(([, sample]) => sample.incomingFps)
+    .filter(value => Number.isFinite(value) && value > 0);
+  const latency = liveSamples
+    .map(([, sample]) => sample.rttMs)
+    .filter(value => Number.isFinite(value) && value >= 0);
+  const qualityRank = { good: 0, medium: 1, poor: 2 };
+  const quality = liveSamples.reduce((worst, [, sample]) =>
+    (qualityRank[sample.quality] || 0) > (qualityRank[worst] || 0) ? sample.quality : worst, 'good');
+  const average = values => values.length
+    ? values.reduce((sum, value) => sum + value, 0) / values.length
+    : NaN;
+
+  const sendValue = outgoing.length ? Math.max(...outgoing) : NaN;
+  const receiveValue = average(incoming);
+  const latencyValue = average(latency);
+  outgoingNode.textContent = Number.isFinite(sendValue) ? String(Math.round(sendValue)) : '—';
+  incomingNode.textContent = Number.isFinite(receiveValue) ? String(Math.round(receiveValue)) : '—';
+  latencyNode.textContent = Number.isFinite(latencyValue) ? String(Math.round(latencyValue)) : '—';
+
+  const hasLiveStats = isInCall && liveSamples.length > 0;
+  root.dataset.quality = hasLiveStats ? quality : 'idle';
+  qualityNode.textContent = !isInCall
+    ? 'ОЖИДАНИЕ'
+    : !hasLiveStats
+      ? 'СОЕДИНЯЕМ'
+      : quality === 'good'
+        ? 'СТАБИЛЬНО'
+        : quality === 'medium'
+          ? 'СРЕДНЕЕ КАЧЕСТВО'
+          : 'СЛАБАЯ СВЯЗЬ';
+}
 
 async function startScreenShare() {
   if (!isInCall) return;
@@ -4951,6 +5077,7 @@ callPanel.addEventListener('click', unlockRemoteAudioPlayback);
 $('#copyRoomBtn').addEventListener('click', () => roomId && copyText(roomId));
 $('#copyRoomDetailsBtn')?.addEventListener('click', () => roomId && copyText(roomId));
 $('#railSettingsBtn')?.addEventListener('click', openSettings);
+$('#callSettingsBtn')?.addEventListener('click', openSettings);
 $('#welcomeCopyBtn').addEventListener('click', () => roomId && copyText(roomId));
 $('#inviteBtn').addEventListener('click', () => { $('#modalRoomCode').textContent = roomId; inviteModal.hidden = false; });
 $('#closeInviteBtn').addEventListener('click', () => { inviteModal.hidden = true; });
