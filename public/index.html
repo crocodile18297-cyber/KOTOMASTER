@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#fff8f4">
   <meta name="description" content="KOTOMASTER — мессенджер с видеозвонками и демонстрацией экрана.">
   <title>KOTOMASTER — на связи по-кошачьи</title>
-  <link rel="stylesheet" href="/styles.css?v=20261121-call-relay">
+  <link rel="stylesheet" href="/styles.css?v=20261123-peach-cats-main-ui">
   <script>
     !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],Object.defineProperty(u,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e}}),Object.defineProperty(u.people,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(){return u.toString(1)+".people (stub)"}}),o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagResult isFeatureEnabled get_distinct_id get_session_id reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset getGroups get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
   </script>
   <script src="/socket.io/socket.io.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2" defer></script>
-  <script src="/app.js?v=20261123-fix-call-auth-scope" defer></script>
+  <script src="/app.js?v=20261123-peach-cats-main-ui" defer></script>
 </head>
 <body>
   <div class="ambient ambient-one"></div>
@@ -132,7 +132,7 @@
       </div>
 
       <div class="sidebar-section-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
-      <button class="nav-item active" data-panel="chat"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6a7.5 7.5 0 1 1 17-3.5Z"/><path d="M8 11h8m-8 4h5"/></svg></span>Чат<span class="nav-indicator"></span></button>
+      <button class="nav-item active" data-panel="chat"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6a7.5 7.5 0 1 1 17-3.5Z"/><path d="M8 11h8m-8 4h5"/></svg></span>Основной чат<span class="nav-indicator"></span></button>
       <button class="nav-item" data-panel="call"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3z"/></svg></span>Видеокомната<span id="callNavBadge" class="nav-badge" hidden>LIVE</span></button>
       <button class="nav-item" data-panel="community"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M20 8v6m3-3h-6"/></svg></span>Сообщения и друзья</button>
 
@@ -153,12 +153,13 @@
 
     <section class="workspace">
       <header class="topbar">
-        <div class="topbar-title"><div class="topbar-room-icon">✦</div><div><h2 id="topbarTitle">Общий чат</h2><p id="topbarSubtitle">Твоя комната · 1 участник</p></div></div>
+        <div class="topbar-title"><div class="topbar-room-icon">✦</div><div><h2 id="topbarTitle">Основной чат</h2><p id="topbarSubtitle">Твоя комната · 1 участник</p></div></div>
         <div class="topbar-actions">
           <label class="chat-search-box" for="chatSearchInput"><span aria-hidden="true">⌕</span><input id="chatSearchInput" type="search" placeholder="Найти в чате..." autocomplete="off" aria-label="Поиск по сообщениям"></label>
           <button id="settingsBtn" class="notifications-button" type="button" aria-label="Настройки" title="Настройки">⚙</button>
           <button id="notificationsBtn" class="notifications-button" type="button" aria-label="Включить уведомления" title="Включить уведомления" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></svg></button>
           <div class="secure-pill"><span>●</span> Комната по коду</div>
+          <button id="mainPanelSwitchBtn" class="panel-switch-button" type="button" data-panel="call" title="Открыть видеозвонок" aria-label="Открыть видеозвонок"><span class="panel-switch-icon" aria-hidden="true">⌁</span><span>Видеозвонок</span></button>
           <button id="inviteBtn" class="invite-button"><span>＋</span> Пригласить</button>
         </div>
       </header>
@@ -167,7 +168,7 @@
       <section id="chatPanel" class="chat-panel">
         <div class="chat-scroll" id="chatScroll">
           <div id="pinnedMessageBanner" class="pinned-message-banner" hidden></div>
-          <div class="chat-welcome"><div class="welcome-icon">✧</div><h3>Мяу! Комната открыта</h3><p>Здесь появятся сообщения. Пригласи друзей, чтобы начать общение.</p><div class="welcome-code"><span>КОД КОМНАТЫ</span><strong id="welcomeRoomCode">------</strong><button id="welcomeCopyBtn" title="Скопировать код" aria-label="Скопировать код">▢</button></div></div>
+          <div class="chat-welcome"><div class="welcome-icon">🐾</div><h3>Добро пожаловать в основной чат</h3><p>Вся переписка комнаты находится здесь. Во время звонка можно вернуться к сообщениям одной кнопкой.</p><div class="welcome-code"><span>КОД КОМНАТЫ</span><strong id="welcomeRoomCode">------</strong><button id="welcomeCopyBtn" title="Скопировать код" aria-label="Скопировать код">▢</button></div></div>
           <div id="messagesList" class="messages-list"></div>
           <div id="typingIndicator" class="typing-indicator" hidden></div>
         </div>
@@ -178,7 +179,7 @@
       </section>
 
       <section id="callPanel" class="call-panel" hidden>
-        <div class="call-heading"><div><div class="call-kicker"><span class="live-dot"></span> KOTO LIVE ROOM</div><h3>Видеокомната</h3><p id="callDescription">Подключись, чтобы увидеть друзей и начать разговор.</p></div><div class="call-room-chip"><span>ROOM</span><strong id="callRoomCode">------</strong></div></div>
+        <div class="call-heading"><div><div class="call-kicker"><span class="live-dot"></span> KOTO LIVE ROOM</div><h3>Общий звонок</h3><p id="callDescription">Подключись, чтобы увидеть друзей и начать разговор.</p></div><div class="call-room-chip"><span>ROOM</span><strong id="callRoomCode">------</strong></div></div>
         <div id="callStage" class="call-stage">
           <div id="videoGrid" class="video-grid"></div>
           <div id="callEmptyState" class="call-empty-state"><div class="empty-cat">ฅ^•ﻌ•^ฅ</div><h4>Здесь пока тихо</h4><p>Включи камеру и микрофон, чтобы войти в звонок.</p><button id="startCallBtn" class="primary-button start-call-button"><span>▶</span> Войти в видеозвонок</button></div>
