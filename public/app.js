@@ -2624,8 +2624,31 @@ function switchPanel(panel) {
   callPanel.hidden = !isCall;
   $('#communityPanel').hidden = !isCommunity;
   document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.panel === panel));
-  $('#topbarTitle').textContent = isCall ? 'Видеокомната' : isCommunity ? 'Сообщения и друзья' : 'Общий чат';
+
+  $('#topbarTitle').textContent = isCall ? 'Общий звонок' : isCommunity ? 'Сообщения и друзья' : 'Основной чат';
+  const searchBox = $('.chat-search-box');
+  if (searchBox) searchBox.hidden = isCall || isCommunity;
+
+  // The same room chat remains the single conversation surface; this shortcut
+  // only switches between that chat and the existing live WebRTC call screen.
+  const quickSwitch = $('#mainPanelSwitchBtn');
+  if (quickSwitch) {
+    const targetPanel = isCall ? 'chat' : 'call';
+    quickSwitch.dataset.panel = targetPanel;
+    const icon = quickSwitch.querySelector('.panel-switch-icon');
+    const label = quickSwitch.querySelector('span:last-child');
+    if (icon) icon.textContent = targetPanel === 'chat' ? '☷' : '⌁';
+    if (label) label.textContent = targetPanel === 'chat' ? 'Основной чат' : 'Видеозвонок';
+    quickSwitch.title = targetPanel === 'chat' ? 'Вернуться в основной чат' : 'Открыть видеозвонок';
+    quickSwitch.setAttribute('aria-label', quickSwitch.title);
+  }
+
   if (isCommunity) refreshCommunity();
+  if (!isCall && !isCommunity && socket && socket.connected) {
+    markMessagesRead([...messageRecords.values()]
+      .filter((message) => message.from !== socket.id)
+      .map((message) => message.id));
+  }
   updateCallStage();
 }
 
@@ -4744,6 +4767,7 @@ joinRoomForm.addEventListener('submit', async (event) => {
 roomInput.addEventListener('input', () => { roomInput.value = roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6); });
 
 document.querySelectorAll('.nav-item').forEach((item) => item.addEventListener('click', () => switchPanel(item.dataset.panel)));
+$('#mainPanelSwitchBtn')?.addEventListener('click', (event) => switchPanel(event.currentTarget.dataset.panel));
 document.querySelectorAll('.community-tab').forEach((button)=>button.addEventListener('click',()=>setCommunityTab(button.dataset.communityTab)));
 $('#friendSearchInput').addEventListener('input',(event)=>{
   clearTimeout(communityState.searchTimer);

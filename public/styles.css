@@ -2625,3 +2625,666 @@ html[data-koto-theme="dark"] .message-action-menu-owner { border-color:#49372e; 
     margin-top: 0;
   }
 }
+
+
+
+/* KOTOMASTER peach / terracotta workspace theme — based on the approved MagicPath design. */
+:root {
+  --bg: #3b1e17;
+  --panel: #fff5ef;
+  --panel-2: #f8e6dc;
+  --panel-3: #f3d6c6;
+  --line: rgba(112, 75, 60, .16);
+  --muted: #9a786a;
+  --text: #4a2c21;
+  --purple: #c47d60;
+  --purple-2: #a75e48;
+  --cyan: #d58d6e;
+  --pink: #d78369;
+  --green: #94a878;
+  --accent: #a47965;
+}
+
+/* The outer chocolate surround and the light peach workspace are intentional. */
+body:has(#appScreen:not([hidden])) {
+  background: #3b1e17 !important;
+  background-image: radial-gradient(ellipse at 10% 0%, rgba(226, 153, 120, .16), transparent 34%),
+    radial-gradient(ellipse at 90% 100%, rgba(91, 53, 40, .22), transparent 35%) !important;
+}
+body:has(#appScreen:not([hidden])) .ambient { opacity: .04; }
+#appScreen {
+  color-scheme: light;
+  color: #4a2c21;
+  background: #fff0e7;
+  border: 1px solid rgba(246, 194, 167, .38);
+  border-radius: 26px;
+  box-shadow: 0 30px 100px rgba(18, 8, 4, .42);
+}
+#appScreen .sidebar {
+  color: #fff0e7;
+  background: #48281f;
+  border-right: 1px solid rgba(248, 197, 170, .15);
+}
+#appScreen .sidebar-brand { padding-bottom: 30px; color: #fff0e7; }
+#appScreen .sidebar-brand .brand-mark {
+  color: #48281f;
+  background: #f6b18e;
+  border-color: rgba(255, 231, 216, .38);
+  box-shadow: 0 7px 22px rgba(28, 12, 8, .18);
+}
+#appScreen .brand-accent { color: #f3b18f; }
+#appScreen .sidebar-section-label,
+#appScreen .members-heading { color: #c99b86; }
+#appScreen .nav-item {
+  color: #e7c7b6;
+  border-color: transparent;
+  background: transparent;
+}
+#appScreen .nav-item:hover { color: #fff8f2; background: #5b382d; }
+#appScreen .nav-item.active {
+  color: #48281f;
+  background: #f3b18f;
+  border-color: rgba(255, 237, 224, .55);
+  box-shadow: 0 6px 18px rgba(23, 10, 6, .16);
+}
+#appScreen .nav-icon { color: currentColor; }
+#appScreen .nav-icon svg { stroke: currentColor; }
+#appScreen .nav-indicator { background: #8d9f70; }
+#appScreen .nav-badge { color: #fff; background: #a75f49; }
+#appScreen .sidebar-room-block { border-color: rgba(248, 197, 170, .13); }
+#appScreen .room-mini-card {
+  border-color: rgba(244, 177, 143, .2);
+  background: #603a2e;
+  color: #fff0e7;
+}
+#appScreen .room-mini-icon { color: #f2b08f; background: rgba(242, 176, 143, .13); }
+#appScreen .room-mini-info small,
+#appScreen .profile-info small,
+#appScreen .sidebar-caption { color: #d9b19f; }
+#appScreen .member-row { color: #f4ded2; }
+#appScreen .member-state { color: #d9b19f; }
+#appScreen .member-state.in-call { color: #c1d39a; }
+#appScreen .avatar,
+#appScreen .mobile-member-avatar,
+#appScreen .message-avatar,
+#appScreen .tile-avatar {
+  color: #603a2e;
+  background: linear-gradient(145deg, #f6c4a9, #e99572);
+  border: 1px solid rgba(91, 54, 41, .12);
+}
+#appScreen .avatar-me { background: linear-gradient(145deg, #f6d7c4, #eaa17f); color: #694335; }
+#appScreen .profile-card { background: #603a2e; border: 1px solid rgba(244, 177, 143, .16); }
+#appScreen .profile-card strong { color: #fff0e7; }
+#appScreen .profile-edit-icon,
+#appScreen .leave-icon {
+  color: #edc7b3;
+  border-color: rgba(244, 177, 143, .2);
+  background: rgba(255, 255, 255, .06);
+}
+#appScreen .sign-out-button { color: #e3bca8; }
+#appScreen .sidebar-caption { color: #c99b86; }
+
+#appScreen .workspace {
+  background: #fff0e7;
+  background-image: radial-gradient(ellipse at 85% 100%, rgba(233, 159, 126, .10), transparent 38%);
+}
+#appScreen .topbar {
+  min-height: 72px;
+  padding: 0 22px;
+  background: #fff7f1;
+  border-bottom: 1px solid rgba(140, 98, 83, .16);
+}
+#appScreen .topbar-room-icon {
+  color: #754b3d;
+  background: #f7dfd2;
+  border-color: rgba(140, 98, 83, .12);
+}
+#appScreen .topbar-title h2 { color: #59382c; font-family: 'Plus Jakarta Sans', sans-serif; }
+#appScreen .topbar-title p { color: #987466; }
+#appScreen .topbar-actions { gap: 9px; }
+#appScreen .chat-search-box {
+  background: #fffdfb;
+  border-color: #ead6ca;
+  color: #a18477;
+}
+#appScreen .chat-search-box input { color: #59382c; }
+#appScreen .chat-search-box input::placeholder { color: #b29385; }
+#appScreen .secure-pill { color: #876454; }
+#appScreen .secure-pill span { color: #8da474; }
+#appScreen .notifications-button {
+  color: #7e5849;
+  border-color: #ead6ca;
+  background: #fff9f5;
+}
+#appScreen .notifications-button:hover { color: #59382c; background: #f7e6dc; }
+#appScreen .invite-button {
+  color: #fff7f1;
+  border-color: #d98e70;
+  background: #df9877;
+}
+#appScreen .invite-button:hover { background: #cf8061; }
+
+/* A visible shortcut replaces the need to hunt for the other screen in the sidebar. */
+#appScreen .panel-switch-button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 13px;
+  border: 1px solid rgba(196, 125, 96, .28);
+  border-radius: 11px;
+  color: #704638;
+  background: #f5dfd3;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .16s ease, transform .16s ease, border-color .16s ease;
+}
+#appScreen .panel-switch-button:hover {
+  background: #efcdbb;
+  border-color: #d99a7d;
+  transform: translateY(-1px);
+}
+#appScreen .panel-switch-icon { font-size: 16px; line-height: 1; }
+#appScreen .panel-switch-button:focus-visible { outline: 3px solid #d98f70; outline-offset: 2px; }
+
+#appScreen .chat-panel { background: #fff3eb; }
+#appScreen .chat-scroll { padding: 28px 34px 20px; }
+#appScreen .chat-welcome { color: #59382c; }
+#appScreen .welcome-icon {
+  color: #875744;
+  background: #f8dfd1;
+  border-color: #efd3c3;
+}
+#appScreen .chat-welcome h3 { color: #59382c; font-family: 'Plus Jakarta Sans', sans-serif; }
+#appScreen .chat-welcome p { color: #987466; }
+#appScreen .welcome-code {
+  border-color: #ead2c5;
+  background: #fff8f3;
+}
+#appScreen .welcome-code span { color: #a18477; }
+#appScreen .welcome-code strong { color: #754b3d; }
+#appScreen .welcome-code button { color: #a47965; }
+#appScreen .messages-list { gap: 16px; }
+#appScreen .message-row { cursor: pointer; }
+#appScreen .message-avatar {
+  border-radius: 50%;
+  color: #704638;
+  background: linear-gradient(145deg, #f6c4a9, #e99572);
+  box-shadow: 0 3px 10px rgba(107, 65, 46, .10);
+}
+#appScreen .message-row.mine .message-avatar {
+  background: linear-gradient(145deg, #ffe0ca, #efb18f);
+}
+#appScreen .message-meta { color: #9d7c6e; }
+#appScreen .message-meta strong { color: #654336; }
+#appScreen .message-meta time { color: #b29385; }
+#appScreen .message-bubble {
+  padding: 11px 14px;
+  border: 1px solid #ead7ca;
+  border-radius: 16px 16px 16px 5px;
+  background: #fffdfb;
+  color: #67483b;
+  font-size: 12px;
+  line-height: 1.65;
+  box-shadow: 0 3px 12px rgba(88, 48, 34, .045);
+}
+#appScreen .mine .message-bubble {
+  border-color: #edc3ae;
+  border-radius: 16px 16px 5px 16px;
+  background: #f2c2a9;
+  color: #543326;
+}
+#appScreen .composer {
+  min-height: 76px;
+  padding: 10px 24px max(14px, env(safe-area-inset-bottom));
+  background: #fff7f1;
+  border-top: 1px solid rgba(140, 98, 83, .12);
+}
+#appScreen .composer-attach {
+  border-color: #ead2c5;
+  color: #9a6a54;
+  background: #f8e6dc;
+}
+#appScreen .composer input {
+  height: 46px;
+  border-color: #e7d0c3;
+  border-radius: 14px;
+  background: #fffdfb;
+  color: #59382c;
+  font-size: 12px;
+}
+#appScreen .composer input::placeholder { color: #b29385; }
+#appScreen .composer input:focus { border-color: #d99a7d; box-shadow: 0 0 0 3px rgba(217, 154, 125, .13); }
+#appScreen .composer-hint { color: #b29385; }
+#appScreen .send-button {
+  color: #fff5ed;
+  background: #df9877;
+  border-radius: 13px;
+  box-shadow: 0 5px 14px rgba(176, 100, 69, .18);
+}
+#appScreen .send-button:hover { background: #ca795b; }
+#appScreen .pinned-message-banner,
+#appScreen .reply-preview {
+  border-color: #edd5c8;
+  background: #fff7f1;
+  color: #704b3e;
+}
+#appScreen .typing-indicator { color: #987466; }
+
+/* Call screen: preserve live video tiles; restyle the stage and controls only. */
+#appScreen .call-panel { padding: 20px 24px 16px; background: #fff1e8; }
+#appScreen .call-heading { margin-bottom: 14px; }
+#appScreen .call-kicker { color: #a36d56; }
+#appScreen .call-heading h3 { color: #58372a; font-family: 'Plus Jakarta Sans', sans-serif; }
+#appScreen .call-heading p { color: #987466; }
+#appScreen .call-room-chip {
+  border-color: #ead0c1;
+  background: #fff8f3;
+}
+#appScreen .call-room-chip span { color: #a18477; }
+#appScreen .call-room-chip strong { color: #805442; }
+#appScreen .call-stage {
+  border-color: rgba(113, 76, 64, .18);
+  border-radius: 22px;
+  background: linear-gradient(180deg, #ffc0a4 0%, #f3a17b 40%, #a77c68 41%, #704e43 62%, #3f2119 100%);
+}
+#appScreen .call-stage::before {
+  opacity: .12;
+  background-image: radial-gradient(rgba(255, 248, 241, .65) .7px, transparent .8px);
+  background-size: 27px 27px;
+}
+#appScreen .call-stage::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 38%;
+  pointer-events: none;
+  opacity: .38;
+  background: #4b2c22;
+  clip-path: polygon(0 62%, 10% 50%, 23% 66%, 34% 28%, 48% 57%, 61% 20%, 73% 54%, 88% 31%, 100% 47%, 100% 100%, 0 100%);
+}
+#appScreen .video-grid { z-index: 1; gap: 12px; padding: 13px; }
+#appScreen .video-tile {
+  border-color: rgba(255, 237, 224, .34);
+  border-radius: 17px;
+  background: #4b3028;
+  box-shadow: 0 14px 34px rgba(42, 19, 12, .20);
+}
+#appScreen .video-tile video { background: #3c241c; }
+#appScreen .video-tile .tile-avatar {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  color: #603a2e;
+  background: linear-gradient(145deg, #f7cfb9, #e99572);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  box-shadow: 0 8px 25px rgba(31, 14, 9, .2);
+}
+#appScreen .video-tile .tile-label {
+  border-color: rgba(255, 236, 223, .25);
+  border-radius: 11px;
+  color: #fff4eb;
+  background: rgba(59, 32, 24, .76);
+  font-size: 10px;
+}
+#appScreen .video-tile .tile-label .tile-mic { color: #e7bba4; }
+#appScreen .video-tile .tile-label .tile-mic.on { color: #c1d39a; }
+#appScreen .video-fps-badge {
+  top: auto;
+  right: 11px;
+  bottom: 11px;
+  left: auto;
+  padding: 8px 11px;
+  border-color: rgba(255, 230, 215, .25);
+  border-radius: 11px;
+  color: #fff3eb;
+  background: rgba(58, 31, 23, .86);
+  font-size: 10px;
+  letter-spacing: .45px;
+  box-shadow: 0 7px 20px rgba(30, 14, 8, .18);
+}
+#appScreen .call-empty-state { z-index: 2; color: #fff4eb; }
+#appScreen .call-empty-state h4 { color: #fff7f1; font-family: 'Plus Jakarta Sans', sans-serif; }
+#appScreen .call-empty-state p { color: rgba(255, 241, 232, .83); }
+#appScreen .empty-cat { color: #ffe0cb; text-shadow: 0 5px 22px rgba(70, 35, 22, .28); }
+#appScreen .start-call-button {
+  color: #fff8f2;
+  background: #a75f49 !important;
+  box-shadow: 0 10px 26px rgba(71, 31, 20, .25) !important;
+}
+#appScreen .call-bottom {
+  min-height: 84px;
+  padding: 12px 4px 4px;
+}
+#appScreen .call-status { color: #8f6b5c; }
+#appScreen .status-dot { background: #c5a99a; }
+#appScreen .status-dot.live { background: #93a875; box-shadow: 0 0 10px rgba(147, 168, 117, .45); }
+#appScreen .call-control-dock { gap: 9px; }
+#appScreen .call-control-cluster {
+  padding: 5px;
+  gap: 4px;
+  border-color: #ead7ca;
+  border-radius: 16px;
+  background: #fffaf6;
+  box-shadow: 0 7px 22px rgba(88, 48, 34, .08);
+}
+#appScreen .call-control {
+  min-width: 64px;
+  min-height: 54px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: #795747;
+  background: #f5e3d9;
+}
+#appScreen .call-control:hover:not(:disabled) {
+  border-color: #e5bba7;
+  color: #563629;
+  background: #efd4c5;
+  transform: translateY(-1px);
+}
+#appScreen .call-control.active {
+  color: #718253;
+  border-color: #d5dfc6;
+  background: #edf2e5;
+}
+#appScreen .share-control-cluster { background: #e99572; border-color: #d98b6b; }
+#appScreen .share-control-cluster .call-control {
+  color: #512d22;
+  background: transparent;
+}
+#appScreen .share-control-cluster .call-control:hover:not(:disabled) { background: rgba(255, 246, 239, .22); }
+#appScreen .share-control-cluster .share-control.active { color: #fff8f1; background: rgba(89, 48, 35, .18); }
+#appScreen .screen-fps-control {
+  display: flex;
+  min-width: 72px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 9px;
+  border-left: 1px solid rgba(91, 47, 34, .18);
+  color: #512d22;
+  font-size: 9px;
+  font-weight: 900;
+}
+#appScreen .screen-fps-control select {
+  width: 43px;
+  min-height: 34px;
+  padding: 0 4px;
+  border: 1px solid rgba(91, 47, 34, .20);
+  border-radius: 9px;
+  color: #512d22;
+  background: #fff4ec;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+#appScreen .hangup-control:not(:disabled) {
+  min-width: 90px;
+  color: #fff3ea;
+  border-color: #704034;
+  background: #6a382c;
+}
+#appScreen .hangup-control:not(:disabled):hover { color: #fff; background: #814737; }
+#appScreen .call-quality {
+  color: #8e6b5d;
+  letter-spacing: .3px;
+}
+#appScreen .call-quality select {
+  border-color: #ead3c5;
+  color: #684638;
+  background: #fff9f5;
+}
+#appScreen .call-tip,
+#appScreen .call-history-note { color: #a18477; }
+#appScreen .call-history-panel {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid #ead6ca;
+  border-radius: 16px;
+  background: #fff8f3;
+}
+#appScreen .call-history-heading strong { color: #674638; }
+#appScreen .call-history-heading button { color: #a47965; }
+#appScreen .call-history-item {
+  border-color: #eddbd0;
+  background: #fffdfb;
+  color: #674638;
+}
+
+#appScreen .mobile-member-strip { background: #fbede4; border-color: #edd8cc; }
+#appScreen .mobile-member-chip { color: #755143; background: #fff8f3; border-color: #ead5c8; }
+#appScreen .mobile-member-state { background: #b6c394; }
+#appScreen .mobile-member-state.in-call { background: #df9877; }
+
+/* Light-cocoa variant for users who explicitly choose dark mode in settings. */
+html[data-koto-theme="dark"] #appScreen {
+  color-scheme: dark;
+  color: #f5e9e0;
+  background: #211b17;
+  border-color: #49372e;
+}
+html[data-koto-theme="dark"] #appScreen .workspace,
+html[data-koto-theme="dark"] #appScreen .topbar,
+html[data-koto-theme="dark"] #appScreen .chat-panel,
+html[data-koto-theme="dark"] #appScreen .call-panel { background: #211b17; }
+html[data-koto-theme="dark"] #appScreen .topbar { border-color: #49372e; }
+html[data-koto-theme="dark"] #appScreen .topbar-title h2,
+html[data-koto-theme="dark"] #appScreen .call-heading h3,
+html[data-koto-theme="dark"] #appScreen .chat-welcome h3 { color: #f5e9e0; }
+html[data-koto-theme="dark"] #appScreen .topbar-title p,
+html[data-koto-theme="dark"] #appScreen .chat-welcome p,
+html[data-koto-theme="dark"] #appScreen .call-heading p { color: #c5a998; }
+html[data-koto-theme="dark"] #appScreen .message-bubble,
+html[data-koto-theme="dark"] #appScreen .composer input { background: #30251f; color: #f5e9e0; border-color: #584337; }
+html[data-koto-theme="dark"] #appScreen .composer { background: #211b17; border-color: #49372e; }
+html[data-koto-theme="dark"] #appScreen .call-control-cluster { background: #30251f; border-color: #584337; }
+html[data-koto-theme="dark"] #appScreen .call-control { background: #44352d; color: #f2d8c9; }
+html[data-koto-theme="dark"] #appScreen .screen-fps-control select { color: #f5e9e0; background: #30251f; border-color: #765b4c; }
+html[data-koto-theme="dark"] #appScreen .call-history-panel { background: #30251f; border-color: #584337; }
+
+/* Responsive layout: keep the chat/call switch visible after the desktop sidebar collapses. */
+@media (max-width: 900px) {
+  #appScreen .topbar { padding-inline: 15px; }
+  #appScreen .topbar-actions { gap: 7px; }
+  #appScreen .call-panel { padding: 16px 16px 12px; }
+  #appScreen .call-bottom { grid-template-columns: 1fr; justify-items: center; gap: 8px; }
+  #appScreen .call-status { justify-self: center; }
+}
+@media (max-width: 740px) {
+  #appScreen {
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #appScreen .sidebar { display: none; }
+  #appScreen .topbar {
+    min-height: 64px;
+    padding: 8px 11px;
+    gap: 6px;
+  }
+  #appScreen .topbar-title { gap: 8px; min-width: 0; }
+  #appScreen .topbar-room-icon { width: 32px; height: 32px; flex: none; }
+  #appScreen .topbar-title h2 { font-size: 12px; }
+  #appScreen .topbar-title p { font-size: 8px; }
+  #appScreen .topbar-actions { gap: 5px; }
+  #appScreen .chat-search-box,
+  #appScreen .secure-pill,
+  #appScreen #notificationsBtn { display: none; }
+  #appScreen .panel-switch-button {
+    min-height: 39px;
+    gap: 6px;
+    padding: 0 9px;
+    border-radius: 10px;
+    font-size: 9px;
+  }
+  #appScreen .notifications-button { min-width: 36px; width: 36px; height: 36px; }
+  #appScreen .invite-button { min-height: 36px; padding: 0 9px; font-size: 8px; }
+  #appScreen .mobile-member-strip { min-height: 47px; }
+  #appScreen .chat-scroll { padding: 15px 12px 12px; }
+  #appScreen .chat-welcome { padding: 15px 6px 17px; }
+  #appScreen .composer {
+    gap: 7px;
+    min-height: 66px;
+    padding: 8px 10px max(12px, env(safe-area-inset-bottom));
+  }
+  #appScreen .composer-attach { display: none; }
+  #appScreen .composer input { min-height: 44px; font-size: 12px; }
+  #appScreen .composer-hint { display: none; }
+  #appScreen .call-panel { padding: 12px 10px max(10px, env(safe-area-inset-bottom)); }
+  #appScreen .call-heading { gap: 8px; margin-bottom: 10px; }
+  #appScreen .call-heading h3 { font-size: 16px; }
+  #appScreen .call-heading p { max-width: 225px; font-size: 8px; }
+  #appScreen .call-stage { min-height: 250px; border-radius: 17px; }
+  #appScreen .video-grid { grid-template-columns: repeat(auto-fit, minmax(min(165px, 46%), 1fr)); grid-auto-rows: minmax(125px, 1fr); gap: 7px; padding: 7px; }
+  #appScreen .video-tile,
+  #appScreen .video-tile video { min-height: 125px; }
+  #appScreen .video-tile .tile-label { left: 7px; bottom: 7px; padding: 5px 7px; }
+  #appScreen .video-fps-badge { right: 7px; bottom: 7px; max-width: calc(100% - 14px); padding: 6px 8px; font-size: 8px; }
+  #appScreen .call-bottom { min-height: 0; padding: 10px 0 4px; }
+  #appScreen .call-control-dock { width: 100%; flex-wrap: wrap; gap: 6px; }
+  #appScreen .call-control-cluster { gap: 2px; padding: 4px; border-radius: 13px; }
+  #appScreen .call-control { min-width: 48px; width: 50px; min-height: 49px; padding: 4px; border-radius: 10px; }
+  #appScreen .call-control svg { width: 17px; height: 17px; }
+  #appScreen .call-control span { font-size: 6.5px; }
+  #appScreen .screen-fps-control { min-width: 64px; padding-inline: 6px; }
+  #appScreen .screen-fps-control select { width: 38px; min-height: 32px; }
+  #appScreen .hangup-control:not(:disabled) { min-width: 76px; width: 76px; }
+  #appScreen .call-quality { width: 100%; justify-content: center; gap: 7px; }
+  #appScreen .call-tip { font-size: 8px; }
+  #appScreen .call-history-panel { margin-top: 9px; padding: 9px 10px; }
+  #appScreen .call-history-list { max-height: 90px; overflow-y: auto; }
+}
+@media (max-width: 390px) {
+  #appScreen .topbar { padding-inline: 8px; }
+  #appScreen .panel-switch-button { width: 38px; min-width: 38px; padding: 0; }
+  #appScreen .panel-switch-button > span:last-child { display: none; }
+  #appScreen .invite-button { width: 36px; padding: 0; justify-content: center; font-size: 0; }
+  #appScreen .invite-button span { font-size: 17px; }
+  #appScreen .call-heading p { max-width: 170px; }
+  #appScreen .call-control-dock { gap: 4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #appScreen .panel-switch-button,
+  #appScreen .call-control { transition: none !important; }
+}
+
+
+
+/* Warm peach onboarding — keep the existing Supabase login and room-code flow unchanged. */
+body:has(#joinScreen:not([hidden])) {
+  background: #3b2119 !important;
+  background-image:
+    radial-gradient(ellipse at 18% 4%, rgba(255, 190, 160, .22), transparent 34%),
+    radial-gradient(ellipse at 82% 95%, rgba(105, 63, 49, .22), transparent 36%) !important;
+}
+body:has(#joinScreen:not([hidden])) .ambient { opacity: .035; }
+#joinScreen {
+  border-color: rgba(255, 226, 210, .42);
+  background: #fff1e8;
+  box-shadow: 0 34px 100px rgba(25, 10, 5, .30);
+}
+#joinScreen .welcome-side {
+  background:
+    radial-gradient(ellipse at 14% 5%, rgba(255, 232, 214, .26), transparent 32%),
+    linear-gradient(165deg, #f6b18f 0%, #ee9a76 43%, #a67a68 66%, #56372e 100%);
+}
+#joinScreen .welcome-side::before {
+  border-color: rgba(255, 240, 229, .19);
+  box-shadow: 0 0 0 42px rgba(255, 235, 220, .045), 0 0 0 90px rgba(255, 235, 220, .035);
+}
+#joinScreen .welcome-side::after { background: rgba(77, 43, 32, .22); }
+#joinScreen .brand-large,
+#joinScreen .mobile-brand { color: #4f2d22; }
+#joinScreen .brand-mark {
+  color: #4d2a1f;
+  background: #ffe0cc;
+  border-color: rgba(255, 248, 241, .65);
+  box-shadow: 0 7px 24px rgba(78, 43, 31, .12);
+}
+#joinScreen .brand-accent { color: #744736; }
+#joinScreen .eyebrow { color: #704838; }
+#joinScreen .eyebrow-dot { background: #8a9d70; box-shadow: 0 0 12px rgba(138,157,112,.45); }
+#joinScreen .welcome-copy h1 { color: #4b2b21; }
+#joinScreen .welcome-copy h1 span { color: #fff2e9; }
+#joinScreen .welcome-copy p { color: rgba(74, 43, 31, .82); }
+#joinScreen .feature-card {
+  border-color: rgba(255, 243, 232, .40);
+  background: rgba(91, 53, 40, .26);
+  box-shadow: 0 10px 28px rgba(71, 35, 22, .10);
+  backdrop-filter: blur(12px);
+}
+#joinScreen .feature-icon { color: #5b3527; background: rgba(255, 240, 227, .44); }
+#joinScreen .feature-screen .feature-icon,
+#joinScreen .feature-chat .feature-icon { color: #5b3527; background: rgba(255, 240, 227, .44); }
+#joinScreen .feature-card strong { color: #fff6ee; }
+#joinScreen .feature-card small { color: rgba(255, 241, 232, .82); }
+#joinScreen .feature-spark { color: #fff1e7; }
+#joinScreen .welcome-cat { filter: drop-shadow(0 16px 40px rgba(75, 38, 25, .22)); }
+#joinScreen .welcome-cat svg {
+  filter: sepia(.24) saturate(.80);
+}
+#joinScreen .cat-orbit { border-color: rgba(255, 239, 227, .28); }
+#joinScreen .orbit-b { border-color: rgba(255, 226, 205, .22); }
+#joinScreen .cat-star { color: #fff2e8; }
+#joinScreen .welcome-footer { color: rgba(255, 241, 231, .78); }
+#joinScreen .welcome-footer span:nth-child(2) { color: #fff0e5; }
+
+#joinScreen .join-side {
+  background: linear-gradient(155deg, #fffaf6, #fff0e7);
+}
+#joinScreen .join-card { color: #4e2e22; }
+#joinScreen .card-kicker { color: #a96d54; }
+#joinScreen .join-card h2 { color: #57372b; font-family: 'Plus Jakarta Sans', sans-serif; }
+#joinScreen .card-subtitle { color: #987466; }
+#joinScreen .auth-panel {
+  border-color: #ead7ca;
+  background: rgba(255, 253, 250, .96);
+  box-shadow: 0 8px 26px rgba(95, 55, 38, .055);
+}
+#joinScreen .auth-heading strong { color: #59382c; }
+#joinScreen .auth-heading span { color: #a18477; }
+#joinScreen .field-label { color: #8f6c5c; }
+#joinScreen .input-wrap {
+  border-color: #e7d0c3;
+  background: #fffaf6;
+}
+#joinScreen .input-wrap:focus-within {
+  border-color: #d99a7d;
+  box-shadow: 0 0 0 3px rgba(217, 154, 125, .14);
+}
+#joinScreen .input-icon { color: #b07a62; }
+#joinScreen .input-wrap input { color: #59382c; }
+#joinScreen .input-wrap input::placeholder { color: #b69a8c; }
+#joinScreen .primary-button {
+  color: #fff7f1;
+  background: linear-gradient(110deg, #e89a78, #c8795d);
+  box-shadow: 0 12px 28px rgba(172, 103, 74, .20);
+}
+#joinScreen .primary-button:hover {
+  box-shadow: 0 16px 34px rgba(172, 103, 74, .25);
+}
+#joinScreen .join-divider span { background: #ead7ca; }
+#joinScreen .join-divider small { color: #a18477; }
+#joinScreen .join-code-button {
+  border-color: #e2b59f;
+  background: #f6dfd3;
+  color: #704638;
+}
+#joinScreen .join-code-button:hover { background: #efcdbb; }
+#joinScreen .auth-mode-toggle { color: #9b6d59; }
+#joinScreen .auth-mode-toggle:hover { color: #56372b; }
+#joinScreen .privacy-note { color: #987466; }
+#joinScreen .privacy-lock { color: #b2765c; }
+#joinScreen .form-error { color: #b65d4c; }
+#joinScreen .join-bottom { color: #a18477; }
+#joinScreen .join-bottom b { color: #c8795d; }
