@@ -52,6 +52,10 @@ let localStream = null;
 let previewAudioStream = null;
 let selectedAudioDeviceId = '';
 let screenStream = null;
+let screenShareRequestedFps = 30;
+let screenShareEffectiveFps = 30;
+let screenSharePressureSamples = 0;
+let screenShareHealthySamples = 0;
 let isInCall = false;
 let isMicOn = false;
 let isCameraOn = false;
@@ -2582,6 +2586,12 @@ function makeVideoTile(id, name, local = false) {
   mic.textContent = '●';
   label.append(labelName, mic);
 
+  const fpsBadge = document.createElement('div');
+  fpsBadge.className = 'video-fps-badge';
+  fpsBadge.hidden = true;
+  fpsBadge.setAttribute('aria-live', 'polite');
+  fpsBadge.textContent = 'ЭКРАН · измеряем FPS';
+
   const expand = document.createElement('button');
   expand.type = 'button';
   expand.className = 'tile-expand';
@@ -2594,7 +2604,7 @@ function makeVideoTile(id, name, local = false) {
   });
   video.addEventListener('dblclick', () => openVideoViewer(tile));
 
-  tile.append(video, avatar, label, expand);
+  tile.append(video, avatar, fpsBadge, label, expand);
   videoGrid.append(tile);
   return tile;
 }
@@ -2609,6 +2619,7 @@ function updateTileState(id, member) {
   }
   tile.classList.toggle('has-video', Boolean(member.video) || (id === (socket && socket.id) && isSharing));
   tile.classList.toggle('sharing', Boolean(member.sharing) || (id === (socket && socket.id) && isSharing));
+  if (!tile.classList.contains('sharing')) updateScreenShareFpsBadge(id, NaN);
 }
 
 function getSpeechAudioConstraints(deviceId = '') {
@@ -3069,9 +3080,7 @@ function currentOutgoingVideoSettings() {
     : null;
   const sharing = Boolean(screenTrack);
   const settings = sharing && screenTrack.getSettings ? screenTrack.getSettings() : {};
-  const frameRate = sharing
-    ? Math.min(profile.shareFrameRate, Math.round(Number(settings.frameRate) || profile.shareFrameRate))
-    : profile.frameRate;
+  const frameRate = sharing ? screenShareEffectiveFps : profile.frameRate;
   return {
     bitrate: sharing ? getScreenShareBitrate(settings, frameRate) : profile.bitrate,
     frameRate,
@@ -3113,6 +3122,7 @@ function startPeerQualityMonitor(peerId, pc) {
   pc._lastScaleDown = 1;
   pc._lastAdaptiveFrameRate = 0;
   pc._outboundSamples = new Map();
+  pc._inboundSamples = new Map();
 
   pc._qualityTimer = setInterval(async () => {
     if (pc._qualityBusy || pc.signalingState === 'closed' || !isInCall) return;
@@ -3128,6 +3138,8 @@ function startPeerQualityMonitor(peerId, pc) {
       let encoderLimit = 'none';
       let measuredVideoBps = NaN;
       let encodedFps = NaN;
+      let inboundVideoFps = NaN;
+      let inboundVideoSize = '';
       let droppedFrameRatio = 0;
       let encodeLoad = 0;
 
@@ -3145,6 +3157,27 @@ function startPeerQualityMonitor(peerId, pc) {
         if (report.type === 'inbound-rtp' && (report.kind === 'audio' || report.mediaType === 'audio') &&
             Number.isFinite(report.jitter)) {
           audioJitterMs = Math.max(Number.isFinite(audioJitterMs) ? audioJitterMs : 0, report.jitter * 1000);
+        }
+
+        if (report.type === 'inbound-rtp' &&
+            (report.kind === 'video' || report.mediaType === 'video') && !report.isRemote) {
+          const previous = pc._inboundSamples.get(report.id);
+          const timestamp = Number(report.timestamp) || now;
+          const decodedFrames = Number.isFinite(report.framesDecoded)
+            ? Number(report.framesDecoded)
+            : Number(report.framesReceived) || 0;
+          if (previous && timestamp > previous.time) {
+            const elapsedMs = timestamp - previous.time;
+            const frameDelta = Math.max(0, decodedFrames - previous.frames);
+            const measured = frameDelta * 1000 / elapsedMs;
+            if (elapsedMs >= 400 && Number.isFinite(measured)) inboundVideoFps = measured;
+          } else if (Number.isFinite(report.framesPerSecond) && report.framesPerSecond > 0) {
+            inboundVideoFps = Number(report.framesPerSecond);
+          }
+          pc._inboundSamples.set(report.id, { time: timestamp, frames: decodedFrames });
+          if (Number(report.frameWidth) > 0 && Number(report.frameHeight) > 0) {
+            inboundVideoSize = `${Math.round(report.frameWidth)}×${Math.round(report.frameHeight)}`;
+          }
         }
 
         if (report.type === 'outbound-rtp' && (report.kind === 'video' || report.mediaType === 'video') && !report.isRemote) {
@@ -3187,6 +3220,16 @@ function startPeerQualityMonitor(peerId, pc) {
         ? Math.round(selectedPair.currentRoundTripTime * 1000)
         : NaN;
 
+      const remoteMemberForFps = participants.get(peerId);
+      if (remoteMemberForFps && remoteMemberForFps.sharing) {
+        updateScreenShareFpsBadge(peerId, inboundVideoFps);
+      } else {
+        updateScreenShareFpsBadge(peerId, NaN);
+      }
+      if (isSharing && Number.isFinite(encodedFps) && encodedFps > 0) {
+        updateScreenShareFpsBadge(socket && socket.id, encodedFps);
+      }
+
       let path = '';
       if (selectedPair && typeof stats.get === 'function') {
         const localCandidate = stats.get(selectedPair.localCandidateId);
@@ -3208,11 +3251,60 @@ function startPeerQualityMonitor(peerId, pc) {
       let ratio = 1;
 
       if (current.keepTextSharp) {
-        // Do not let the app's camera-oriented adaptation algorithm clamp screen-share FPS.
-        // The browser's WebRTC congestion controller still reacts to real network capacity.
-        pc._lastAdaptiveBitrate = current.bitrate;
-        pc._lastScaleDown = 1;
-        pc._lastAdaptiveFrameRate = current.frameRate;
+        const requested = screenShareRequestedFps || current.frameRate;
+        const available = selectedPair && Number(selectedPair.availableOutgoingBitrate) > 0
+          ? Number(selectedPair.availableOutgoingBitrate)
+          : Infinity;
+        const hardPressure =
+          encoderLimit === 'cpu' ||
+          encoderLimit === 'bandwidth' ||
+          encodeLoad > 0.86 ||
+          droppedFrameRatio > 0.14 ||
+          videoPacketLoss > 0.10 ||
+          available < current.bitrate * 0.72;
+        const missedTargetWithPressure =
+          Number.isFinite(encodedFps) &&
+          encodedFps < screenShareEffectiveFps - 6 &&
+          (droppedFrameRatio > 0.06 || encoderLimit !== 'none' || available < current.bitrate * 0.9);
+
+        if (hardPressure || missedTargetWithPressure) {
+          screenSharePressureSamples += 1;
+          screenShareHealthySamples = 0;
+        } else if (Number.isFinite(encodedFps) && encodedFps >= screenShareEffectiveFps - 3) {
+          screenShareHealthySamples += 1;
+          screenSharePressureSamples = Math.max(0, screenSharePressureSamples - 1);
+        } else {
+          screenShareHealthySamples = 0;
+        }
+
+        let nextFps = null;
+        if (screenSharePressureSamples >= 3 && screenShareEffectiveFps > 15) {
+          const lower = SCREEN_SHARE_FPS_STEPS.filter((value) => value < screenShareEffectiveFps);
+          nextFps = lower.length ? lower[lower.length - 1] : 15;
+        } else if (screenShareHealthySamples >= 8 && screenShareEffectiveFps < requested) {
+          nextFps = SCREEN_SHARE_FPS_STEPS.find((value) =>
+            value > screenShareEffectiveFps && value <= requested
+          ) || requested;
+        }
+
+        if (nextFps && sender && nextFps !== screenShareEffectiveFps) {
+          screenShareEffectiveFps = nextFps;
+          const activeTrack = screenStream && screenStream.getVideoTracks()[0];
+          const activeSettings = activeTrack && activeTrack.getSettings ? activeTrack.getSettings() : {};
+          const nextBitrate = getScreenShareBitrate(activeSettings, nextFps);
+          await tuneVideoSender(sender, nextBitrate, nextFps, true);
+          pc._lastAdaptiveBitrate = nextBitrate;
+          pc._lastScaleDown = 1;
+          pc._lastAdaptiveFrameRate = nextFps;
+          screenSharePressureSamples = 0;
+          screenShareHealthySamples = 0;
+          updateScreenShareFpsBadge(socket && socket.id, encodedFps);
+          captureProductEvent('screen_share_fps_adapted', {
+            requested_fps: requested,
+            effective_fps: nextFps,
+            reason: hardPressure || missedTargetWithPressure ? 'network_or_encoder_pressure' : 'recovered'
+          });
+        }
       } else {
         let desiredBitrate = current.bitrate;
 
@@ -3838,7 +3930,7 @@ async function tuneVideoSender(sender, bitrate, frameRate, keepTextSharp = false
       encoding.maxFramerate = Math.max(6, Math.round(frameRate));
       // Audio is configured as high priority; video yields bandwidth to speech.
       encoding.priority = keepTextSharp ? 'high' : 'low';
-      encoding.networkPriority = keepTextSharp ? 'high' : 'low';
+      if ('networkPriority' in encoding) encoding.networkPriority = keepTextSharp ? 'high' : 'low';
       if (includeScale) encoding.scaleResolutionDownBy = Math.max(1, scaleResolutionDownBy);
       // Camera adapts resolution and frame rate together. Screen sharing protects text sharpness.
       params.degradationPreference = keepTextSharp ? 'maintain-resolution' : 'balanced';
@@ -3891,7 +3983,11 @@ async function startScreenShare() {
   }
 
   const profile = getSelectedVideoProfile();
-  const frameRate = profile.shareFrameRate || 15;
+  const frameRate = getPreferredScreenShareFps();
+  screenShareRequestedFps = frameRate;
+  screenShareEffectiveFps = frameRate;
+  screenSharePressureSamples = 0;
+  screenShareHealthySamples = 0;
   let capturedStream = null;
   const changedSenders = [];
 
@@ -3931,7 +4027,9 @@ async function startScreenShare() {
         changedSenders.push({ pc, sender, previousTrack: null, createdTransceiver });
       }
       const captureSettings = screenTrack.getSettings ? screenTrack.getSettings() : {};
-      const actualFrameRate = Math.min(frameRate, Math.round(Number(captureSettings.frameRate) || frameRate));
+      const sourceFrameRate = Math.round(Number(captureSettings.frameRate) || frameRate);
+      screenShareEffectiveFps = Math.max(10, Math.min(frameRate, sourceFrameRate));
+      const actualFrameRate = screenShareEffectiveFps;
       await tuneVideoSender(sender, getScreenShareBitrate(captureSettings, actualFrameRate), actualFrameRate, true);
     }
 
@@ -3953,8 +4051,9 @@ async function startScreenShare() {
 
     const actual = screenTrack.getSettings ? screenTrack.getSettings() : {};
     const actualSize = actual.width && actual.height ? `${actual.width}×${actual.height}` : 'исходное разрешение экрана';
-    const actualFps = Math.round(Number(actual.frameRate) || frameRate);
-    showToast(`Демонстрация экрана началась: ${actualSize}, до ${actualFps} FPS.`);
+    const actualFps = Math.round(Number(actual.frameRate) || screenShareEffectiveFps);
+    updateScreenShareFpsBadge(socket && socket.id, NaN);
+    showToast(`Демонстрация экрана началась: ${actualSize}, цель ${screenShareRequestedFps} FPS, источник ${actualFps} FPS.`);
   } catch (error) {
     captureWebRtcDiagnostic('screen_share', error);
     console.error('Screen share error:', error);
@@ -3992,6 +4091,9 @@ async function startScreenShare() {
 async function stopScreenShare() {
   if (!isSharing) return;
   isSharing = false;
+  screenSharePressureSamples = 0;
+  screenShareHealthySamples = 0;
+  updateScreenShareFpsBadge(socket && socket.id, NaN);
   captureProductEvent('screen_share_stopped');
   const cameraTrack = localStream && localStream.getVideoTracks()[0];
   const profile = getSelectedVideoProfile();
@@ -4252,7 +4354,96 @@ function getScreenShareBitrate(settings = {}, frameRate = 30) {
   return Math.max(1500000, Math.min(8000000, Math.round(target)));
 }
 
-function updateLiveFpsFromTrack(track) {
+function updateLiveFpsFromTrack(track) {const SCREEN_SHARE_FPS_STEPS = [15, 20, 24, 30, 45, 60];
+
+function getPreferredScreenShareFps() {
+  const control = $('#screenShareFpsSelect');
+  const controlValue = Number(control && control.value);
+  if (controlValue === 30 || controlValue === 60) return controlValue;
+  try {
+    return Number(localStorage.getItem('kotomaster-screen-share-fps')) === 60 ? 60 : 30;
+  } catch (_error) {
+    return 30;
+  }
+}
+
+function updateScreenShareFpsBadge(peerId, measuredFps) {
+  const tile = videoGrid && videoGrid.querySelector(`[data-peer-id="${CSS.escape(peerId)}"]`);
+  if (!tile) return;
+  const badge = tile.querySelector('.video-fps-badge');
+  if (!badge) return;
+  const local = Boolean(socket && peerId === socket.id);
+  const active = local ? isSharing : Boolean((participants.get(peerId) || {}).sharing);
+  if (!active) {
+    badge.hidden = true;
+    return;
+  }
+  badge.hidden = false;
+  const fps = Number(measuredFps);
+  const value = Number.isFinite(fps) && fps > 0
+    ? `${Math.round(fps)} FPS`
+    : (local ? `цель ${screenShareEffectiveFps} FPS` : 'измеряем FPS');
+  badge.textContent = `ЭКРАН · ${value}`;
+  badge.title = local
+    ? `Отправляется: ${Number.isFinite(fps) && fps > 0 ? Math.round(fps) + ' FPS' : 'ожидание статистики'}; выбранный режим: ${screenShareRequestedFps} FPS`
+    : `Получается от участника: ${Number.isFinite(fps) && fps > 0 ? Math.round(fps) + ' FPS' : 'ожидание статистики'}`;
+}
+
+async function setScreenShareFpsTarget(nextFps, reason = 'manual') {
+  if (nextFps !== 30 && nextFps !== 60 && !SCREEN_SHARE_FPS_STEPS.includes(nextFps)) return;
+  const track = screenStream && screenStream.getVideoTracks().find((item) => item.readyState === 'live');
+  if (!track || !isSharing) {
+    screenShareRequestedFps = nextFps === 60 ? 60 : 30;
+    screenShareEffectiveFps = screenShareRequestedFps;
+    return;
+  }
+
+  const settings = track.getSettings ? track.getSettings() : {};
+  let sourceFps = Number(settings.frameRate) || nextFps;
+  if (reason === 'manual') {
+    try {
+      await track.applyConstraints({ frameRate: { ideal: nextFps, max: nextFps } });
+      const refreshed = track.getSettings ? track.getSettings() : settings;
+      sourceFps = Number(refreshed.frameRate) || sourceFps;
+    } catch (error) {
+      console.warn('Display capture FPS constraint was not accepted:', error);
+    }
+    screenShareRequestedFps = nextFps;
+  }
+  const effective = reason === 'manual'
+    ? Math.max(10, Math.min(nextFps, Math.round(sourceFps) || nextFps))
+    : nextFps;
+  screenShareEffectiveFps = effective;
+  screenSharePressureSamples = 0;
+  screenShareHealthySamples = 0;
+  const bitrate = getScreenShareBitrate(settings, effective);
+  for (const pc of peerConnections.values()) {
+    const sender = findVideoSender(pc);
+    if (sender && pc.signalingState !== 'closed') {
+      await tuneVideoSender(sender, bitrate, effective, true);
+      pc._lastAdaptiveBitrate = bitrate;
+      pc._lastScaleDown = 1;
+      pc._lastAdaptiveFrameRate = effective;
+    }
+  }
+  updateScreenShareFpsBadge(socket && socket.id, NaN);
+}
+
+async function handleScreenShareFpsChange() {
+  const control = $('#screenShareFpsSelect');
+  const selected = Number(control && control.value) === 60 ? 60 : 30;
+  try { localStorage.setItem('kotomaster-screen-share-fps', String(selected)); } catch (_error) {}
+  screenShareRequestedFps = selected;
+  if (isSharing) {
+    await setScreenShareFpsTarget(selected, 'manual');
+    showToast(`Цель трансляции: ${screenShareEffectiveFps} FPS. Фактический FPS отображается на экране.`);
+  } else {
+    screenShareEffectiveFps = selected;
+    showToast(`Для следующей трансляции выбрано до ${selected} FPS.`);
+  }
+}
+
+
   if (!track || typeof track.getSettings !== 'function') return;
   const settings = track.getSettings();
   const fps = Number(settings.frameRate);
@@ -4576,6 +4767,10 @@ $('#videoViewerModal').addEventListener('click', (event) => {
 });
 $('#videoResolutionSelect').addEventListener('change', changeVideoResolution);
 $('#videoQualityBoostBtn').addEventListener('click', toggleVideoQualityBoost);
+$('#screenShareFpsSelect').addEventListener('change', handleScreenShareFpsChange);
+try {
+  $('#screenShareFpsSelect').value = String(getPreferredScreenShareFps());
+} catch (_error) {}
 $('#audioInputSelect').addEventListener('change', selectAudioInput);
 $('#micPreviewBtn').addEventListener('click', selectAudioInput);
 if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
