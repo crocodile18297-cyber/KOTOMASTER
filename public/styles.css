@@ -3177,3 +3177,114 @@ html[data-koto-theme="dark"] #appScreen .call-history-panel { background: #30251
   #appScreen .panel-switch-button,
   #appScreen .call-control { transition: none !important; }
 }
+
+
+
+/* Warm peach onboarding — keep the existing Supabase login and room-code flow unchanged. */
+body:has(#joinScreen:not([hidden])) {
+  background: #3b2119 !important;
+  background-image:
+    radial-gradient(ellipse at 18% 4%, rgba(255, 190, 160, .22), transparent 34%),
+    radial-gradient(ellipse at 82% 95%, rgba(105, 63, 49, .22), transparent 36%) !important;
+}
+body:has(#joinScreen:not([hidden])) .ambient { opacity: .035; }
+#joinScreen {
+  border-color: rgba(255, 226, 210, .42);
+  background: #fff1e8;
+  box-shadow: 0 34px 100px rgba(25, 10, 5, .30);
+}
+#joinScreen .welcome-side {
+  background:
+    radial-gradient(ellipse at 14% 5%, rgba(255, 232, 214, .26), transparent 32%),
+    linear-gradient(165deg, #f6b18f 0%, #ee9a76 43%, #a67a68 66%, #56372e 100%);
+}
+#joinScreen .welcome-side::before {
+  border-color: rgba(255, 240, 229, .19);
+  box-shadow: 0 0 0 42px rgba(255, 235, 220, .045), 0 0 0 90px rgba(255, 235, 220, .035);
+}
+#joinScreen .welcome-side::after { background: rgba(77, 43, 32, .22); }
+#joinScreen .brand-large,
+#joinScreen .mobile-brand { color: #4f2d22; }
+#joinScreen .brand-mark {
+  color: #4d2a1f;
+  background: #ffe0cc;
+  border-color: rgba(255, 248, 241, .65);
+  box-shadow: 0 7px 24px rgba(78, 43, 31, .12);
+}
+#joinScreen .brand-accent { color: #744736; }
+#joinScreen .eyebrow { color: #704838; }
+#joinScreen .eyebrow-dot { background: #8a9d70; box-shadow: 0 0 12px rgba(138,157,112,.45); }
+#joinScreen .welcome-copy h1 { color: #4b2b21; }
+#joinScreen .welcome-copy h1 span { color: #fff2e9; }
+#joinScreen .welcome-copy p { color: rgba(74, 43, 31, .82); }
+#joinScreen .feature-card {
+  border-color: rgba(255, 243, 232, .40);
+  background: rgba(91, 53, 40, .26);
+  box-shadow: 0 10px 28px rgba(71, 35, 22, .10);
+  backdrop-filter: blur(12px);
+}
+#joinScreen .feature-icon { color: #5b3527; background: rgba(255, 240, 227, .44); }
+#joinScreen .feature-screen .feature-icon,
+#joinScreen .feature-chat .feature-icon { color: #5b3527; background: rgba(255, 240, 227, .44); }
+#joinScreen .feature-card strong { color: #fff6ee; }
+#joinScreen .feature-card small { color: rgba(255, 241, 232, .82); }
+#joinScreen .feature-spark { color: #fff1e7; }
+#joinScreen .welcome-cat { filter: drop-shadow(0 16px 40px rgba(75, 38, 25, .22)); }
+#joinScreen .welcome-cat svg {
+  filter: sepia(.24) saturate(.80);
+}
+#joinScreen .cat-orbit { border-color: rgba(255, 239, 227, .28); }
+#joinScreen .orbit-b { border-color: rgba(255, 226, 205, .22); }
+#joinScreen .cat-star { color: #fff2e8; }
+#joinScreen .welcome-footer { color: rgba(255, 241, 231, .78); }
+#joinScreen .welcome-footer span:nth-child(2) { color: #fff0e5; }
+
+#joinScreen .join-side {
+  background: linear-gradient(155deg, #fffaf6, #fff0e7);
+}
+#joinScreen .join-card { color: #4e2e22; }
+#joinScreen .card-kicker { color: #a96d54; }
+#joinScreen .join-card h2 { color: #57372b; font-family: 'Plus Jakarta Sans', sans-serif; }
+#joinScreen .card-subtitle { color: #987466; }
+#joinScreen .auth-panel {
+  border-color: #ead7ca;
+  background: rgba(255, 253, 250, .96);
+  box-shadow: 0 8px 26px rgba(95, 55, 38, .055);
+}
+#joinScreen .auth-heading strong { color: #59382c; }
+#joinScreen .auth-heading span { color: #a18477; }
+#joinScreen .field-label { color: #8f6c5c; }
+#joinScreen .input-wrap {
+  border-color: #e7d0c3;
+  background: #fffaf6;
+}
+#joinScreen .input-wrap:focus-within {
+  border-color: #d99a7d;
+  box-shadow: 0 0 0 3px rgba(217, 154, 125, .14);
+}
+#joinScreen .input-icon { color: #b07a62; }
+#joinScreen .input-wrap input { color: #59382c; }
+#joinScreen .input-wrap input::placeholder { color: #b69a8c; }
+#joinScreen .primary-button {
+  color: #fff7f1;
+  background: linear-gradient(110deg, #e89a78, #c8795d);
+  box-shadow: 0 12px 28px rgba(172, 103, 74, .20);
+}
+#joinScreen .primary-button:hover {
+  box-shadow: 0 16px 34px rgba(172, 103, 74, .25);
+}
+#joinScreen .join-divider span { background: #ead7ca; }
+#joinScreen .join-divider small { color: #a18477; }
+#joinScreen .join-code-button {
+  border-color: #e2b59f;
+  background: #f6dfd3;
+  color: #704638;
+}
+#joinScreen .join-code-button:hover { background: #efcdbb; }
+#joinScreen .auth-mode-toggle { color: #9b6d59; }
+#joinScreen .auth-mode-toggle:hover { color: #56372b; }
+#joinScreen .privacy-note { color: #987466; }
+#joinScreen .privacy-lock { color: #b2765c; }
+#joinScreen .form-error { color: #b65d4c; }
+#joinScreen .join-bottom { color: #a18477; }
+#joinScreen .join-bottom b { color: #c8795d; }
