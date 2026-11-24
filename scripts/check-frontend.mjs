@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 const html = fs.readFileSync('public/index.html', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const server = fs.readFileSync('server.js', 'utf8');
+const stickerSprite = fs.readFileSync('public/koto-stickers.svg', 'utf8');
 
 const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
 const uniqueIds = new Set(ids);
@@ -43,6 +44,8 @@ for (const requiredId of [
   'createRoomBtn',
   'joinRoomBtn',
   'messageForm',
+  'kotoStickerBtn',
+  'communityStickerBtn',
   'startCallBtn',
   'micBtn',
   'cameraBtn',
@@ -95,6 +98,16 @@ assert.match(app, /new RNNoiseNode\(context\)/, 'Voice calls must use the local 
 assert.match(app, /enhanceMicrophoneStream/, 'Captured microphone audio must pass through the noise-reduction pipeline.');
 assert.match(html, /id="micDenoiseStatus"/, 'Microphone settings must display the active noise-reduction engine.');
 assert.match(server, /vendor\/simple-rnnoise-wasm/, 'Server must serve the locally installed RNNoise assets.');
+
+
+assert.match(app, /buildKotoStickerPicker/, 'Animal sticker pickers must be initialized for both message composers.');
+assert.match(app, /renderKotoStickerText/, 'Animal sticker markers must render as safe inline SVG images.');
+assert.match(app, /:koto:cat-wave:/, 'Sticker messages must use a shared, serializable marker format.');
+const stickerSymbols = new Set([...stickerSprite.matchAll(/<symbol id="([a-z0-9-]+)"/g)].map((match) => match[1]));
+assert.ok(stickerSymbols.size >= 20, 'The original animal sticker sprite set must contain at least 20 illustrations.');
+for (const id of ['cat-wave','cat-heart','cat-cool','fox-love','panda-happy','bear-cozy','bunny-flower','dog-happy','frog-cute','redpanda-love']) {
+  assert.ok(stickerSymbols.has(id), 'Animal sticker symbol is missing: ' + id);
+}
 
 console.log(
   'Frontend integrity OK: ' + uniqueIds.size + ' unique HTML ids, ' +
