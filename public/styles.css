@@ -5900,9 +5900,9 @@ html.km-no-cat-accents #appScreen .km-call-menu .km-menu-paw { display:none!impo
 
 /* KOTOMASTER delight layer: sticker picker, living mascot avatars and paw cursor. */
 :root {
-  --koto-paw-cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cg fill='%23fff8f2' stroke='%237b5c4d' stroke-width='1.5'%3E%3Cellipse cx='16' cy='21' rx='7.5' ry='6.5'/%3E%3Cellipse cx='6.8' cy='11' rx='3.2' ry='4.2'/%3E%3Cellipse cx='14' cy='6' rx='3.3' ry='4.2'/%3E%3Cellipse cx='22' cy='6' rx='3.3' ry='4.2'/%3E%3Cellipse cx='27' cy='13' rx='3.2' ry='4.2'/%3E%3C/g%3E%3Cg fill='%23e99b9b'%3E%3Cellipse cx='6.8' cy='11' rx='1.7' ry='2.5'/%3E%3Cellipse cx='14' cy='6' rx='1.7' ry='2.5'/%3E%3Cellipse cx='22' cy='6' rx='1.7' ry='2.5'/%3E%3Cellipse cx='27' cy='13' rx='1.7' ry='2.5'/%3E%3Cpath d='M11 21q0-4 5-4t5 4q-1 4-5 4t-5-4Z'/%3E%3C/g%3E%3C/svg%3E") 4 2, auto;
+  --koto-paw-cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cg fill='%23fff8f2' stroke='%237b5c4d' stroke-width='1.5'%3E%3Cellipse cx='16' cy='21' rx='7.5' ry='6.5'/%3E%3Cellipse cx='6.8' cy='11' rx='3.2' ry='4.2'/%3E%3Cellipse cx='14' cy='6' rx='3.3' ry='4.2'/%3E%3Cellipse cx='22' cy='6' rx='3.3' ry='4.2'/%3E%3Cellipse cx='27' cy='13' rx='3.2' ry='4.2'/%3E%3C/g%3E%3Cg fill='%23e99b9b'%3E%3Cellipse cx='6.8' cy='11' rx='1.7' ry='2.5'/%3E%3Cellipse cx='14' cy='6' rx='1.7' ry='2.5'/%3E%3Cellipse cx='22' cy='6' rx='1.7' ry='2.5'/%3E%3Cellipse cx='27' cy='13' rx='1.7' ry='2.5'/%3E%3Cpath d='M11 21q0-4 5-4t5 4q-1 4-5 4t-5-4Z'/%3E%3C/g%3E%3C/svg%3E") 4 2;
 }
-html[data-koto-cursor="paw"] body { cursor: var(--koto-paw-cursor); }
+html[data-koto-cursor="paw"] body { cursor: var(--koto-paw-cursor), auto; }
 html[data-koto-cursor="paw"] button,
 html[data-koto-cursor="paw"] a,
 html[data-koto-cursor="paw"] [role="button"],
