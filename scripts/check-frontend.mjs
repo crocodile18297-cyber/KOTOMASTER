@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 const html = fs.readFileSync('public/index.html', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const delight = fs.readFileSync('public/koto-delight.js', 'utf8');
+const css = fs.readFileSync('public/styles.css', 'utf8');
 const server = fs.readFileSync('server.js', 'utf8');
 
 const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
@@ -98,11 +99,19 @@ assert.match(html, /id="micDenoiseStatus"/, 'Microphone settings must display th
 assert.match(server, /vendor\/simple-rnnoise-wasm/, 'Server must serve the locally installed RNNoise assets.');
 
 
-assert.ok(html.includes('/koto-delight.js?v=20261124-visual-polish'), 'KOTO delight interactions must load as a versioned script.');
+assert.ok(html.includes('/koto-delight.js?v=20261124-woodland-v1'), 'KOTO delight interactions must load as a versioned script.');
 assert.match(html, /data-koto-sticker-trigger/, 'Both chat composers must expose a sticker picker trigger.');
 assert.match(html, /id="kotoPawTrailToggle"/, 'Appearance settings must expose the paw cursor trail preference.');
 assert.match(delight, /kotoStickerPicker/, 'Sticker picker UI must be implemented.');
 assert.match(delight, /watchMascotAvatars/, 'Message and participant avatars must receive mascot styling.');
+assert.match(delight, /CURSOR_MODES = \['cat', 'fox', 'bear', 'bunny', 'classic'\]/, 'Animal cursor variants must be supported.');
+for (const cursor of ['cat','fox','bear','bunny','classic']) {
+  assert.match(html, new RegExp('data-koto-cursor-choice="' + cursor + '"'), 'Animal cursor option is missing: ' + cursor);
+}
+assert.match(css, /--koto-cursor-cat:/, 'Cat paw cursor SVG must be embedded in the stylesheet.');
+assert.match(css, /--koto-cursor-fox:/, 'Fox paw cursor SVG must be embedded in the stylesheet.');
+assert.match(css, /--koto-cursor-bear:/, 'Bear paw cursor SVG must be embedded in the stylesheet.');
+assert.match(css, /--koto-cursor-bunny:/, 'Bunny paw cursor SVG must be embedded in the stylesheet.');
 assert.match(delight, /classList\.contains\('koto-animal-avatar'\)/, 'Real animal portrait avatars must not be covered by the mascot overlay.');
 assert.match(delight, /prefers-reduced-motion/, 'Mascot effects must respect reduced-motion accessibility.');
 assert.ok(delight.includes('localStorage.setItem(PREFS_KEY'), 'Paw cursor preferences must persist locally.');
