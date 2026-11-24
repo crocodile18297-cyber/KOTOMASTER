@@ -136,6 +136,9 @@ function syncCallUiControls(){
  setCallSwitchState('showConnectionToggle',callUiPrefs.showConnectionStatus);
  setCallSwitchState('showCatAccentsToggle',callUiPrefs.showCatAccents);
  const connection=$('#kmCallConnectionStatus');if(connection)connection.hidden=!callUiPrefs.showConnectionStatus;
+ setMicDenoiseStatus(callUiPrefs.noiseSuppression
+  ? (rnnoiseSessions.size ? 'ИИ-шумоподавление RNNoise активно' : 'ИИ-фильтр включится при запуске звонка')
+  : 'Шумоподавление выключено', rnnoiseSessions.size > 0);
  const panel=$('#callPanel');if(panel)panel.classList.toggle('km-no-cat-accents',!callUiPrefs.showCatAccents);
  document.documentElement.classList.toggle('km-no-cat-accents',!callUiPrefs.showCatAccents);
  syncScreenShareFpsUi();
@@ -3428,7 +3431,7 @@ async function recoverInterruptedMedia() {
       localStream.addTrack(track);
       await addLocalTrackToPeers(track, 'audio');
       previous.forEach((item) => releaseMicrophoneTrack(item));
-      selectedAudioDeviceId = track.getSettings ? track.getSettings().deviceId || selectedAudioDeviceId : selectedAudioDeviceId;
+      selectedAudioDeviceId = getAudioInputDeviceId(track) || selectedAudioDeviceId;
       isMicOn = true;
       wasMicInterrupted = false;
       startMicInputMeter(track);
