@@ -1860,8 +1860,9 @@ const KOTO_STICKER_PARTS = [
   '/stickers/animal-sheet.part04.txt',
   '/stickers/animal-sheet.part08.txt'
 ];
-const KOTO_STICKER_CACHE_KEY = '20261124-real-animal-pack-1';
-let kotoStickerSheetUrl = '';
+const KOTO_STICKER_CACHE_KEY = '20261124-sticker-render-v2';
+const kotoStickerImageUrls = new Map();
+const kotoStickerObjectUrls = [];
 let kotoStickerSheetPromise = null;
 
 const KOTO_STICKERS = [
@@ -1894,49 +1895,106 @@ const KOTO_LEGACY_STICKER_ALIASES = {
 const KOTO_STICKER_MARKER = /:koto:([a-z0-9-]+):/gi;
 
 async function loadKotoStickerSheet() {
-  if (kotoStickerSheetUrl) return kotoStickerSheetUrl;
+  if (kotoStickerImageUrls.size === KOTO_STICKERS.length) return kotoStickerImageUrls;
   if (kotoStickerSheetPromise) return kotoStickerSheetPromise;
+
   kotoStickerSheetPromise = Promise.all(KOTO_STICKER_PARTS.map(async (path) => {
-    const response = await fetch(path + '?v=' + KOTO_STICKER_CACHE_KEY, {cache:'force-cache'});
+    const response = await fetch(path + '?v=' + KOTO_STICKER_CACHE_KEY, { cache: 'force-cache' });
     if (!response.ok) throw new Error('Не удалось загрузить часть набора зверьков.');
     return response.text();
-  })).then((parts) => {
+  })).then(async (parts) => {
     // The second segment contains 59 characters from the next segment; remove that overlap.
     parts[1] = parts[1].slice(0, 4000);
     const encoded = parts.join('');
     if (encoded.length !== 31904) throw new Error('Набор стикеров загружен не полностью.');
-    kotoStickerSheetUrl = 'data:image/avif;base64,' + encoded;
+
+    // Decode the atlas once, then extract each tile into its own lossless PNG.
+    const sourceImage = new Image();
+    sourceImage.decoding = 'async';
+    sourceImage.src = 'data:image/avif;base64,' + encoded;
+    if (typeof sourceImage.decode === 'function') {
+      await sourceImage.decode();
+    } else {
+      await new Promise((resolve, reject) => {
+        sourceImage.onload = resolve;
+        sourceImage.onerror = () => reject(new Error('Браузер не смог декодировать набор стикеров.'));
+      });
+    }
+
+    const columns = 4;
+    const rows = 4;
+    if (!sourceImage.naturalWidth || !sourceImage.naturalHeight ||
+        sourceImage.naturalWidth % columns !== 0 || sourceImage.naturalHeight % rows !== 0) {
+      throw new Error('У набора стикеров неправильный размер изображения.');
+    }
+
+    const tileWidth = sourceImage.naturalWidth / columns;
+    const tileHeight = sourceImage.naturalHeight / rows;
+
+    for (const sticker of KOTO_STICKERS) {
+      const canvas = document.createElement('canvas');
+      canvas.width = tileWidth;
+      canvas.height = tileHeight;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Не удалось подготовить изображения стикеров.');
+
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = 'high';
+      context.drawImage(
+        sourceImage,
+        (sticker.index % columns) * tileWidth,
+        Math.floor(sticker.index / columns) * tileHeight,
+        tileWidth,
+        tileHeight,
+        0,
+        0,
+        tileWidth,
+        tileHeight
+      );
+
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('Не удалось сохранить изображение стикера.');
+      const imageUrl = URL.createObjectURL(blob);
+      kotoStickerImageUrls.set(sticker.id, imageUrl);
+      kotoStickerObjectUrls.push(imageUrl);
+    }
+
     document.querySelectorAll('.koto-photo-sticker').forEach((node) => {
-      node.style.backgroundImage = 'url("' + kotoStickerSheetUrl + '")';
+      const imageUrl = kotoStickerImageUrls.get(node.dataset.kotoStickerId);
+      if (imageUrl) node.src = imageUrl;
     });
     document.querySelectorAll('.koto-sticker-picker-footer').forEach((node) => {
       node.textContent = 'Выбери зверька — он появится в сообщении';
     });
-    return kotoStickerSheetUrl;
+    return kotoStickerImageUrls;
   }).catch((error) => {
+    kotoStickerImageUrls.clear();
+    kotoStickerObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+    kotoStickerObjectUrls.length = 0;
     kotoStickerSheetPromise = null;
+    document.querySelectorAll('.koto-photo-sticker').forEach((node) => node.removeAttribute('src'));
     document.querySelectorAll('.koto-sticker-picker-footer').forEach((node) => {
       node.textContent = 'Не удалось загрузить зверьков. Попробуй открыть панель ещё раз.';
     });
     throw error;
   });
+
   return kotoStickerSheetPromise;
 }
 
 function createKotoStickerArt(stickerId, className = '') {
   const sticker = KOTO_STICKER_BY_ID.get(stickerId);
-  const art = document.createElement('span');
+  const art = document.createElement('img');
   art.className = (className ? className + ' ' : '') + 'koto-photo-sticker';
-  art.setAttribute('role', 'img');
-  art.setAttribute('aria-label', sticker?.animal || 'Звериный стикер');
+  art.alt = sticker?.animal || 'Звериный стикер';
   art.title = sticker?.name || stickerId;
-  const index = sticker?.index ?? 0;
-  const column = index % 4;
-  const row = Math.floor(index / 4);
-  art.style.backgroundPosition = (column * 100 / 3) + '% ' + (row * 100 / 3) + '%';
-  if (kotoStickerSheetUrl) {
-    art.style.backgroundImage = 'url("' + kotoStickerSheetUrl + '")';
-  }
+  art.dataset.kotoStickerId = stickerId;
+  art.decoding = 'async';
+  art.loading = 'lazy';
+  art.draggable = false;
+
+  const imageUrl = kotoStickerImageUrls.get(stickerId);
+  if (imageUrl) art.src = imageUrl;
   return art;
 }
 
