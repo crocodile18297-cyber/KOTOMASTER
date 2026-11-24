@@ -5862,3 +5862,37 @@ html.km-no-cat-accents #appScreen .km-call-menu .km-menu-paw { display:none!impo
     right: max(8px, env(safe-area-inset-right));
   }
 }
+
+
+/* Microphone noise-reduction engine status */
+#settingsAudioPanel .km-mic-engine-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 11px 0 0;
+  padding: 9px 12px;
+  border: 1px solid rgba(164, 121, 101, .18);
+  border-radius: 12px;
+  background: rgba(249, 214, 196, .28);
+  color: #765448;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+#settingsAudioPanel .km-mic-engine-status::before {
+  content: "";
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #b5a49d;
+}
+#settingsAudioPanel .km-mic-test-card.is-denoising .km-mic-engine-status {
+  border-color: rgba(76, 145, 111, .24);
+  background: rgba(76, 145, 111, .08);
+  color: #386e53;
+}
+#settingsAudioPanel .km-mic-test-card.is-denoising .km-mic-engine-status::before {
+  background: #4b9870;
+  box-shadow: 0 0 0 4px rgba(76, 145, 111, .12);
+}
