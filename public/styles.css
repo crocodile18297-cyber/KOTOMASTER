@@ -7589,3 +7589,58 @@ html[data-koto-cursor="classic"] button,html[data-koto-cursor="classic"] a,html[
 #appScreen .call-person-avatar.koto-animal-avatar,
 #appScreen .message-avatar.koto-animal-avatar,
 #appScreen .avatar.koto-animal-avatar { background-repeat:no-repeat!important;background-size:400% 400%!important; }
+
+/* Final SVG icon polish for copy, helper, room lock and call accents */
+#appScreen .copy-mini svg,
+#appScreen #welcomeCopyBtn svg,
+#appScreen #copyRoomDetailsBtn svg,
+#appScreen .room-private-icon svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#appScreen .helper-cat svg {
+  width: 31px;
+  height: 31px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#appScreen .km-stage-paw svg,
+#appScreen .km-menu-paw svg,
+#appScreen .call-footer-paw svg {
+  width: 24px;
+  height: 24px;
+  fill: currentColor;
+  stroke: rgba(255,255,255,.58);
+  stroke-width: .8;
+  stroke-linejoin: round;
+}
+#appScreen .km-stage-paw svg { width: 29px;height:29px; }
+#appScreen .call-empty-cat svg {
+  width: 48px;
+  height: 48px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#appScreen #communityVoiceBtn svg,
+#appScreen #communityMessageForm button[type="submit"] svg,
+#appScreen .koto-sticker-trigger svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#appScreen .call-footer-paw { display:grid;place-items:center;color:#719675; }
