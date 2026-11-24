@@ -6,13 +6,14 @@
   <meta name="theme-color" content="#fff8f4">
   <meta name="description" content="KOTOMASTER — мессенджер с видеозвонками и демонстрацией экрана.">
   <title>KOTOMASTER — на связи по-кошачьи</title>
-  <link rel="stylesheet" href="/styles.css?v=20261124-room-audio-ai">
+  <link rel="stylesheet" href="/styles.css?v=20261124-koto-delight">
   <script>
     !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],Object.defineProperty(u,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e}}),Object.defineProperty(u.people,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(){return u.toString(1)+".people (stub)"}}),o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagResult isFeatureEnabled get_distinct_id get_session_id reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset getGroups get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
   </script>
   <script src="/socket.io/socket.io.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2" defer></script>
-  <script src="/app.js?v=20261124-room-audio-ai" defer></script>
+  <script src="/app.js?v=20261124-koto-delight" defer></script>
+  <script src="/koto-delight.js?v=20261124-koto-delight" defer></script>
 </head>
 <body>
   <div class="ambient ambient-one"></div>
@@ -204,7 +205,7 @@
             <div id="messagesList" class="messages-list"></div><div id="typingIndicator" class="typing-indicator" hidden></div>
           </div>
           <div id="replyPreview" class="reply-preview" hidden></div>
-          <form id="messageForm" class="composer"><div class="composer-attach" aria-hidden="true">✧</div><input id="messageInput" maxlength="1200" placeholder="Напиши сообщение команде..." autocomplete="off"><span class="composer-hint">Enter ↵</span><button class="send-button" type="submit" aria-label="Отправить сообщение"><svg viewBox="0 0 24 24"><path d="m4 4 16 8-16 8 3-8-3-8Z"/><path d="M7 12h13"/></svg></button></form>
+          <form id="messageForm" class="composer"><div class="composer-attach" aria-hidden="true">✧</div><input id="messageInput" maxlength="1200" placeholder="Напиши сообщение команде..." autocomplete="off"><span class="composer-hint">Enter ↵</span><button class="koto-sticker-trigger" type="button" data-koto-sticker-trigger data-koto-sticker-input="messageInput" data-koto-sticker-form="messageForm" title="Открыть кото-стикеры" aria-label="Открыть кото-стикеры">🐾</button><button class="send-button" type="submit" aria-label="Отправить сообщение"><svg viewBox="0 0 24 24"><path d="m4 4 16 8-16 8 3-8-3-8Z"/><path d="M7 12h13"/></svg></button></form>
         </section>
 
         <section id="callPanel" class="call-panel" hidden>
@@ -328,6 +329,7 @@
                 <input id="communityFileInput" type="file" accept="image/*,video/mp4,video/webm,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" multiple hidden>
                 <button id="communityVoiceBtn" type="button" title="Записать голосовое сообщение" aria-label="Записать голосовое сообщение">🎙</button>
                 <input id="communityMessageInput" maxlength="12000" placeholder="Напиши сообщение..." autocomplete="off" required>
+                <button class="koto-sticker-trigger" type="button" data-koto-sticker-trigger data-koto-sticker-input="communityMessageInput" data-koto-sticker-form="communityMessageForm" title="Открыть кото-стикеры" aria-label="Открыть кото-стикеры">🐾</button>
                 <button type="submit" aria-label="Отправить">➤</button>
               </form>
             </div>
@@ -420,6 +422,15 @@
           <section class="settings-section settings-toggles">
             <label><span>Звуки интерфейса</span><input id="settingSounds" type="checkbox" checked></label>
             <label><span>Анимации</span><input id="settingAnimations" type="checkbox" checked></label>
+          </section>
+          <section class="settings-section koto-cursor-settings">
+            <strong>Курсор-лапка</strong>
+            <p>Выбери кошачью лапку или оставь обычный курсор.</p>
+            <div class="settings-choice-row koto-cursor-choices" role="group" aria-label="Форма курсора">
+              <button type="button" data-koto-cursor-choice="paw" aria-pressed="true">🐾 Лапка</button>
+              <button type="button" data-koto-cursor-choice="classic" aria-pressed="false">Обычный</button>
+            </div>
+            <label class="koto-paw-trail-option"><span><b>След из лапок</b><small>Небольшой след при движении мыши</small></span><input id="kotoPawTrailToggle" type="checkbox"></label>
           </section>
         </details>
       </div>

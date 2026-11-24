@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 const html = fs.readFileSync('public/index.html', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
+const delight = fs.readFileSync('public/koto-delight.js', 'utf8');
 const server = fs.readFileSync('server.js', 'utf8');
 
 const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
@@ -95,6 +96,18 @@ assert.match(app, /new RNNoiseNode\(context\)/, 'Voice calls must use the local 
 assert.match(app, /enhanceMicrophoneStream/, 'Captured microphone audio must pass through the noise-reduction pipeline.');
 assert.match(html, /id="micDenoiseStatus"/, 'Microphone settings must display the active noise-reduction engine.');
 assert.match(server, /vendor\/simple-rnnoise-wasm/, 'Server must serve the locally installed RNNoise assets.');
+
+
+assert.ok(html.includes('/koto-delight.js?v=20261124-koto-delight'), 'KOTO delight interactions must load as a versioned script.');
+assert.match(html, /data-koto-sticker-trigger/, 'Both chat composers must expose a sticker picker trigger.');
+assert.match(html, /id="kotoPawTrailToggle"/, 'Appearance settings must expose the paw cursor trail preference.');
+assert.match(delight, /kotoStickerPicker/, 'Sticker picker UI must be implemented.');
+assert.match(delight, /watchMascotAvatars/, 'Message and participant avatars must receive mascot styling.');
+assert.match(delight, /prefers-reduced-motion/, 'Mascot effects must respect reduced-motion accessibility.');
+assert.ok(delight.includes('localStorage.setItem(PREFS_KEY'), 'Paw cursor preferences must persist locally.');
+for (const requiredId of ['communityMessageInput', 'communityMessageForm', 'kotoPawTrailToggle']) {
+  assert.ok(uniqueIds.has(requiredId), 'KOTO delight target is missing: #' + requiredId);
+}
 
 console.log(
   'Frontend integrity OK: ' + uniqueIds.size + ' unique HTML ids, ' +
