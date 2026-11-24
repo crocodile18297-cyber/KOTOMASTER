@@ -95,16 +95,13 @@ let pinnedMessage = null;
 let notificationsEnabled = (() => { try { return localStorage.getItem('kotomaster-notifications') === '1'; } catch (_error) { return false; } })();
 let messageSearchQuery = '';
 let activeCallStartedAt = 0;
-let savedRoomRestorePromise = null;
-let manualRoomEntryRequested = false;
-let roomEntryInProgress = false;
 
 
 const KOTO_PREFS_KEY='kotomaster-preferences-v1';
 const KOTO_MUTED_PEERS_KEY='kotomaster-muted-peers-v1';
 function readKotoPrefs(){
-  try{return {...{accent:'#6d9272',theme:'light',scale:'normal',sounds:true,animations:true},...JSON.parse(localStorage.getItem(KOTO_PREFS_KEY)||'{}')};}
-  catch(_error){return {accent:'#6d9272',theme:'light',scale:'normal',sounds:true,animations:true};}
+  try{return {...{accent:'#a47965',theme:'light',scale:'normal',sounds:true,animations:true},...JSON.parse(localStorage.getItem(KOTO_PREFS_KEY)||'{}')};}
+  catch(_error){return {accent:'#a47965',theme:'light',scale:'normal',sounds:true,animations:true};}
 }
 let kotoPrefs=readKotoPrefs();
 
@@ -405,8 +402,8 @@ async function setCallUiPref(key){
 }
 function setSettingsTab(tab){
  const audio=tab==='audio',at=$('#settingsAudioTab'),gt=$('#settingsGeneralTab'),ap=$('#settingsAudioPanel'),gp=$('#settingsGeneralPanel');
- if(at){at.classList.toggle('is-active',audio);at.classList.toggle('active',audio);at.setAttribute('aria-selected',audio?'true':'false');}
- if(gt){gt.classList.toggle('is-active',!audio);gt.classList.toggle('active',!audio);gt.setAttribute('aria-selected',audio?'false':'true');}
+ if(at){at.classList.toggle('is-active',audio);at.setAttribute('aria-selected',audio?'true':'false');}
+ if(gt){gt.classList.toggle('is-active',!audio);gt.setAttribute('aria-selected',audio?'false':'true');}
  if(ap)ap.hidden=!audio;if(gp)gp.hidden=audio;
 }
 function startInterfaceFpsCounter(){
@@ -485,74 +482,6 @@ let authInitializationError = null;
 let authRecoveryPromise = null;
 let authStateSubscription = null;
 let authProfile = null;
-
-let selectedProfileAnimalId = 'cat';
-
-function resolveKotoAnimalId(avatarPath, displayName, isSelf = false) {
-  const path = String(avatarPath || '');
-  if (path.startsWith('animal:')) {
-    const id = path.slice(7);
-    if ((window.KOTO_ANIMALS || []).some((animal) => animal.id === id)) return id;
-  }
-  if (isSelf) return 'cat';
-  const name = String(displayName || 'котик');
-  let hash = 0;
-  for (let index = 0; index < name.length; index++) hash = ((hash << 5) - hash + name.charCodeAt(index)) | 0;
-  const animals = window.KOTO_ANIMALS || [];
-  return animals.length ? animals[Math.abs(hash) % animals.length].id : 'cat';
-}
-
-function setKotoAnimalAvatar(node, avatarPath, displayName = '', isSelf = false) {
-  if (!node) return;
-  const animals = window.KOTO_ANIMALS || [];
-  const id = resolveKotoAnimalId(avatarPath, displayName, isSelf);
-  const animal = animals.find((item) => item.id === id) || animals[0];
-  if (!animal || !window.KOTO_ANIMAL_ATLAS) {
-    node.textContent = firstLetter(displayName || myName || 'К');
-    return;
-  }
-  node.classList.add('koto-animal-avatar');
-  node.dataset.animalId = animal.id;
-  node.textContent = '';
-  node.style.backgroundImage = 'url("' + window.KOTO_ANIMAL_ATLAS + '")';
-  node.style.backgroundSize = '400% 400%';
-  node.style.backgroundPosition = (animal.x * 100 / 3) + '% ' + (animal.y * 100 / 3) + '%';
-  node.setAttribute('aria-label', animal.label);
-  node.title = animal.label;
-}
-
-function renderProfileAnimalPicker() {
-  const picker = $('#profileAnimalPicker');
-  if (!picker) return;
-  picker.replaceChildren();
-  (window.KOTO_ANIMALS || []).forEach((animal) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'profile-animal-choice';
-    button.dataset.animalId = animal.id;
-    button.setAttribute('aria-label', animal.label);
-    button.title = animal.label;
-    const art = document.createElement('span');
-    art.className = 'profile-animal-art';
-    setKotoAnimalAvatar(art, 'animal:' + animal.id, animal.label);
-    const label = document.createElement('small');
-    label.textContent = animal.label;
-    button.append(art, label);
-    button.addEventListener('click', () => {
-      selectedProfileAnimalId = animal.id;
-      picker.querySelectorAll('.profile-animal-choice').forEach((choice) => {
-        const selected = choice.dataset.animalId === selectedProfileAnimalId;
-        choice.classList.toggle('is-selected', selected);
-        choice.setAttribute('aria-pressed', String(selected));
-      });
-    });
-    const selected = animal.id === selectedProfileAnimalId;
-    button.classList.toggle('is-selected', selected);
-    button.setAttribute('aria-pressed', String(selected));
-    picker.append(button);
-  });
-}
-
 let passwordRecoveryPending = false;
 let posthogInitialized = false;
 let posthogIdentity = null;
@@ -830,7 +759,6 @@ function updateAuthInterface() {
   }
   const usernameNode=$('#myUsername');
   if(usernameNode) usernameNode.textContent=authProfile?.username?'@'+authProfile.username:'';
-  setKotoAnimalAvatar($('#myAvatar'), authProfile?.avatar_path, displayName, true);
 
 }
 
@@ -942,8 +870,6 @@ async function openProfileEditor() {
   $('#profileDisplayName').value=authProfile?.display_name||myName||'';
   $('#profileUsername').value=authProfile?.username||'';
   $('#profileBio').value=authProfile?.bio||'';
-  selectedProfileAnimalId = resolveKotoAnimalId(authProfile?.avatar_path, authProfile?.display_name || myName, true);
-  renderProfileAnimalPicker();
   $('#profileEditError').textContent='';
   $('#editProfileModal').hidden=false;
 }
@@ -963,7 +889,7 @@ async function saveProfileChanges(event) {
   setBusy(button,true,'Сохраняем…');
   try {
     const {data,error}=await supabaseClient.from('profiles')
-      .update({display_name:displayName,username,bio,avatar_path:'animal:'+selectedProfileAnimalId,updated_at:new Date().toISOString()})
+      .update({display_name:displayName,username,bio,updated_at:new Date().toISOString()})
       .eq('id',communityUserId())
       .select('id,username,display_name,avatar_path,bio').single();
     if(error) throw error;
@@ -971,9 +897,8 @@ async function saveProfileChanges(event) {
     myName=displayName;
     nameInput.value=displayName;
     $('#myName').textContent=displayName;
-    setKotoAnimalAvatar($('#myAvatar'), data.avatar_path, displayName, true);
+    $('#myAvatar').textContent=firstLetter(displayName);
     $('#myUsername').textContent='@'+username;
-    renderParticipants();
     $('#editProfileModal').hidden=true;
     if(socket && socket.connected) socket.emit('profile:update',{name:displayName});
     showToast('Профиль обновлён.');
@@ -1487,8 +1412,7 @@ function handlePageResume() {
 }
 
 async function restoreSavedRoom() {
-  // A manual room action takes priority over automatic restoration after login.
-  if (!authSession?.user || manualRoomEntryRequested || roomId) return;
+  if (!authSession?.user) return;
   let saved = null;
   try {
     saved = JSON.parse(localStorage.getItem(ROOM_SESSION_KEY) || 'null');
@@ -1506,8 +1430,6 @@ async function restoreSavedRoom() {
   showJoinError('Восстанавливаем последнюю комнату…');
   try {
     await connectSocket();
-    // The user may have started a manual create/join while the socket was connecting.
-    if (manualRoomEntryRequested || roomId) return;
     await joinRoom(nameInput.value, roomInput.value);
     showJoinError('');
     showToast(resumeCallAfterRestore
@@ -1515,16 +1437,12 @@ async function restoreSavedRoom() {
       : 'Последняя комната восстановлена.');
   } catch (error) {
     console.warn('Saved room could not be restored:', error);
-    if (!manualRoomEntryRequested) {
-      if (String(error.message || '').includes('Комната не найдена')) {
-        localStorage.removeItem(ROOM_SESSION_KEY);
-        showJoinError('Прежняя комната уже закрыта. Создай новую или введи актуальный код.');
-      } else {
-        showJoinError('Не удалось автоматически открыть прежнюю комнату. Проверь интернет и попробуй войти ещё раз.');
-      }
+    if (String(error.message || '').includes('Комната не найдена')) {
+      localStorage.removeItem(ROOM_SESSION_KEY);
+      showJoinError('Прежняя комната уже закрыта. Создай новую или введи актуальный код.');
+    } else {
+      showJoinError('Не удалось автоматически открыть прежнюю комнату. Проверь интернет и попробуй войти ещё раз.');
     }
-    // Even when a manual entry is waiting, release a socket whose room join
-    // timed out after the server accepted it but before the client got the ACK.
     if (socket && !roomId) {
       socket.disconnect();
       socket = null;
@@ -1625,11 +1543,11 @@ function renderParticipants() {
 
   entries.forEach((member) => {
     const row = document.createElement('div');
-    row.className = 'member-row km-member';
+    row.className = 'member-row';
     const avatar = document.createElement('div');
     avatar.className = 'avatar';
     if (member.id === (socket && socket.id)) avatar.classList.add('avatar-me');
-    setKotoAnimalAvatar(avatar, member.avatarPath || (member.id === (socket && socket.id) ? authProfile?.avatar_path : ''), member.name, member.id === (socket && socket.id));
+    avatar.textContent = firstLetter(member.name);
     const name = document.createElement('div');
     name.className = 'member-name';
     name.textContent = member.name + (member.id === (socket && socket.id) ? ' (ты)' : '');
@@ -1655,7 +1573,7 @@ function renderParticipants() {
 
       const callAvatar = document.createElement('span');
       callAvatar.className = 'call-person-avatar';
-      setKotoAnimalAvatar(callAvatar, member.avatarPath || (isSelf ? authProfile?.avatar_path : ''), member.name, isSelf);
+      callAvatar.textContent = firstLetter(member.name);
 
       const callCopy = document.createElement('span');
       callCopy.className = 'call-person-copy';
@@ -1695,7 +1613,7 @@ function renderParticipants() {
       chip.className = `mobile-member-chip${member.id === (socket && socket.id) ? ' is-me' : ''}`;
       const chipAvatar = document.createElement('span');
       chipAvatar.className = 'mobile-member-avatar';
-      setKotoAnimalAvatar(chipAvatar, member.avatarPath || (member.id === (socket && socket.id) ? authProfile?.avatar_path : ''), member.name, member.id === (socket && socket.id));
+      chipAvatar.textContent = firstLetter(member.name);
       const chipName = document.createElement('span');
       chipName.className = 'mobile-member-name';
       chipName.textContent = member.id === (socket && socket.id) ? 'Ты' : member.name;
@@ -1934,18 +1852,17 @@ function openMessageActionMenu(message, kind = 'room', trigger = null) {
 function createMessageNode(message) {
   const mine = Boolean(socket && message.from === socket.id);
   const row = document.createElement('div');
-  row.className = `message-row km-message${mine ? ' mine' : ''}`;
+  row.className = `message-row${mine ? ' mine' : ''}`;
   row.dataset.messageId = message.id;
 
   const avatar = document.createElement('div');
-  avatar.className = 'message-avatar km-message-avatar';
-  const senderMember = participants.get(message.from);
-  setKotoAnimalAvatar(avatar, senderMember?.avatarPath || (mine ? authProfile?.avatar_path : ''), message.name || myName, mine);
+  avatar.className = 'message-avatar';
+  avatar.textContent = firstLetter(message.name);
 
   const content = document.createElement('div');
-  content.className = 'message-content km-message-content';
+  content.className = 'message-content';
   const meta = document.createElement('div');
-  meta.className = 'message-meta km-message-meta';
+  meta.className = 'message-meta';
   const name = document.createElement('strong');
   name.textContent = mine ? 'Ты' : (message.name || 'Котик');
   const time = document.createElement('time');
@@ -1973,7 +1890,7 @@ function createMessageNode(message) {
   }
 
   const bubble = document.createElement('div');
-  bubble.className = 'message-bubble km-message-bubble';
+  bubble.className = 'message-bubble';
   if (message.deleted) {
     bubble.classList.add('message-deleted');
     bubble.textContent = 'Сообщение удалено';
@@ -2447,8 +2364,6 @@ function renderFriendLists() {
   } else {
     communityState.requests.forEach((request) => {
       const item = communityNode('div','community-person-item');
-      const personAvatar=communityNode('span','community-person-avatar');
-      setKotoAnimalAvatar(personAvatar,request.profile.avatar_path,request.profile.display_name||'Пользователь');
       const copy = communityNode('div','community-person-copy');
       copy.append(communityNode('strong','',request.profile.display_name || 'Пользователь'));
       copy.append(communityNode('small','',request.profile.username ? '@'+request.profile.username : 'Хочет добавить тебя в друзья'));
@@ -2459,7 +2374,7 @@ function renderFriendLists() {
       const decline = communityNode('button','community-small-action','Отклонить');
       decline.type='button';
       decline.addEventListener('click',()=>respondToFriendRequest(request.id,'declined'));
-      actions.append(accept,decline); item.append(personAvatar,copy,actions); requestList.append(item);
+      actions.append(accept,decline); item.append(copy,actions); requestList.append(item);
     });
   }
   const friendList = $('#friendList');
@@ -2469,15 +2384,13 @@ function renderFriendLists() {
   } else {
     communityState.friends.forEach((friend) => {
       const item=communityNode('div','community-person-item');
-      const personAvatar=communityNode('span','community-person-avatar');
-      setKotoAnimalAvatar(personAvatar,friend.profile.avatar_path,friend.profile.display_name||'Пользователь');
       const copy=communityNode('div','community-person-copy');
       copy.append(communityNode('strong','',friend.profile.display_name || 'Пользователь'));
       copy.append(communityNode('small','',friend.profile.username ? '@'+friend.profile.username : 'Друг'));
       const button=communityNode('button','community-small-action is-primary','Написать');
       button.type='button';
       button.addEventListener('click',()=>openDirectConversation(friend.userId));
-      item.append(personAvatar,copy,button); friendList.append(item);
+      item.append(copy,button); friendList.append(item);
     });
   }
 }
@@ -2490,7 +2403,7 @@ async function searchCommunityUsers(value) {
   renderCommunityLoading(results,'Ищем пользователей…');
   const safe=query.replace(/[%_,().]/g,' ').trim();
   const {data,error}=await supabaseClient.from('profiles')
-    .select('id,username,display_name,avatar_path')
+    .select('id,username,display_name')
     .neq('id',communityUserId())
     .or(`username.ilike.%${safe}%,display_name.ilike.%${safe}%`)
     .limit(12);
@@ -2503,8 +2416,6 @@ async function searchCommunityUsers(value) {
   if(!data?.length) { results.append(communityNode('p','community-empty-note','Никого не нашли. Проверь имя или username.')); return; }
   data.forEach((profile)=>{
     const item=communityNode('div','community-person-item');
-    const personAvatar=communityNode('span','community-person-avatar');
-    setKotoAnimalAvatar(personAvatar,profile.avatar_path,profile.display_name||'Пользователь');
     const copy=communityNode('div','community-person-copy');
     copy.append(communityNode('strong','',profile.display_name||'Пользователь'));
     copy.append(communityNode('small','',profile.username?'@'+profile.username:'Пользователь KOTOMASTER'));
@@ -2513,7 +2424,7 @@ async function searchCommunityUsers(value) {
     button.type='button';
     button.disabled=Boolean(knownStatus);
     if(!knownStatus) button.addEventListener('click',()=>sendFriendRequest(profile.id,button));
-    item.append(personAvatar,copy,button); results.append(item);
+    item.append(copy,button); results.append(item);
   });
 }
 
@@ -2608,8 +2519,7 @@ function renderCommunityConversations() {
     const item=communityNode('button','community-conversation-item'+(isSelected?' is-selected':''));
     item.type='button';
     item.addEventListener('click',()=>openCommunityConversation(conversation.id));
-    const icon=communityNode('span','community-conversation-avatar');
-    setKotoAnimalAvatar(icon,'',conversation.title||'Комната');
+    const icon=communityNode('span','community-conversation-avatar',conversation.kind==='group'?'#':(conversation.title||'К').slice(0,1).toUpperCase());
     const content=communityNode('span','community-conversation-copy');
     content.append(communityNode('strong','',conversation.title));
     const last=conversation.lastMessage;
@@ -2633,7 +2543,6 @@ function renderCommunityMessages(rows,profiles,attachments=[],reactions=[],readT
     list.append(communityNode('p','community-empty-note','Сообщений пока нет. Напиши первым.'));
     return;
   }
-  const profileMap=new Map((profiles||[]).map((profile)=>[profile.id,profile]));
   const names=new Map((profiles||[]).map((p)=>[p.id,p.display_name||'Пользователь']));
   const reactionMap=new Map();
   (reactions||[]).forEach((reaction)=>{
@@ -2646,11 +2555,7 @@ function renderCommunityMessages(rows,profiles,attachments=[],reactions=[],readT
     const item=communityNode('article','community-message'+(own?' is-own':''));
     item.dataset.messageId=message.id;
     const header=communityNode('div','community-message-header');
-    const senderName=names.get(message.sender_id)||'Пользователь';
-    const senderProfile=profileMap.get(message.sender_id);
-    const senderAvatar=communityNode('span','community-message-avatar');
-    setKotoAnimalAvatar(senderAvatar,senderProfile?.avatar_path,senderName,own);
-    header.append(senderAvatar,communityNode('strong','',own?'Ты':senderName));
+    header.append(communityNode('strong','',own?'Ты':(names.get(message.sender_id)||'Пользователь')));
     const date=new Date(message.created_at);
     header.append(communityNode('time','',date.toLocaleString('ru-RU',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})));
     if(own && readThrough && Date.parse(message.created_at)<=readThrough) {
@@ -3216,20 +3121,6 @@ function switchPanel(panel) {
   });
 
   $('#topbarTitle').textContent = isCall ? 'Общий звонок' : isCommunity ? 'Друзья и личные чаты' : 'Основной чат';
-  const viewTitle = $('#viewTitle');
-  const viewOverline = $('#viewOverline');
-  const viewDescription = $('#viewDescription');
-  const viewStatus = $('#viewStatus');
-  const topbarGlyph = $('#topbarGlyph');
-  if (viewTitle) viewTitle.textContent = isCall ? 'Общий звонок' : isCommunity ? 'Друзья и контакты' : 'Основной чат';
-  if (viewOverline) viewOverline.textContent = isCall ? 'KOTO LIVE ROOM' : isCommunity ? 'СООБЩЕСТВО' : 'ОБЩАЯ ПЕРЕПИСКА';
-  if (viewDescription) viewDescription.textContent = isCall ? 'Видеосвязь, голос и демонстрация экрана' : isCommunity ? 'Личные диалоги, друзья и групповые чаты' : 'Все сообщения комнаты в одном уютном месте';
-  if (viewStatus) viewStatus.textContent = isCall ? (isInCall ? 'Звонок идёт' : 'Ожидание участников') : 'Комната активна';
-  if (topbarGlyph) topbarGlyph.innerHTML = isCall
-    ? '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3"/></svg>'
-    : isCommunity
-      ? '<svg viewBox="0 0 24 24"><circle cx="10" cy="8" r="3.5"/><path d="M3 20v-1.5A3.5 3.5 0 0 1 6.5 15h7a3.5 3.5 0 0 1 3.5 3.5V20M17 5a3.5 3.5 0 0 1 0 6.5"/></svg>'
-      : '<svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6.5A7.5 7.5 0 0 1 10.5 7H12"/><path d="M8 12h7M8 15h5"/></svg>';
   const searchBox = $('.chat-search-box');
   if (searchBox) searchBox.hidden = !isChat;
 
@@ -5353,20 +5244,6 @@ async function copyText(value) {
   }
 }
 
-function prepareForManualRoomEntry() {
-  // If the local room state was already cleared, the server may still be
-  // completing an automatic restore on this socket. Disconnecting guarantees
-  // that the server's disconnect handler releases any stale membership.
-  if (roomId) {
-    leaveRoom();
-    return;
-  }
-  if (socket) {
-    socket.disconnect();
-    socket = null;
-  }
-}
-
 function leaveRoom() {
   try { localStorage.removeItem(ROOM_SESSION_KEY); } catch (_error) {}
   if (previewAudioStream) {
@@ -5409,20 +5286,12 @@ $('#editProfileForm').addEventListener('submit',saveProfileChanges);
 
 joinForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (roomEntryInProgress) return;
-  roomEntryInProgress = true;
-  manualRoomEntryRequested = true;
   const button = $('#createRoomBtn');
   const name = nameInput.value.trim();
-  if (!name) {
-    roomEntryInProgress = false;
-    return showJoinError('Напиши имя, чтобы создать комнату.');
-  }
+  if (!name) return showJoinError('Напиши имя, чтобы создать комнату.');
   showJoinError('');
   setBusy(button, true, 'Создаём комнату…');
   try {
-    if (savedRoomRestorePromise) await savedRoomRestorePromise;
-    prepareForManualRoomEntry();
     myName = name;
     await connectSocket();
     await createRoom(name);
@@ -5431,42 +5300,19 @@ joinForm.addEventListener('submit', async (event) => {
     if (socket && !roomId) { socket.disconnect(); socket = null; }
   } finally {
     setBusy(button, false);
-    roomEntryInProgress = false;
   }
 });
 
 joinRoomForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (roomEntryInProgress) return;
-  roomEntryInProgress = true;
-  manualRoomEntryRequested = true;
   const button = $('#joinRoomBtn');
   const name = nameInput.value.trim();
   const code = roomInput.value.trim().toUpperCase();
-  if (!name) {
-    roomEntryInProgress = false;
-    return showJoinError('Сначала напиши своё имя.');
-  }
-  if (code.length !== 6) {
-    roomEntryInProgress = false;
-    return showJoinError('Код комнаты должен состоять из 6 символов.');
-  }
+  if (!name) return showJoinError('Сначала напиши своё имя.');
+  if (code.length !== 6) return showJoinError('Код комнаты должен состоять из 6 символов.');
   showJoinError('');
   setBusy(button, true, 'Входим…');
   try {
-    if (savedRoomRestorePromise) await savedRoomRestorePromise;
-    if (roomId === code) {
-      showJoinError('');
-      joinScreen.hidden = true;
-      appScreen.hidden = false;
-      switchPanel('chat');
-      showToast('Ты уже находишься в этой комнате.');
-      return;
-    }
-    prepareForManualRoomEntry();
-    // leaveRoom clears the code field; retain the exact code the user submitted.
-    roomInput.value = code;
-    nameInput.value = name;
     myName = name;
     await connectSocket();
     await joinRoom(name, code);
@@ -5475,9 +5321,9 @@ joinRoomForm.addEventListener('submit', async (event) => {
     if (socket && !roomId) { socket.disconnect(); socket = null; }
   } finally {
     setBusy(button, false);
-    roomEntryInProgress = false;
   }
 });
+
 roomInput.addEventListener('input', () => { roomInput.value = roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6); });
 
 document.querySelectorAll('.nav-item, .server-rail-button, .server-rail-home, .mobile-nav-button').forEach((item) => item.addEventListener('click', () => switchPanel(item.dataset.panel)));
@@ -5733,12 +5579,7 @@ authInitializationPromise.then(async (initialized) => {
   if (initialized && authSession?.user) {
     await loadMyProfile();
     await loadRemoteCallHistory().catch((error)=>console.warn('Could not load remote call history:',error));
-    savedRoomRestorePromise = restoreSavedRoom();
-    try {
-      await savedRoomRestorePromise;
-    } finally {
-      savedRoomRestorePromise = null;
-    }
+    restoreSavedRoom();
   }
 }).catch((error) => {
   console.warn('Post-auth initialization skipped:', error?.name || 'Error');
