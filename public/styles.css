@@ -5896,3 +5896,331 @@ html.km-no-cat-accents #appScreen .km-call-menu .km-menu-paw { display:none!impo
   background: #4b9870;
   box-shadow: 0 0 0 4px rgba(76, 145, 111, .12);
 }
+
+
+/* KOTOMASTER delight layer: sticker picker, living mascot avatars and paw cursor. */
+:root {
+  --koto-paw-cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cg fill='%23fff8f2' stroke='%237b5c4d' stroke-width='1.5'%3E%3Cellipse cx='16' cy='21' rx='7.5' ry='6.5'/%3E%3Cellipse cx='6.8' cy='11' rx='3.2' ry='4.2'/%3E%3Cellipse cx='14' cy='6' rx='3.3' ry='4.2'/%3E%3Cellipse cx='22' cy='6' rx='3.3' ry='4.2'/%3E%3Cellipse cx='27' cy='13' rx='3.2' ry='4.2'/%3E%3C/g%3E%3Cg fill='%23e99b9b'%3E%3Cellipse cx='6.8' cy='11' rx='1.7' ry='2.5'/%3E%3Cellipse cx='14' cy='6' rx='1.7' ry='2.5'/%3E%3Cellipse cx='22' cy='6' rx='1.7' ry='2.5'/%3E%3Cellipse cx='27' cy='13' rx='1.7' ry='2.5'/%3E%3Cpath d='M11 21q0-4 5-4t5 4q-1 4-5 4t-5-4Z'/%3E%3C/g%3E%3C/svg%3E") 4 2, auto;
+}
+html[data-koto-cursor="paw"] body { cursor: var(--koto-paw-cursor); }
+html[data-koto-cursor="paw"] button,
+html[data-koto-cursor="paw"] a,
+html[data-koto-cursor="paw"] [role="button"],
+html[data-koto-cursor="paw"] summary,
+html[data-koto-cursor="paw"] select,
+html[data-koto-cursor="paw"] input[type="checkbox"],
+html[data-koto-cursor="paw"] input[type="radio"] {
+  cursor: var(--koto-paw-cursor), pointer;
+}
+html[data-koto-cursor="classic"] body,
+html[data-koto-cursor="classic"] button,
+html[data-koto-cursor="classic"] a,
+html[data-koto-cursor="classic"] [role="button"],
+html[data-koto-cursor="classic"] summary,
+html[data-koto-cursor="classic"] select,
+html[data-koto-cursor="classic"] input[type="checkbox"],
+html[data-koto-cursor="classic"] input[type="radio"] { cursor: auto; }
+html[data-koto-cursor="classic"] button,
+html[data-koto-cursor="classic"] a,
+html[data-koto-cursor="classic"] [role="button"],
+html[data-koto-cursor="classic"] summary { cursor: pointer; }
+
+.koto-sticker-trigger {
+  width: 39px;
+  height: 39px;
+  min-width: 39px;
+  flex: 0 0 39px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(164, 121, 101, .22);
+  border-radius: 12px;
+  color: #805c4e;
+  background: rgba(249, 225, 211, .72);
+  box-shadow: 0 4px 14px rgba(61, 35, 26, .06);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+}
+.koto-sticker-trigger:hover {
+  transform: translateY(-2px) rotate(-5deg);
+  background: #fae4d8;
+  box-shadow: 0 7px 18px rgba(61, 35, 26, .12);
+}
+.koto-sticker-trigger:active { transform: scale(.94); }
+.koto-sticker-trigger:focus-visible {
+  outline: 3px solid rgba(164, 121, 101, .42);
+  outline-offset: 3px;
+}
+
+.koto-sticker-picker {
+  position: fixed;
+  z-index: 140;
+  display: flex;
+  flex-direction: column;
+  max-height: min(360px, calc(100dvh - 24px));
+  overflow: hidden;
+  padding: 13px;
+  border: 1px solid #edd7c9;
+  border-radius: 19px;
+  color: #553b31;
+  background: #fffaf6;
+  box-shadow: 0 22px 70px rgba(35, 19, 13, .28), 0 2px 10px rgba(35, 19, 13, .07);
+  animation: koto-sticker-appear .18s cubic-bezier(.2,.75,.25,1) both;
+}
+.koto-sticker-picker[hidden] { display: none !important; }
+@keyframes koto-sticker-appear {
+  from { opacity: 0; transform: translateY(7px) scale(.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.koto-sticker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 1px 1px 11px;
+}
+.koto-sticker-title-wrap { display: grid; gap: 3px; }
+.koto-sticker-title-wrap strong {
+  color: #593a2d;
+  font: 800 13px/1.2 'Plus Jakarta Sans', 'DM Sans', sans-serif;
+}
+.koto-sticker-title-wrap small { color: #9c8174; font-size: 9px; }
+.koto-sticker-close {
+  width: 29px;
+  height: 29px;
+  flex: 0 0 29px;
+  border: 0;
+  border-radius: 9px;
+  color: #8b6c5e;
+  background: #f7e9e0;
+  font-size: 19px;
+  line-height: 1;
+}
+.koto-sticker-close:hover { color: #593a2d; background: #f0dace; }
+.koto-sticker-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-bottom: 9px;
+  padding: 4px;
+  border-radius: 11px;
+  background: #f6eee8;
+}
+.koto-sticker-tab {
+  min-height: 31px;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 8px;
+  color: #92796e;
+  background: transparent;
+  font-size: 9px;
+  font-weight: 800;
+}
+.koto-sticker-tab.is-active {
+  color: #674838;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(80, 49, 35, .08);
+}
+.koto-sticker-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1px 2px 5px 1px;
+}
+.koto-sticker-item {
+  min-width: 0;
+  min-height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 3px 5px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: #785b4c;
+  background: #fff4ed;
+  transition: transform .16s ease, background .16s ease, border-color .16s ease;
+}
+.koto-sticker-item:hover {
+  transform: translateY(-2px);
+  border-color: #edcdbb;
+  background: #fce8dc;
+}
+.koto-sticker-art {
+  display: block;
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+  font-size: 26px;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+.koto-sticker-item small {
+  max-width: 100%;
+  overflow: hidden;
+  color: #977f73;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.koto-sticker-hint {
+  margin: 8px 1px 0;
+  color: #a58b7e;
+  font-size: 8px;
+  line-height: 1.4;
+}
+.koto-sticker-message {
+  min-width: 58px;
+  display: inline-block;
+  padding: 5px 10px !important;
+  border: 0 !important;
+  color: inherit !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif !important;
+  font-size: clamp(29px, 4vw, 41px) !important;
+  line-height: 1.3 !important;
+  letter-spacing: 1px;
+  text-align: center;
+  animation: koto-sticker-message-in .24s cubic-bezier(.2,.85,.35,1.25) both;
+}
+@keyframes koto-sticker-message-in {
+  from { opacity: 0; transform: scale(.78) rotate(-4deg); }
+  to { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+.koto-mascot-avatar {
+  --koto-avatar-bg: #e4eee1;
+  --koto-avatar-ear: #b6cbb1;
+  position: relative;
+  isolation: isolate;
+  overflow: visible !important;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.7);
+  border-radius: 13px;
+  color: #526b54 !important;
+  background: var(--koto-avatar-bg) !important;
+  box-shadow: 0 3px 10px rgba(54, 47, 38, .09);
+  font-weight: 850 !important;
+  animation: koto-mascot-idle 5.8s ease-in-out infinite;
+}
+.koto-mascot-avatar::before,
+.koto-mascot-avatar::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  top: -7%;
+  width: 34%;
+  height: 38%;
+  border: 1px solid rgba(255,255,255,.68);
+  border-radius: 70% 70% 22% 22%;
+  background: var(--koto-avatar-ear);
+  clip-path: polygon(0 0, 100% 0, 78% 100%, 21% 82%);
+  pointer-events: none;
+}
+.koto-mascot-avatar::before { left: 5%; transform: rotate(-15deg); }
+.koto-mascot-avatar::after { right: 5%; transform: rotate(15deg) scaleX(-1); }
+.koto-mascot-avatar[data-koto-tone="1"] { --koto-avatar-bg:#f8e7dc; --koto-avatar-ear:#e5b59e; color:#865a49!important; }
+.koto-mascot-avatar[data-koto-tone="2"] { --koto-avatar-bg:#eae5f6; --koto-avatar-ear:#c4b8e2; color:#685c8e!important; }
+.koto-mascot-avatar[data-koto-tone="3"] { --koto-avatar-bg:#e1edf2; --koto-avatar-ear:#b2d0dc; color:#4c7584!important; }
+.koto-mascot-avatar[data-koto-tone="4"] { --koto-avatar-bg:#f5eccc; --koto-avatar-ear:#e0c98b; color:#806a36!important; }
+.koto-mascot-avatar[data-koto-tone="5"] { --koto-avatar-bg:#f2e2eb; --koto-avatar-ear:#dcb7cb; color:#875b75!important; }
+@keyframes koto-mascot-idle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+.koto-mascot-avatar:hover { animation: koto-mascot-greet .42s ease-in-out 1; }
+@keyframes koto-mascot-greet {
+  0%, 100% { transform: rotate(0); }
+  30% { transform: rotate(-7deg) translateY(-2px); }
+  70% { transform: rotate(6deg); }
+}
+.koto-paw-trail {
+  position: fixed;
+  z-index: 130;
+  width: 17px;
+  height: 17px;
+  display: grid;
+  place-items: center;
+  color: #d79a95;
+  font-size: 14px;
+  line-height: 1;
+  pointer-events: none;
+  transform: translate(-50%, -50%) rotate(-18deg);
+  animation: koto-paw-fade .62s ease-out forwards;
+}
+@keyframes koto-paw-fade {
+  to { opacity: 0; transform: translate(-50%, -95%) rotate(12deg) scale(.72); }
+}
+#settingsModal .koto-cursor-settings {
+  display: grid;
+  gap: 7px;
+  margin-top: 15px;
+  padding-top: 14px;
+  border-top: 1px solid #efdfd5;
+}
+#settingsModal .koto-cursor-settings > strong {
+  color: #674a3c;
+  font-size: 10px;
+  font-weight: 900;
+}
+#settingsModal .koto-cursor-settings > p {
+  margin: 0;
+  color: #9b7f72;
+  font-size: 9px;
+}
+#settingsModal .koto-cursor-choices button.is-selected,
+#settingsModal .koto-cursor-choices button[aria-pressed="true"] {
+  color: #674838;
+  border-color: #e5c1ad;
+  background: #f8e8dc;
+}
+#settingsModal .koto-paw-trail-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 11px;
+  border: 1px solid #eeded3;
+  border-radius: 11px;
+  background: rgba(255,255,255,.72);
+}
+#settingsModal .koto-paw-trail-option span { display: grid; gap: 3px; }
+#settingsModal .koto-paw-trail-option b { color: #725447; font-size: 9px; }
+#settingsModal .koto-paw-trail-option small { color: #9b8276; font-size: 8px; }
+#settingsModal .koto-paw-trail-option input {
+  width: 16px;
+  height: 16px;
+  accent-color: #a47965;
+  flex: 0 0 16px;
+}
+@media (max-width: 740px) {
+  .koto-sticker-picker {
+    max-height: min(330px, calc(100dvh - 24px));
+    padding: 10px;
+    border-radius: 16px;
+  }
+  .koto-sticker-grid { gap: 5px; }
+  .koto-sticker-item { min-height: 59px; }
+  .koto-sticker-art { font-size: 24px; }
+  .koto-sticker-trigger { width:35px; height:35px; min-width:35px; flex-basis:35px; border-radius:10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .koto-sticker-picker,
+  .koto-sticker-message,
+  .koto-sticker-trigger,
+  .koto-mascot-avatar,
+  .koto-mascot-avatar:hover,
+  .koto-paw-trail { animation: none !important; transition: none !important; }
+}
+html[data-koto-animations="off"] .koto-sticker-picker,
+html[data-koto-animations="off"] .koto-sticker-message,
+html[data-koto-animations="off"] .koto-sticker-trigger,
+html[data-koto-animations="off"] .koto-mascot-avatar,
+html[data-koto-animations="off"] .koto-mascot-avatar:hover,
+html[data-koto-animations="off"] .koto-paw-trail { animation: none !important; transition: none !important; }
