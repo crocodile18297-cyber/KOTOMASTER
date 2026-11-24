@@ -27,6 +27,10 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), display-capture=(self)');
   next();
 });
+app.use('/vendor/simple-rnnoise-wasm', express.static(
+  path.join(__dirname, 'node_modules', 'simple-rnnoise-wasm', 'dist'),
+  { immutable: true, maxAge: '7d' }
+));
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 
 
