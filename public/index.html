@@ -204,7 +204,7 @@
             <div id="messagesList" class="messages-list"></div><div id="typingIndicator" class="typing-indicator" hidden></div>
           </div>
           <div id="replyPreview" class="reply-preview" hidden></div>
-          <form id="messageForm" class="composer"><div class="composer-attach" aria-hidden="true">✧</div><input id="messageInput" maxlength="1200" placeholder="Напиши сообщение команде..." autocomplete="off"><span class="composer-hint">Enter ↵</span><button class="send-button" type="submit" aria-label="Отправить сообщение"><svg viewBox="0 0 24 24"><path d="m4 4 16 8-16 8 3-8-3-8Z"/><path d="M7 12h13"/></svg></button></form>
+          <form id="messageForm" class="composer"><div class="composer-attach" aria-hidden="true">✧</div><button id="kotoStickerBtn" class="koto-sticker-trigger" type="button" aria-label="Открыть звериные стикеры" title="Звериные стикеры"><svg viewBox="0 0 40 40" aria-hidden="true"><ellipse cx="9" cy="10" rx="4" ry="5.5"/><ellipse cx="19" cy="6" rx="4" ry="5.5"/><ellipse cx="29" cy="10" rx="4" ry="5.5"/><ellipse cx="34" cy="18" rx="3.4" ry="4.5"/><path d="M11 27c0-6.4 4-10 9-10s9 3.6 9 10c0 5.5-4.3 8-9 8s-9-2.5-9-8Z"/></svg><i aria-hidden="true">✦</i></button><input id="messageInput" maxlength="1200" placeholder="Напиши сообщение команде..." autocomplete="off"><span class="composer-hint">Enter ↵</span><button class="send-button" type="submit" aria-label="Отправить сообщение"><svg viewBox="0 0 24 24"><path d="m4 4 16 8-16 8 3-8-3-8Z"/><path d="M7 12h13"/></svg></button></form>
         </section>
 
         <section id="callPanel" class="call-panel" hidden>
@@ -324,7 +324,7 @@
               <div id="communityMessages" class="community-messages"></div>
               <div id="communityReplyPreview" class="community-reply-preview" hidden></div>
               <form id="communityMessageForm" class="community-composer">
-                <button id="communityAttachBtn" type="button" title="Прикрепить файл" aria-label="Прикрепить файл">＋</button>
+                <button id="communityAttachBtn" type="button" title="Прикрепить файл" aria-label="Прикрепить файл">＋</button><button id="communityStickerBtn" class="koto-sticker-trigger koto-sticker-trigger-small" type="button" aria-label="Открыть звериные стикеры" title="Звериные стикеры"><svg viewBox="0 0 40 40" aria-hidden="true"><ellipse cx="9" cy="10" rx="4" ry="5.5"/><ellipse cx="19" cy="6" rx="4" ry="5.5"/><ellipse cx="29" cy="10" rx="4" ry="5.5"/><ellipse cx="34" cy="18" rx="3.4" ry="4.5"/><path d="M11 27c0-6.4 4-10 9-10s9 3.6 9 10c0 5.5-4.3 8-9 8s-9-2.5-9-8Z"/></svg><i aria-hidden="true">✦</i></button>
                 <input id="communityFileInput" type="file" accept="image/*,video/mp4,video/webm,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" multiple hidden>
                 <button id="communityVoiceBtn" type="button" title="Записать голосовое сообщение" aria-label="Записать голосовое сообщение">🎙</button>
                 <input id="communityMessageInput" maxlength="12000" placeholder="Напиши сообщение..." autocomplete="off" required>
