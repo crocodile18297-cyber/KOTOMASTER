@@ -1851,7 +1851,7 @@ function openMessageActionMenu(message, kind = 'room', trigger = null) {
 
 
 const KOTO_STICKER_IMAGE_BASE = '/stickers/v2';
-const KOTO_STICKER_CACHE_KEY = '20261124-sticker-pack-v3';
+const KOTO_STICKER_CACHE_KEY = '20261124-sticker-pack-v4';
 const kotoStickerImageUrls = new Map();
 let kotoStickerSheetPromise = null;
 
@@ -1889,7 +1889,18 @@ async function loadKotoStickerSheet() {
   if (kotoStickerSheetPromise) return kotoStickerSheetPromise;
 
   kotoStickerSheetPromise = Promise.all(KOTO_STICKERS.map(async (sticker) => {
-    const imageUrl = `${KOTO_STICKER_IMAGE_BASE}/${sticker.id}.webp?v=${KOTO_STICKER_CACHE_KEY}`;
+    const assetPath = `${KOTO_STICKER_IMAGE_BASE}/${sticker.id}.webp.b64?v=${KOTO_STICKER_CACHE_KEY}`;
+    const response = await fetch(assetPath, { cache: 'force-cache' });
+    if (!response.ok) {
+      throw new Error('Не удалось загрузить стикер «' + sticker.name + '».');
+    }
+
+    const base64 = (await response.text()).trim();
+    if (!base64 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(base64)) {
+      throw new Error('Файл стикера «' + sticker.name + '» повреждён.');
+    }
+
+    const imageUrl = 'data:image/webp;base64,' + base64;
     const image = new Image();
     image.decoding = 'async';
     image.src = imageUrl;
@@ -1899,11 +1910,11 @@ async function loadKotoStickerSheet() {
     } else {
       await new Promise((resolve, reject) => {
         image.onload = resolve;
-        image.onerror = () => reject(new Error('Не удалось загрузить стикер «' + sticker.name + '».'));
+        image.onerror = () => reject(new Error('Браузер не смог декодировать стикер «' + sticker.name + '».'));
       });
     }
 
-    if (image.naturalWidth < 200 || image.naturalHeight < 200) {
+    if (image.naturalWidth < 140 || image.naturalHeight < 140) {
       throw new Error('Файл стикера «' + sticker.name + '» имеет слишком низкое разрешение.');
     }
     return [sticker.id, imageUrl];
