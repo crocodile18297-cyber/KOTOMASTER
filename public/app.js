@@ -1865,10 +1865,10 @@ const KOTO_STICKERS = [
   {id:'panda-boba',name:'Перерыв',animal:'Панды',group:'pandas'},
   {id:'panda-hug',name:'Держись!',animal:'Панды',group:'pandas'},
   {id:'panda-star',name:'Блестяще',animal:'Панды',group:'pandas'},
-  {id:'bear-cozy',name:'Уютно',animal:'Мишки',group:'others'},
-  {id:'bunny-flower',name:'Цветочек',animal:'Зайки',group:'others'},
-  {id:'bunny-wow',name:'Удивлён',animal:'Зайки',group:'others'},
-  {id:'dog-happy',name:'Хороший день',animal:'Собачки',group:'others'},
+  {id:'bear-cozy',name:'Уютно',animal:'Мишки',group:'bears'},
+  {id:'bunny-flower',name:'Цветочек',animal:'Зайки',group:'bunnies'},
+  {id:'bunny-wow',name:'Удивлён',animal:'Зайки',group:'bunnies'},
+  {id:'dog-happy',name:'Хороший день',animal:'Собачки',group:'dogs'},
   {id:'frog-cute',name:'Мило',animal:'Другие',group:'others'},
   {id:'raccoon-hi',name:'Йо!',animal:'Другие',group:'others'},
   {id:'capybara-snack',name:'Перекус',animal:'Другие',group:'others'},
@@ -1958,6 +1958,9 @@ function buildKotoStickerPicker(form, trigger, input, pickerId) {
     {id:'cats',label:'Котики'},
     {id:'foxes',label:'Лисы'},
     {id:'pandas',label:'Панды'},
+    {id:'bears',label:'Мишки'},
+    {id:'bunnies',label:'Зайки'},
+    {id:'dogs',label:'Собаки'},
     {id:'others',label:'Другие'}
   ];
   let activeCategory = 'all';
