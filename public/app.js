@@ -402,8 +402,8 @@ async function setCallUiPref(key){
 }
 function setSettingsTab(tab){
  const audio=tab==='audio',at=$('#settingsAudioTab'),gt=$('#settingsGeneralTab'),ap=$('#settingsAudioPanel'),gp=$('#settingsGeneralPanel');
- if(at){at.classList.toggle('is-active',audio);at.setAttribute('aria-selected',audio?'true':'false');}
- if(gt){gt.classList.toggle('is-active',!audio);gt.setAttribute('aria-selected',audio?'false':'true');}
+ if(at){at.classList.toggle('is-active',audio);at.classList.toggle('active',audio);at.setAttribute('aria-selected',audio?'true':'false');}
+ if(gt){gt.classList.toggle('is-active',!audio);gt.classList.toggle('active',!audio);gt.setAttribute('aria-selected',audio?'false':'true');}
  if(ap)ap.hidden=!audio;if(gp)gp.hidden=audio;
 }
 function startInterfaceFpsCounter(){
@@ -1615,7 +1615,7 @@ function renderParticipants() {
 
   entries.forEach((member) => {
     const row = document.createElement('div');
-    row.className = 'member-row';
+    row.className = 'member-row km-member';
     const avatar = document.createElement('div');
     avatar.className = 'avatar';
     if (member.id === (socket && socket.id)) avatar.classList.add('avatar-me');
@@ -1924,18 +1924,18 @@ function openMessageActionMenu(message, kind = 'room', trigger = null) {
 function createMessageNode(message) {
   const mine = Boolean(socket && message.from === socket.id);
   const row = document.createElement('div');
-  row.className = `message-row${mine ? ' mine' : ''}`;
+  row.className = `message-row km-message${mine ? ' mine' : ''}`;
   row.dataset.messageId = message.id;
 
   const avatar = document.createElement('div');
-  avatar.className = 'message-avatar';
+  avatar.className = 'message-avatar km-message-avatar';
   const senderMember = participants.get(message.from);
   setKotoAnimalAvatar(avatar, senderMember?.avatarPath || (mine ? authProfile?.avatar_path : ''), message.name || myName, mine);
 
   const content = document.createElement('div');
-  content.className = 'message-content';
+  content.className = 'message-content km-message-content';
   const meta = document.createElement('div');
-  meta.className = 'message-meta';
+  meta.className = 'message-meta km-message-meta';
   const name = document.createElement('strong');
   name.textContent = mine ? 'Ты' : (message.name || 'Котик');
   const time = document.createElement('time');
@@ -1963,7 +1963,7 @@ function createMessageNode(message) {
   }
 
   const bubble = document.createElement('div');
-  bubble.className = 'message-bubble';
+  bubble.className = 'message-bubble km-message-bubble';
   if (message.deleted) {
     bubble.classList.add('message-deleted');
     bubble.textContent = 'Сообщение удалено';
@@ -3206,6 +3206,20 @@ function switchPanel(panel) {
   });
 
   $('#topbarTitle').textContent = isCall ? 'Общий звонок' : isCommunity ? 'Друзья и личные чаты' : 'Основной чат';
+  const viewTitle = $('#viewTitle');
+  const viewOverline = $('#viewOverline');
+  const viewDescription = $('#viewDescription');
+  const viewStatus = $('#viewStatus');
+  const topbarGlyph = $('#topbarGlyph');
+  if (viewTitle) viewTitle.textContent = isCall ? 'Общий звонок' : isCommunity ? 'Друзья и контакты' : 'Основной чат';
+  if (viewOverline) viewOverline.textContent = isCall ? 'KOTO LIVE ROOM' : isCommunity ? 'СООБЩЕСТВО' : 'ОБЩАЯ ПЕРЕПИСКА';
+  if (viewDescription) viewDescription.textContent = isCall ? 'Видеосвязь, голос и демонстрация экрана' : isCommunity ? 'Личные диалоги, друзья и групповые чаты' : 'Все сообщения комнаты в одном уютном месте';
+  if (viewStatus) viewStatus.textContent = isCall ? (isInCall ? 'Звонок идёт' : 'Ожидание участников') : 'Комната активна';
+  if (topbarGlyph) topbarGlyph.innerHTML = isCall
+    ? '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3"/></svg>'
+    : isCommunity
+      ? '<svg viewBox="0 0 24 24"><circle cx="10" cy="8" r="3.5"/><path d="M3 20v-1.5A3.5 3.5 0 0 1 6.5 15h7a3.5 3.5 0 0 1 3.5 3.5V20M17 5a3.5 3.5 0 0 1 0 6.5"/></svg>'
+      : '<svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6.5A7.5 7.5 0 0 1 10.5 7H12"/><path d="M8 12h7M8 15h5"/></svg>';
   const searchBox = $('.chat-search-box');
   if (searchBox) searchBox.hidden = !isChat;
 
