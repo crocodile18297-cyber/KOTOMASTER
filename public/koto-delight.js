@@ -206,7 +206,7 @@
   }
 
   function addPawTrail(x, y) {
-    if (!prefs.pawTrail || prefs.cursor === 'classic' || window.matchMedia('(pointer: coarse)').matches) return;
+    if (!prefs.pawTrail || prefs.cursor === 'classic' || window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const now = performance.now();
     if (now - lastTrailAt < 120 || trailCount >= 5) return;
     lastTrailAt = now;
@@ -251,6 +251,35 @@
     });
   }
 
+  function decorateMascotAvatars(root) {
+    if (!root) return;
+    root.querySelectorAll('.message-avatar, .avatar, .call-person-avatar, .mobile-member-avatar').forEach((avatar) => {
+      if (avatar.dataset.kotoMascotAvatar === '1') return;
+      const row = avatar.closest('.message-row, .member-row, .call-participant-row, .mobile-member-chip');
+      const nameNode = row?.querySelector('.message-meta strong, .member-name, .call-person-copy strong, .mobile-member-name');
+      const name = (nameNode?.textContent || avatar.textContent || 'котик').trim();
+      let hash = 0;
+      for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
+      avatar.dataset.kotoTone = String(Math.abs(hash) % 6);
+      avatar.dataset.kotoMascotAvatar = '1';
+      avatar.classList.add('koto-mascot-avatar');
+      if (!avatar.title) avatar.title = name;
+      if (!avatar.getAttribute('aria-label')) avatar.setAttribute('aria-label', 'Аватар: ' + name);
+    });
+  }
+
+  function watchMascotAvatars() {
+    const roots = [
+      $('memberList'), $('mobileMemberStrip'), $('callParticipantList'),
+      $('messagesList'), $('communityMessages')
+    ].filter(Boolean);
+    roots.forEach((root) => {
+      decorateMascotAvatars(root);
+      const observer = new MutationObserver(() => decorateMascotAvatars(root));
+      observer.observe(root, { childList: true, subtree: true });
+    });
+  }
+
   function bindSettings() {
     document.querySelectorAll('[data-koto-cursor-choice]').forEach((button) => {
       button.addEventListener('click', () => {
@@ -285,4 +314,5 @@
   bindSettings();
   applyPreferences();
   watchMessageLists();
+  watchMascotAvatars();
 })();
