@@ -103,6 +103,7 @@ assert.match(html, /data-koto-sticker-trigger/, 'Both chat composers must expose
 assert.match(html, /id="kotoPawTrailToggle"/, 'Appearance settings must expose the paw cursor trail preference.');
 assert.match(delight, /kotoStickerPicker/, 'Sticker picker UI must be implemented.');
 assert.match(delight, /watchMascotAvatars/, 'Message and participant avatars must receive mascot styling.');
+assert.match(delight, /classList\.contains\('koto-animal-avatar'\)/, 'Real animal portrait avatars must not be covered by the mascot overlay.');
 assert.match(delight, /prefers-reduced-motion/, 'Mascot effects must respect reduced-motion accessibility.');
 assert.ok(delight.includes('localStorage.setItem(PREFS_KEY'), 'Paw cursor preferences must persist locally.');
 for (const requiredId of ['communityMessageInput', 'communityMessageForm', 'kotoPawTrailToggle']) {
