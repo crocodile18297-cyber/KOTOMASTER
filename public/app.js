@@ -2437,6 +2437,8 @@ function renderFriendLists() {
   } else {
     communityState.requests.forEach((request) => {
       const item = communityNode('div','community-person-item');
+      const personAvatar=communityNode('span','community-person-avatar');
+      setKotoAnimalAvatar(personAvatar,request.profile.avatar_path,request.profile.display_name||'Пользователь');
       const copy = communityNode('div','community-person-copy');
       copy.append(communityNode('strong','',request.profile.display_name || 'Пользователь'));
       copy.append(communityNode('small','',request.profile.username ? '@'+request.profile.username : 'Хочет добавить тебя в друзья'));
@@ -2447,7 +2449,7 @@ function renderFriendLists() {
       const decline = communityNode('button','community-small-action','Отклонить');
       decline.type='button';
       decline.addEventListener('click',()=>respondToFriendRequest(request.id,'declined'));
-      actions.append(accept,decline); item.append(copy,actions); requestList.append(item);
+      actions.append(accept,decline); item.append(personAvatar,copy,actions); requestList.append(item);
     });
   }
   const friendList = $('#friendList');
@@ -2457,13 +2459,15 @@ function renderFriendLists() {
   } else {
     communityState.friends.forEach((friend) => {
       const item=communityNode('div','community-person-item');
+      const personAvatar=communityNode('span','community-person-avatar');
+      setKotoAnimalAvatar(personAvatar,friend.profile.avatar_path,friend.profile.display_name||'Пользователь');
       const copy=communityNode('div','community-person-copy');
       copy.append(communityNode('strong','',friend.profile.display_name || 'Пользователь'));
       copy.append(communityNode('small','',friend.profile.username ? '@'+friend.profile.username : 'Друг'));
       const button=communityNode('button','community-small-action is-primary','Написать');
       button.type='button';
       button.addEventListener('click',()=>openDirectConversation(friend.userId));
-      item.append(copy,button); friendList.append(item);
+      item.append(personAvatar,copy,button); friendList.append(item);
     });
   }
 }
@@ -2489,6 +2493,8 @@ async function searchCommunityUsers(value) {
   if(!data?.length) { results.append(communityNode('p','community-empty-note','Никого не нашли. Проверь имя или username.')); return; }
   data.forEach((profile)=>{
     const item=communityNode('div','community-person-item');
+    const personAvatar=communityNode('span','community-person-avatar');
+    setKotoAnimalAvatar(personAvatar,profile.avatar_path,profile.display_name||'Пользователь');
     const copy=communityNode('div','community-person-copy');
     copy.append(communityNode('strong','',profile.display_name||'Пользователь'));
     copy.append(communityNode('small','',profile.username?'@'+profile.username:'Пользователь KOTOMASTER'));
@@ -2497,7 +2503,7 @@ async function searchCommunityUsers(value) {
     button.type='button';
     button.disabled=Boolean(knownStatus);
     if(!knownStatus) button.addEventListener('click',()=>sendFriendRequest(profile.id,button));
-    item.append(copy,button); results.append(item);
+    item.append(personAvatar,copy,button); results.append(item);
   });
 }
 
@@ -2592,7 +2598,8 @@ function renderCommunityConversations() {
     const item=communityNode('button','community-conversation-item'+(isSelected?' is-selected':''));
     item.type='button';
     item.addEventListener('click',()=>openCommunityConversation(conversation.id));
-    const icon=communityNode('span','community-conversation-avatar',conversation.kind==='group'?'#':(conversation.title||'К').slice(0,1).toUpperCase());
+    const icon=communityNode('span','community-conversation-avatar');
+    setKotoAnimalAvatar(icon,'',conversation.title||'Комната');
     const content=communityNode('span','community-conversation-copy');
     content.append(communityNode('strong','',conversation.title));
     const last=conversation.lastMessage;
