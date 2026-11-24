@@ -2048,6 +2048,8 @@ function buildKotoStickerPicker(form, trigger, input, pickerId) {
       trigger.focus();
     }
   });
+  // Populate the popup before attaching it: without these children the button only opens an empty shell.
+  picker.append(head, tabs, grid, footer);
   form.append(picker);
   renderTabs();
   renderGrid();
