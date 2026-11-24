@@ -124,6 +124,10 @@ assert.match(html, /class="km-desktop-frame"/, 'The MagicPath four-column deskto
 assert.match(html, /class="km-details"/, 'The MagicPath room information rail must exist.');
 assert.match(app, /km-message-bubble/, 'Live chat messages must use the MagicPath message presentation.');
 
+assert.match(app, /savedRoomRestorePromise/, 'Manual room entry must wait for automatic session restoration.');
+assert.match(app, /prepareForManualRoomEntry/, 'Manual room entry must release any stale socket membership.');
+assert.match(app, /manualRoomEntryRequested/, 'A manual room action must take priority over automatic restoration.');
+
 console.log(
   'Frontend integrity OK: ' + uniqueIds.size + ' unique HTML ids, ' +
   new Set(selectorIds).size + ' JavaScript id selectors, ' +
