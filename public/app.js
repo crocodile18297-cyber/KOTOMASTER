@@ -62,6 +62,8 @@ let isMicOn = false;
 let isCameraOn = false;
 let isSharing = false;
 let isRoomSyncing = false;
+let roomJoinInProgress = false;
+let pendingRoomEvents = [];
 let wasMicInterrupted = false;
 let wasCameraInterrupted = false;
 let videoQualityBoostEnabled = (() => { try { return localStorage.getItem('kotomaster-video-quality-boost') === '1'; } catch (_error) { return false; } })();
@@ -791,6 +793,85 @@ function emitWithAck(event, payload) {
   });
 }
 
+function beginRoomEventBuffer() {
+  roomJoinInProgress = true;
+  pendingRoomEvents = [];
+}
+
+function cancelRoomEventBuffer() {
+  roomJoinInProgress = false;
+  pendingRoomEvents = [];
+}
+
+function queueRoomEvent(type, payload) {
+  if (!roomJoinInProgress) return false;
+  pendingRoomEvents.push({ type, payload });
+  return true;
+}
+
+function applyRoomEvent(type, payload) {
+  if (type === 'peer-renamed') {
+    if (!payload || !payload.id) return;
+    const previous = participants.get(payload.id) || {};
+    participants.set(payload.id, { ...previous, ...payload });
+    renderParticipants();
+    updateCallDescription();
+    return;
+  }
+
+  if (type === 'peer-joined') {
+    if (!payload || !payload.id) return;
+    const previous = participants.get(payload.id) || {};
+    participants.set(payload.id, { ...previous, ...payload });
+    if (payload.inCall) makeVideoTile(payload.id, payload.name || 'Участник');
+    renderParticipants();
+    showToast(`${payload.name || 'Участник'} присоединился к комнате`);
+    updateCallDescription();
+    updateCallStage();
+    return;
+  }
+
+  if (type === 'peer-left') {
+    const { id, reason } = payload || {};
+    if (!id) return;
+    const member = participants.get(id);
+    closePeer(id);
+    removeVideoTile(id);
+    participants.delete(id);
+    updateCallStage();
+    renderParticipants();
+    updateCallDescription();
+    if (member && reason !== 'reconnected') showToast(`${member.name} вышел из комнаты`);
+    return;
+  }
+
+  if (type === 'media-peer-state') {
+    if (!payload || !payload.id) return;
+    const member = { ...(participants.get(payload.id) || {}), ...payload };
+    participants.set(member.id, member);
+    if (member.inCall) {
+      makeVideoTile(member.id, member.name || 'Участник');
+    } else {
+      closePeer(member.id);
+      removeVideoTile(member.id);
+    }
+    updateTileState(member.id, member);
+    renderParticipants();
+    updateCallDescription();
+    updateCallStage();
+    if (member.inCall && isInCall) {
+      createPeerConnection(member.id).catch((error) => showToast(error.message));
+    }
+  }
+}
+
+function flushRoomEventBuffer() {
+  const events = pendingRoomEvents;
+  pendingRoomEvents = [];
+  roomJoinInProgress = false;
+  events.forEach(({ type, payload }) => applyRoomEvent(type, payload));
+}
+
 function bindSocketEvents() {
   socket.on('room:session-replaced', () => {
     if (isInCall) stopCall();
@@ -874,6 +955,7 @@ function bindSocketEvents() {
   });
 
   socket.on('room:peer-renamed', (member) => {
+    if (queueRoomEvent('peer-renamed', member)) return;
     if (!member || !member.id) return;
     const previous=participants.get(member.id)||{};
     participants.set(member.id,{...previous,...member});
@@ -882,6 +964,7 @@ function bindSocketEvents() {
   });
 
   socket.on('room:peer-joined', (member) => {
+    if (queueRoomEvent('peer-joined', member)) return;
     participants.set(member.id, member);
     renderParticipants();
     showToast(`${member.name} присоединился к комнате`);
@@ -889,6 +972,7 @@ function bindSocketEvents() {
   });
 
   socket.on('room:peer-left', ({ id, reason }) => {
+    if (queueRoomEvent('peer-left', { id, reason })) return;
     const member = participants.get(id);
     closePeer(id);
     removeVideoTile(id);
@@ -900,7 +984,9 @@ function bindSocketEvents() {
   });
 
   socket.on('media:peer-state', (member) => {
+    if (queueRoomEvent('media-peer-state', member)) return;
     participants.set(member.id, member);
+    if (member.inCall) makeVideoTile(member.id, member.name || 'Участник');
     updateTileState(member.id, member);
     renderParticipants();
     updateCallDescription();
@@ -989,14 +1075,17 @@ function bindSocketEvents() {
     pendingIce.clear();
 
     const reconnectRoom = roomId;
+    beginRoomEventBuffer();
     try {
       const response = await emitWithAck('room:join', { name: myName, roomId: reconnectRoom, clientId: tabClientId });
       if (roomId !== reconnectRoom) {
         if (response.ok) socket.emit('room:leave');
+        cancelRoomEventBuffer();
         return;
       }
       if (response.ok) {
         enterWorkspace(response, true);
+        flushRoomEventBuffer();
         if (isInCall && localStream) {
           const localTile = videoGrid.querySelector('.video-tile.local, .video-tile.sharing');
           if (localTile) {
@@ -1025,9 +1114,11 @@ function bindSocketEvents() {
         }
         showToast('Связь восстановлена. Ты снова в комнате.');
       } else {
+        cancelRoomEventBuffer();
         resetAfterRoomRecoveryFailure(response.error || 'Комната больше недоступна.');
       }
     } catch (error) {
+      cancelRoomEventBuffer();
       console.warn('Room reconnection failed:', error);
       showToast('Не удалось вернуться в комнату. Повторяем подключение…');
     }
@@ -1057,6 +1148,7 @@ async function syncRoomAfterResume() {
   if (isRoomSyncing || document.hidden || !roomId || !socket || !socket.connected || !participants.has(socket.id)) return;
   isRoomSyncing = true;
   const syncingRoom = roomId;
+  beginRoomEventBuffer();
   try {
     const response = await emitWithAck('room:sync', {});
     if (roomId !== syncingRoom) return;
@@ -1065,6 +1157,7 @@ async function syncRoomAfterResume() {
       return;
     }
     enterWorkspace(response, true);
+    flushRoomEventBuffer();
     if (isInCall && localStream) {
       publishMediaState();
       for (const member of participants.values()) {
@@ -1083,6 +1176,7 @@ async function syncRoomAfterResume() {
     console.warn('Room sync after mobile resume failed:', error);
     showToast('Проверяем соединение с комнатой. Попробуй переключиться между вкладками.');
   } finally {
+    if (roomJoinInProgress) cancelRoomEventBuffer();
     isRoomSyncing = false;
   }
 }
@@ -1137,15 +1231,29 @@ async function restoreSavedRoom() {
 }
 
 async function createRoom(name) {
-  const response = await emitWithAck('room:create', { name, clientId: tabClientId });
-  if (!response.ok) throw new Error(response.error || 'Не удалось создать комнату.');
-  enterWorkspace(response);
+  beginRoomEventBuffer();
+  try {
+    const response = await emitWithAck('room:create', { name, clientId: tabClientId });
+    if (!response.ok) throw new Error(response.error || 'Не удалось создать комнату.');
+    enterWorkspace(response);
+    flushRoomEventBuffer();
+  } catch (error) {
+    cancelRoomEventBuffer();
+    throw error;
+  }
 }
 
 async function joinRoom(name, code) {
-  const response = await emitWithAck('room:join', { name, roomId: code, clientId: tabClientId });
-  if (!response.ok) throw new Error(response.error || 'Не удалось войти в комнату.');
-  enterWorkspace(response);
+  beginRoomEventBuffer();
+  try {
+    const response = await emitWithAck('room:join', { name, roomId: code, clientId: tabClientId });
+    if (!response.ok) throw new Error(response.error || 'Не удалось войти в комнату.');
+    enterWorkspace(response);
+    flushRoomEventBuffer();
+  } catch (error) {
+    cancelRoomEventBuffer();
+    throw error;
+  }
 }
 
 function enterWorkspace(data, preservePanel = false) {
@@ -1165,6 +1273,11 @@ function enterWorkspace(data, preservePanel = false) {
   participants.set(data.self.id, data.self);
   pinnedMessage = data.pinnedMessage || null;
   (data.participants || []).forEach((member) => participants.set(member.id, member));
+  (data.participants || []).forEach((member) => {
+    if (member.id !== data.self.id && member.inCall) {
+      makeVideoTile(member.id, member.name || 'Участник');
+    }
+  });
 
   $('#sidebarRoomCode').textContent = roomId;
   $('#welcomeRoomCode').textContent = roomId;
