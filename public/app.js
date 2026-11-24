@@ -100,8 +100,8 @@ let activeCallStartedAt = 0;
 const KOTO_PREFS_KEY='kotomaster-preferences-v1';
 const KOTO_MUTED_PEERS_KEY='kotomaster-muted-peers-v1';
 function readKotoPrefs(){
-  try{return {...{accent:'#a47965',theme:'light',scale:'normal',sounds:true,animations:true},...JSON.parse(localStorage.getItem(KOTO_PREFS_KEY)||'{}')};}
-  catch(_error){return {accent:'#a47965',theme:'light',scale:'normal',sounds:true,animations:true};}
+  try{return {...{accent:'#6d9272',theme:'light',scale:'normal',sounds:true,animations:true},...JSON.parse(localStorage.getItem(KOTO_PREFS_KEY)||'{}')};}
+  catch(_error){return {accent:'#6d9272',theme:'light',scale:'normal',sounds:true,animations:true};}
 }
 let kotoPrefs=readKotoPrefs();
 
