@@ -2,7 +2,7 @@ name: Check JavaScript syntax
 
 on:
   push:
-    branches: [main, feature/full-messenger-platform, feature/magicpath-call-experience, fix/exact-magicpath-fps-settings, fix/fullscreen-fit-entire-screen, fix/room-presence-and-ai-noise-reduction, feature/koto-stickers-paw-cursor, feat/animal-messenger-redesign, feat/animal-messenger-visual-polish, feat/woodland-animal-theme-cursors]
+    branches: [main, feature/full-messenger-platform, feature/magicpath-call-experience, fix/exact-magicpath-fps-settings, fix/fullscreen-fit-entire-screen, fix/room-presence-and-ai-noise-reduction, feature/koto-stickers-paw-cursor, feat/animal-messenger-redesign, feat/animal-messenger-visual-polish, feat/woodland-animal-theme-cursors, feat/magicpath-exact-shell]
     paths:
       - "public/*.js"
       - "public/*.html"
