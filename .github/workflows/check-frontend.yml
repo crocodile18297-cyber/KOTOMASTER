@@ -2,7 +2,7 @@ name: Check JavaScript syntax
 
 on:
   push:
-    branches: [main, feature/full-messenger-platform, feature/magicpath-call-experience, fix/exact-magicpath-fps-settings, fix/fullscreen-fit-entire-screen, fix/room-presence-and-ai-noise-reduction, feature/koto-stickers-paw-cursor, feat/animal-messenger-redesign, feat/animal-messenger-visual-polish, feat/woodland-animal-theme-cursors, feat/magicpath-exact-shell, fix/magicpath-panel-visibility, fix/room-entry-restore-race]
+    branches: [main, feature/full-messenger-platform, feature/magicpath-call-experience, fix/exact-magicpath-fps-settings, fix/fullscreen-fit-entire-screen, fix/room-presence-and-ai-noise-reduction, restore/pre-animal-magicpath-ui]
     paths:
       - "public/*.js"
       - "public/*.html"
@@ -25,8 +25,6 @@ jobs:
       - name: Validate JavaScript syntax
         run: |
           node --check public/app.js
-          node --check public/koto-delight.js
-          node --check public/koto-animal-avatars.js
           node --check server.js
       - name: Check UI elements and Socket.IO wiring
         run: node scripts/check-frontend.mjs

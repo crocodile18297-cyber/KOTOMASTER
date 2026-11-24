@@ -3,8 +3,6 @@ import assert from 'node:assert/strict';
 
 const html = fs.readFileSync('public/index.html', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
-const delight = fs.readFileSync('public/koto-delight.js', 'utf8');
-const css = fs.readFileSync('public/styles.css', 'utf8');
 const server = fs.readFileSync('server.js', 'utf8');
 
 const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
@@ -97,36 +95,6 @@ assert.match(app, /new RNNoiseNode\(context\)/, 'Voice calls must use the local 
 assert.match(app, /enhanceMicrophoneStream/, 'Captured microphone audio must pass through the noise-reduction pipeline.');
 assert.match(html, /id="micDenoiseStatus"/, 'Microphone settings must display the active noise-reduction engine.');
 assert.match(server, /vendor\/simple-rnnoise-wasm/, 'Server must serve the locally installed RNNoise assets.');
-
-
-assert.ok(html.includes('/koto-delight.js?v=20261124-woodland-v1'), 'KOTO delight interactions must load as a versioned script.');
-assert.match(html, /data-koto-sticker-trigger/, 'Both chat composers must expose a sticker picker trigger.');
-assert.match(html, /id="kotoPawTrailToggle"/, 'Appearance settings must expose the paw cursor trail preference.');
-assert.match(delight, /kotoStickerPicker/, 'Sticker picker UI must be implemented.');
-assert.match(delight, /watchMascotAvatars/, 'Message and participant avatars must receive mascot styling.');
-assert.match(delight, /CURSOR_MODES = \['cat', 'fox', 'bear', 'bunny', 'classic'\]/, 'Animal cursor variants must be supported.');
-for (const cursor of ['cat','fox','bear','bunny','classic']) {
-  assert.match(html, new RegExp('data-koto-cursor-choice="' + cursor + '"'), 'Animal cursor option is missing: ' + cursor);
-}
-assert.match(css, /--koto-cursor-cat:/, 'Cat paw cursor SVG must be embedded in the stylesheet.');
-assert.match(css, /--koto-cursor-fox:/, 'Fox paw cursor SVG must be embedded in the stylesheet.');
-assert.match(css, /--koto-cursor-bear:/, 'Bear paw cursor SVG must be embedded in the stylesheet.');
-assert.match(css, /--koto-cursor-bunny:/, 'Bunny paw cursor SVG must be embedded in the stylesheet.');
-assert.match(delight, /classList\.contains\('koto-animal-avatar'\)/, 'Real animal portrait avatars must not be covered by the mascot overlay.');
-assert.match(delight, /prefers-reduced-motion/, 'Mascot effects must respect reduced-motion accessibility.');
-assert.ok(delight.includes('localStorage.setItem(PREFS_KEY'), 'Paw cursor preferences must persist locally.');
-for (const requiredId of ['communityMessageInput', 'communityMessageForm', 'kotoPawTrailToggle']) {
-  assert.ok(uniqueIds.has(requiredId), 'KOTO delight target is missing: #' + requiredId);
-}
-
-assert.match(html, /href="\/magicpath-exact\.css\?v=/, 'The exact MagicPath component stylesheet must be loaded.');
-assert.match(html, /class="km-desktop-frame"/, 'The MagicPath four-column desktop frame must exist.');
-assert.match(html, /class="km-details"/, 'The MagicPath room information rail must exist.');
-assert.match(app, /km-message-bubble/, 'Live chat messages must use the MagicPath message presentation.');
-
-assert.match(app, /savedRoomRestorePromise/, 'Manual room entry must wait for automatic session restoration.');
-assert.match(app, /prepareForManualRoomEntry/, 'Manual room entry must release any stale socket membership.');
-assert.match(app, /manualRoomEntryRequested/, 'A manual room action must take priority over automatic restoration.');
 
 console.log(
   'Frontend integrity OK: ' + uniqueIds.size + ' unique HTML ids, ' +

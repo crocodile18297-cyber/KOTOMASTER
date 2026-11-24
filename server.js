@@ -192,7 +192,7 @@ app.post('/api/rtc/ice-servers', async (req, res) => {
 
 async function fetchAuthenticatedProfile(token, userId) {
   try {
-    const params = new URLSearchParams({ select: 'display_name,username,avatar_path', id: `eq.${userId}`, limit: '1' });
+    const params = new URLSearchParams({ select: 'display_name,username', id: `eq.${userId}`, limit: '1' });
     const response = await fetch(`${SUPABASE_URL}/rest/v1/profiles?${params.toString()}`, {
       headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(5000)
@@ -221,7 +221,6 @@ io.use(async (socket, next) => {
   socket.data.accessToken = token;
   const profile = await fetchAuthenticatedProfile(token, user.id);
   socket.data.profileName = cleanName(profile?.display_name || user.user_metadata?.display_name || user.email.split('@')[0]);
-  socket.data.profileAvatar = String(profile?.avatar_path || '');
   next();
 });
 
@@ -397,7 +396,6 @@ function toPublicMember(member) {
     id: member.id,
     userId: member.userId,
     name: member.name,
-    avatarPath: member.avatarPath || '',
     inCall: member.inCall,
     audio: member.audio,
     video: member.video,
@@ -491,7 +489,6 @@ async function joinRoom(socket, payload, ack, createNew = false) {
     userId: socket.data.userId,
     clientId,
     name,
-    avatarPath: socket.data.profileAvatar || '',
     inCall: false,
     audio: false,
     video: false,
@@ -609,8 +606,6 @@ io.on('connection', (socket) => {
     if (!profile?.display_name) return;
     const name = cleanName(profile.display_name);
     socket.data.profileName = name;
-    socket.data.profileAvatar = String(profile.avatar_path || '');
-    member.avatarPath = socket.data.profileAvatar;
     member.name = name;
     socket.data.name = name;
     io.to(roomId).emit('room:peer-renamed', toPublicMember(member));
