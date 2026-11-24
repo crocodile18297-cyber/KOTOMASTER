@@ -5944,47 +5944,48 @@ html.km-no-cat-accents #appScreen .km-call-menu .km-menu-paw { display:none!impo
 #appScreen .koto-sticker-trigger-small { width:36px;height:36px;flex:0 0 36px;padding:5px;border-radius:12px; }
 #appScreen .koto-sticker-trigger-small svg { width:24px;height:24px; }
 #appScreen .community-composer .koto-sticker-trigger { color:#a9654b; }
-#appScreen .koto-sticker-picker {
-  position:absolute;z-index:180;left:0;bottom:calc(100% + 12px);
-  width:min(420px,calc(100vw - 28px));max-height:min(430px,65vh);
+.koto-sticker-picker {
+  position:fixed;z-index:99999;left:12px;top:12px;bottom:auto;
+  width:min(420px,calc(100vw - 24px));height:min(430px,calc(100dvh - 24px));
+  max-height:calc(100dvh - 24px);
   display:flex;flex-direction:column;gap:10px;padding:13px;
   overflow:hidden;border:1px solid #ead2c4;border-radius:19px;
   color:#604638;background:linear-gradient(145deg,#fffdf8,#fff3e9);
   box-shadow:0 18px 44px rgba(91,61,45,.19),inset 0 1px 0 rgba(255,255,255,.9);
   transform-origin:bottom left;animation:kotoStickerPanelIn .22s ease both;
 }
-#appScreen .koto-sticker-picker[hidden] { display:none!important; }
-#appScreen .koto-sticker-picker-head {
+.koto-sticker-picker[hidden] { display:none!important; }
+.koto-sticker-picker-head {
   display:flex;align-items:center;justify-content:space-between;gap:12px;
   padding:1px 2px 8px;border-bottom:1px solid #f0dfd4;
 }
-#appScreen .koto-sticker-picker-head>div { display:grid;gap:3px; }
-#appScreen .koto-sticker-picker-head strong { color:#684838;font-size:13px;font-weight:850;letter-spacing:-.2px; }
-#appScreen .koto-sticker-picker-head small { color:#ad8c7a;font-size:9px; }
-#appScreen .koto-sticker-close {
+.koto-sticker-picker-head>div { display:grid;gap:3px; }
+.koto-sticker-picker-head strong { color:#684838;font-size:13px;font-weight:850;letter-spacing:-.2px; }
+.koto-sticker-picker-head small { color:#ad8c7a;font-size:9px; }
+.koto-sticker-close {
   width:29px;height:29px;display:grid;place-items:center;border:1px solid #ecd9ce;
   border-radius:10px;color:#9d7867;background:#fffaf5;font-size:19px;line-height:1;
 }
-#appScreen .koto-sticker-tabs {
+.koto-sticker-tabs {
   display:flex;gap:5px;overflow-x:auto;scrollbar-width:none;padding:0 0 2px;
 }
-#appScreen .koto-sticker-tabs::-webkit-scrollbar { display:none; }
-#appScreen .koto-sticker-tab {
+.koto-sticker-tabs::-webkit-scrollbar { display:none; }
+.koto-sticker-tab {
   flex:0 0 auto;padding:7px 10px;border:1px solid #eeded3;border-radius:999px;
   color:#957867;background:#fffaf5;font-size:9px;font-weight:750;white-space:nowrap;
   transition:background .18s,border-color .18s,color .18s,transform .18s;
 }
-#appScreen .koto-sticker-tab:hover { transform:translateY(-1px); }
-#appScreen .koto-sticker-tab.is-active {
+.koto-sticker-tab:hover { transform:translateY(-1px); }
+.koto-sticker-tab.is-active {
   border-color:#82a482;color:#486b4e;background:#edf5e9;
   box-shadow:0 2px 7px rgba(89,128,88,.12);
 }
-#appScreen .koto-sticker-grid {
+.koto-sticker-grid {
   min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;
   overflow-y:auto;padding:2px 3px 5px;overscroll-behavior:contain;
   scrollbar-color:#e3cabc transparent;scrollbar-width:thin;
 }
-#appScreen .koto-sticker-choice {
+.koto-sticker-choice {
   min-width:0;min-height:87px;display:flex;flex-direction:column;align-items:center;
   justify-content:center;gap:2px;padding:5px 3px;border:1px solid transparent;
   border-radius:13px;color:#886b5b;background:rgba(255,255,255,.58);
@@ -5992,22 +5993,22 @@ html.km-no-cat-accents #appScreen .km-call-menu .km-menu-paw { display:none!impo
   animation-delay:var(--sticker-delay,0ms);
   transition:transform .18s ease,background .18s ease,border-color .18s ease,box-shadow .18s ease;
 }
-#appScreen .koto-sticker-choice:hover,
-#appScreen .koto-sticker-choice:focus-visible {
+.koto-sticker-choice:hover,
+.koto-sticker-choice:focus-visible {
   z-index:1;border-color:#e7c4af;background:#fff;
   box-shadow:0 6px 14px rgba(127,83,57,.11);transform:translateY(-3px) rotate(-2deg);
 }
-#appScreen .koto-picker-sticker {
+.koto-picker-sticker {
   width:68px;height:68px;display:block;overflow:visible;
   filter:drop-shadow(0 3px 2px rgba(92,62,45,.09));
   transition:transform .18s ease;
 }
-#appScreen .koto-sticker-choice:hover .koto-picker-sticker { transform:scale(1.1) rotate(3deg); }
-#appScreen .koto-sticker-choice>span {
+.koto-sticker-choice:hover .koto-picker-sticker { transform:scale(1.1) rotate(3deg); }
+.koto-sticker-choice>span {
   max-width:100%;overflow:hidden;color:#8d7162;font-size:8px;font-weight:750;
   text-overflow:ellipsis;white-space:nowrap;
 }
-#appScreen .koto-sticker-picker-footer {
+.koto-sticker-picker-footer {
   padding:7px 3px 0;border-top:1px solid #f0dfd4;color:#b08f7d;
   font-size:8px;text-align:center;
 }
@@ -6053,22 +6054,22 @@ html.km-no-cat-accents #appScreen .km-call-menu .km-menu-paw { display:none!impo
   75% { transform:translateY(1px) scale(.98); }
 }
 @media(max-width:600px) {
-  #appScreen .koto-sticker-picker { width:min(390px,calc(100vw - 22px));max-height:58vh;padding:10px;border-radius:16px; }
-  #appScreen .koto-sticker-grid { grid-template-columns:repeat(4,minmax(0,1fr));gap:5px; }
-  #appScreen .koto-sticker-choice { min-height:76px; }
-  #appScreen .koto-picker-sticker { width:58px;height:58px; }
+  .koto-sticker-picker { width:min(390px,calc(100vw - 22px));max-height:58vh;padding:10px;border-radius:16px; }
+  .koto-sticker-grid { grid-template-columns:repeat(4,minmax(0,1fr));gap:5px; }
+  .koto-sticker-choice { min-height:76px; }
+  .koto-picker-sticker { width:58px;height:58px; }
   #appScreen .koto-inline-sticker { width:66px;height:66px; }
   #appScreen .message-bubble.has-koto-sticker { min-height:70px; }
   #appScreen .koto-sticker-trigger { width:38px;height:38px;flex-basis:38px; }
   #appScreen .koto-sticker-trigger-small { width:33px;height:34px;flex-basis:33px; }
 }
 @media(prefers-reduced-motion:reduce) {
-  #appScreen .koto-sticker-picker,#appScreen .koto-sticker-choice,#appScreen .koto-inline-sticker,
+  .koto-sticker-picker,.koto-sticker-choice,#appScreen .koto-inline-sticker,
   #appScreen .koto-sticker-trigger:hover svg,#appScreen .composer .send-button:hover,
   #appScreen .community-composer button[type="submit"]:hover { animation:none!important;transition:none!important; }
 }
-html[data-koto-animations="off"] #appScreen .koto-sticker-picker,
-html[data-koto-animations="off"] #appScreen .koto-sticker-choice,
+html[data-koto-animations="off"] .koto-sticker-picker,
+html[data-koto-animations="off"] .koto-sticker-choice,
 html[data-koto-animations="off"] #appScreen .koto-inline-sticker,
 html[data-koto-animations="off"] #appScreen .koto-sticker-trigger:hover svg,
 html[data-koto-animations="off"] #appScreen .composer .send-button:hover,
