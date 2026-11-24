@@ -6678,3 +6678,30 @@ body {
   .koto-animal-avatar { animation: none !important; }
   .profile-animal-choice { transition: none !important; }
 }
+
+
+/* Animal avatars in social lists and recent conversations */
+#appScreen .community-person-avatar,
+#appScreen .community-conversation-avatar {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 50%;
+}
+#appScreen .community-person-avatar.koto-animal-avatar,
+#appScreen .community-conversation-avatar.koto-animal-avatar {
+  box-shadow: inset 0 0 0 1px rgba(58,79,58,.13), 0 3px 9px rgba(55,75,55,.08);
+}
+#appScreen .community-person-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+#appScreen .community-person-copy { min-width: 0; flex: 1 1 auto; }
+#appScreen .community-conversation-item { color: #3d5041; }
+#appScreen .community-conversation-item.is-selected {
+  border-color: #dbe8d7;
+  background: #eaf2e6;
+}
+#appScreen .community-conversation-copy strong { color: #405343; }
+#appScreen .community-conversation-copy small { color: #879487; }
