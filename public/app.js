@@ -1849,6 +1849,207 @@ function openMessageActionMenu(message, kind = 'room', trigger = null) {
   close.focus({ preventScroll: true });
 }
 
+const KOTO_STICKER_SPRITE = '/koto-stickers.svg?v=20261124-1';
+const KOTO_STICKERS = [
+  {id:'cat-wave',name:'Привет!',animal:'Котики',group:'cats'},
+  {id:'cat-heart',name:'Обнимаю',animal:'Котики',group:'cats'},
+  {id:'cat-cool',name:'Круто!',animal:'Котики',group:'cats'},
+  {id:'cat-sleep',name:'Спокойной ночи',animal:'Котики',group:'cats'},
+  {id:'cat-cry',name:'Грущу',animal:'Котики',group:'cats'},
+  {id:'cat-laugh',name:'Ха-ха!',animal:'Котики',group:'cats'},
+  {id:'fox-love',name:'Люблю!',animal:'Лисички',group:'foxes'},
+  {id:'fox-wow',name:'Вот это да!',animal:'Лисички',group:'foxes'},
+  {id:'fox-hug',name:'Обнимашки',animal:'Лисички',group:'foxes'},
+  {id:'fox-sleep',name:'Устал',animal:'Лисички',group:'foxes'},
+  {id:'panda-happy',name:'Рад!',animal:'Панды',group:'pandas'},
+  {id:'panda-boba',name:'Перерыв',animal:'Панды',group:'pandas'},
+  {id:'panda-hug',name:'Держись!',animal:'Панды',group:'pandas'},
+  {id:'panda-star',name:'Блестяще',animal:'Панды',group:'pandas'},
+  {id:'bear-cozy',name:'Уютно',animal:'Мишки',group:'others'},
+  {id:'bunny-flower',name:'Цветочек',animal:'Зайки',group:'others'},
+  {id:'bunny-wow',name:'Удивлён',animal:'Зайки',group:'others'},
+  {id:'dog-happy',name:'Хороший день',animal:'Собачки',group:'others'},
+  {id:'frog-cute',name:'Мило',animal:'Другие',group:'others'},
+  {id:'raccoon-hi',name:'Йо!',animal:'Другие',group:'others'},
+  {id:'capybara-snack',name:'Перекус',animal:'Другие',group:'others'},
+  {id:'penguin-wave',name:'Привет',animal:'Другие',group:'others'},
+  {id:'hedgehog-happy',name:'Ура!',animal:'Другие',group:'others'},
+  {id:'otter-snack',name:'Вкусняшка',animal:'Другие',group:'others'},
+  {id:'redpanda-love',name:'С теплом',animal:'Другие',group:'others'}
+];
+const KOTO_STICKER_BY_ID = new Map(KOTO_STICKERS.map((sticker) => [sticker.id, sticker]));
+const KOTO_STICKER_MARKER = /:koto:([a-z0-9-]+):/gi;
+
+function createKotoStickerArt(stickerId, className = '') {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 160 160');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', KOTO_STICKER_BY_ID.get(stickerId)?.name || 'Звериный стикер');
+  if (className) svg.setAttribute('class', className);
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  const url = KOTO_STICKER_SPRITE + '#' + stickerId;
+  use.setAttribute('href', url);
+  use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', url);
+  svg.append(use);
+  return svg;
+}
+
+function renderKotoStickerText(target, value) {
+  const text = String(value ?? '');
+  KOTO_STICKER_MARKER.lastIndex = 0;
+  let match;
+  let cursor = 0;
+  let found = false;
+  const fragment = document.createDocumentFragment();
+  while ((match = KOTO_STICKER_MARKER.exec(text))) {
+    const sticker = KOTO_STICKER_BY_ID.get(match[1]);
+    if (!sticker) continue;
+    found = true;
+    if (match.index > cursor) fragment.append(document.createTextNode(text.slice(cursor, match.index)));
+    const art = createKotoStickerArt(sticker.id, 'koto-inline-sticker');
+    art.setAttribute('title', sticker.name);
+    fragment.append(art);
+    cursor = match.index + match[0].length;
+  }
+  if (!found) {
+    target.textContent = text;
+    return;
+  }
+  if (cursor < text.length) fragment.append(document.createTextNode(text.slice(cursor)));
+  target.replaceChildren(fragment);
+}
+
+function buildKotoStickerPicker(form, trigger, input, pickerId) {
+  if (!form || !trigger || !input || document.getElementById(pickerId)) return;
+  const picker = document.createElement('section');
+  picker.id = pickerId;
+  picker.className = 'koto-sticker-picker';
+  picker.hidden = true;
+  picker.setAttribute('aria-label', 'Звериные стикеры');
+
+  const head = document.createElement('div');
+  head.className = 'koto-sticker-picker-head';
+  const titleWrap = document.createElement('div');
+  const title = document.createElement('strong');
+  title.textContent = 'Звериное настроение';
+  const subtitle = document.createElement('small');
+  subtitle.textContent = 'Маленькие эмоции, большие лапки';
+  titleWrap.append(title, subtitle);
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'koto-sticker-close';
+  close.setAttribute('aria-label', 'Закрыть стикеры');
+  close.textContent = '×';
+  head.append(titleWrap, close);
+
+  const tabs = document.createElement('div');
+  tabs.className = 'koto-sticker-tabs';
+  tabs.setAttribute('role', 'tablist');
+  tabs.setAttribute('aria-label', 'Категории стикеров');
+  const grid = document.createElement('div');
+  grid.className = 'koto-sticker-grid';
+  grid.setAttribute('role', 'list');
+  const footer = document.createElement('div');
+  footer.className = 'koto-sticker-picker-footer';
+  footer.textContent = 'Выбери зверька — он появится в сообщении';
+
+  const categories = [
+    {id:'all',label:'Все'},
+    {id:'cats',label:'Котики'},
+    {id:'foxes',label:'Лисы'},
+    {id:'pandas',label:'Панды'},
+    {id:'others',label:'Другие'}
+  ];
+  let activeCategory = 'all';
+  const renderTabs = () => {
+    tabs.replaceChildren();
+    categories.forEach((category) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'koto-sticker-tab' + (activeCategory === category.id ? ' is-active' : '');
+      button.textContent = category.label;
+      button.setAttribute('role', 'tab');
+      button.setAttribute('aria-selected', activeCategory === category.id ? 'true' : 'false');
+      button.addEventListener('click', () => {
+        activeCategory = category.id;
+        renderTabs();
+        renderGrid();
+      });
+      tabs.append(button);
+    });
+  };
+  const renderGrid = () => {
+    grid.replaceChildren();
+    const visible = KOTO_STICKERS.filter((sticker) =>
+      activeCategory === 'all' || sticker.group === activeCategory
+    );
+    visible.forEach((sticker, index) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'koto-sticker-choice';
+      button.setAttribute('role', 'listitem');
+      button.setAttribute('aria-label', sticker.name);
+      button.title = sticker.name;
+      button.style.setProperty('--sticker-delay', (index % 8) * 24 + 'ms');
+      button.append(createKotoStickerArt(sticker.id, 'koto-picker-sticker'));
+      const label = document.createElement('span');
+      label.textContent = sticker.name;
+      button.append(label);
+      button.addEventListener('click', () => {
+        const marker = ':koto:' + sticker.id + ':';
+        const start = Number.isInteger(input.selectionStart) ? input.selectionStart : input.value.length;
+        const end = Number.isInteger(input.selectionEnd) ? input.selectionEnd : start;
+        const before = input.value.slice(0, start);
+        const after = input.value.slice(end);
+        const prefix = before && !/\s$/.test(before) ? ' ' : '';
+        const suffix = after && !/^\s/.test(after) ? ' ' : '';
+        const inserted = prefix + marker + suffix;
+        input.value = before + inserted + after;
+        const caret = before.length + inserted.length;
+        input.focus();
+        try { input.setSelectionRange(caret, caret); } catch (_error) {}
+        input.dispatchEvent(new Event('input', {bubbles:true}));
+        closePicker();
+      });
+      grid.append(button);
+    });
+  };
+  const closePicker = () => {
+    picker.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+  };
+  close.addEventListener('click', closePicker);
+  trigger.setAttribute('aria-expanded', 'false');
+  trigger.setAttribute('aria-controls', pickerId);
+  trigger.addEventListener('click', () => {
+    const open = picker.hidden;
+    document.querySelectorAll('.koto-sticker-picker').forEach((node) => { node.hidden = true; });
+    document.querySelectorAll('.koto-sticker-trigger').forEach((node) => node.setAttribute('aria-expanded', 'false'));
+    picker.hidden = !open;
+    trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+      renderTabs();
+      renderGrid();
+      requestAnimationFrame(() => picker.classList.add('is-open'));
+    } else {
+      picker.classList.remove('is-open');
+    }
+  });
+  document.addEventListener('pointerdown', (event) => {
+    if (picker.hidden || form.contains(event.target)) return;
+    closePicker();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !picker.hidden) {
+      closePicker();
+      trigger.focus();
+    }
+  });
+  form.append(picker);
+  renderTabs();
+  renderGrid();
+}
+
 function createMessageNode(message) {
   const mine = Boolean(socket && message.from === socket.id);
   const row = document.createElement('div');
@@ -1895,7 +2096,8 @@ function createMessageNode(message) {
     bubble.classList.add('message-deleted');
     bubble.textContent = 'Сообщение удалено';
   } else {
-    bubble.textContent = message.text || '';
+    renderKotoStickerText(bubble, message.text || '');
+    if (bubble.querySelector('.koto-inline-sticker')) bubble.classList.add('has-koto-sticker');
   }
   content.append(meta);
 
@@ -2567,7 +2769,10 @@ function renderCommunityMessages(rows,profiles,attachments=[],reactions=[],readT
       if(replied && replied.sender_id) quote.prepend(communityNode('strong','',names.get(replied.sender_id)||'Пользователь'));
       item.append(quote);
     }
-    const body=communityNode('p','',message.deleted_at?'Сообщение удалено':message.body);
+    const body=communityNode('p','');
+    if (message.deleted_at) body.textContent='Сообщение удалено';
+    else renderKotoStickerText(body, message.body || '');
+    if (body.querySelector('.koto-inline-sticker')) body.classList.add('has-koto-sticker');
     if(message.edited_at && !message.deleted_at) body.append(communityNode('small','community-edited',' · изменено'));
     item.append(header,body);
     const messageAttachments=(attachments||[]).filter((attachment)=>attachment.message_id===message.id);
@@ -5344,6 +5549,9 @@ $('#communityFileInput').addEventListener('change',(event)=>{
   handleCommunityFiles(event.target.files).finally(()=>{event.target.value='';});
 });
 $('#communityVoiceBtn').addEventListener('click',toggleCommunityVoiceRecording);
+
+buildKotoStickerPicker($('#messageForm'), $('#kotoStickerBtn'), $('#messageInput'), 'kotoStickerPicker');
+buildKotoStickerPicker($('#communityMessageForm'), $('#communityStickerBtn'), $('#communityMessageInput'), 'communityKotoStickerPicker');
 
 $('#newGroupBtn').addEventListener('click',async()=>{
   $('#newGroupError').textContent='';
