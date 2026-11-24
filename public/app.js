@@ -1850,19 +1850,9 @@ function openMessageActionMenu(message, kind = 'room', trigger = null) {
 }
 
 
-const KOTO_STICKER_PARTS = [
-  '/stickers/animal-sheet.part01.txt',
-  '/stickers/animal-sheet.part05.txt',
-  '/stickers/animal-sheet.part02.txt',
-  '/stickers/animal-sheet.part03.txt',
-  '/stickers/animal-sheet.part06.txt',
-  '/stickers/animal-sheet.part07.txt',
-  '/stickers/animal-sheet.part04.txt',
-  '/stickers/animal-sheet.part08.txt'
-];
-const KOTO_STICKER_CACHE_KEY = '20261124-sticker-render-v2';
+const KOTO_STICKER_IMAGE_BASE = '/stickers/v2';
+const KOTO_STICKER_CACHE_KEY = '20261124-sticker-pack-v3';
 const kotoStickerImageUrls = new Map();
-const kotoStickerObjectUrls = [];
 let kotoStickerSheetPromise = null;
 
 const KOTO_STICKERS = [
@@ -1898,67 +1888,27 @@ async function loadKotoStickerSheet() {
   if (kotoStickerImageUrls.size === KOTO_STICKERS.length) return kotoStickerImageUrls;
   if (kotoStickerSheetPromise) return kotoStickerSheetPromise;
 
-  kotoStickerSheetPromise = Promise.all(KOTO_STICKER_PARTS.map(async (path) => {
-    const response = await fetch(path + '?v=' + KOTO_STICKER_CACHE_KEY, { cache: 'force-cache' });
-    if (!response.ok) throw new Error('Не удалось загрузить часть набора зверьков.');
-    return response.text();
-  })).then(async (parts) => {
-    // The second segment contains 59 characters from the next segment; remove that overlap.
-    parts[1] = parts[1].slice(0, 4000);
-    const encoded = parts.join('');
-    if (encoded.length !== 31904) throw new Error('Набор стикеров загружен не полностью.');
+  kotoStickerSheetPromise = Promise.all(KOTO_STICKERS.map(async (sticker) => {
+    const imageUrl = `${KOTO_STICKER_IMAGE_BASE}/${sticker.id}.webp?v=${KOTO_STICKER_CACHE_KEY}`;
+    const image = new Image();
+    image.decoding = 'async';
+    image.src = imageUrl;
 
-    // Decode the atlas once, then extract each tile into its own lossless PNG.
-    const sourceImage = new Image();
-    sourceImage.decoding = 'async';
-    sourceImage.src = 'data:image/avif;base64,' + encoded;
-    if (typeof sourceImage.decode === 'function') {
-      await sourceImage.decode();
+    if (typeof image.decode === 'function') {
+      await image.decode();
     } else {
       await new Promise((resolve, reject) => {
-        sourceImage.onload = resolve;
-        sourceImage.onerror = () => reject(new Error('Браузер не смог декодировать набор стикеров.'));
+        image.onload = resolve;
+        image.onerror = () => reject(new Error('Не удалось загрузить стикер «' + sticker.name + '».'));
       });
     }
 
-    const columns = 4;
-    const rows = 4;
-    if (!sourceImage.naturalWidth || !sourceImage.naturalHeight ||
-        sourceImage.naturalWidth % columns !== 0 || sourceImage.naturalHeight % rows !== 0) {
-      throw new Error('У набора стикеров неправильный размер изображения.');
+    if (image.naturalWidth < 200 || image.naturalHeight < 200) {
+      throw new Error('Файл стикера «' + sticker.name + '» имеет слишком низкое разрешение.');
     }
-
-    const tileWidth = sourceImage.naturalWidth / columns;
-    const tileHeight = sourceImage.naturalHeight / rows;
-
-    for (const sticker of KOTO_STICKERS) {
-      const canvas = document.createElement('canvas');
-      canvas.width = tileWidth;
-      canvas.height = tileHeight;
-      const context = canvas.getContext('2d');
-      if (!context) throw new Error('Не удалось подготовить изображения стикеров.');
-
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = 'high';
-      context.drawImage(
-        sourceImage,
-        (sticker.index % columns) * tileWidth,
-        Math.floor(sticker.index / columns) * tileHeight,
-        tileWidth,
-        tileHeight,
-        0,
-        0,
-        tileWidth,
-        tileHeight
-      );
-
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
-      if (!blob) throw new Error('Не удалось сохранить изображение стикера.');
-      const imageUrl = URL.createObjectURL(blob);
-      kotoStickerImageUrls.set(sticker.id, imageUrl);
-      kotoStickerObjectUrls.push(imageUrl);
-    }
-
+    return [sticker.id, imageUrl];
+  })).then((entries) => {
+    entries.forEach(([id, imageUrl]) => kotoStickerImageUrls.set(id, imageUrl));
     document.querySelectorAll('.koto-photo-sticker').forEach((node) => {
       const imageUrl = kotoStickerImageUrls.get(node.dataset.kotoStickerId);
       if (imageUrl) node.src = imageUrl;
@@ -1969,12 +1919,10 @@ async function loadKotoStickerSheet() {
     return kotoStickerImageUrls;
   }).catch((error) => {
     kotoStickerImageUrls.clear();
-    kotoStickerObjectUrls.forEach((url) => URL.revokeObjectURL(url));
-    kotoStickerObjectUrls.length = 0;
     kotoStickerSheetPromise = null;
     document.querySelectorAll('.koto-photo-sticker').forEach((node) => node.removeAttribute('src'));
     document.querySelectorAll('.koto-sticker-picker-footer').forEach((node) => {
-      node.textContent = 'Не удалось загрузить зверьков. Попробуй открыть панель ещё раз.';
+      node.textContent = 'Не удалось загрузить набор стикеров. Проверь файлы и попробуй ещё раз.';
     });
     throw error;
   });
