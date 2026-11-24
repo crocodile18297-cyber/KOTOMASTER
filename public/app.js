@@ -482,6 +482,74 @@ let authInitializationError = null;
 let authRecoveryPromise = null;
 let authStateSubscription = null;
 let authProfile = null;
+
+let selectedProfileAnimalId = 'cat';
+
+function resolveKotoAnimalId(avatarPath, displayName, isSelf = false) {
+  const path = String(avatarPath || '');
+  if (path.startsWith('animal:')) {
+    const id = path.slice(7);
+    if ((window.KOTO_ANIMALS || []).some((animal) => animal.id === id)) return id;
+  }
+  if (isSelf) return 'cat';
+  const name = String(displayName || 'котик');
+  let hash = 0;
+  for (let index = 0; index < name.length; index++) hash = ((hash << 5) - hash + name.charCodeAt(index)) | 0;
+  const animals = window.KOTO_ANIMALS || [];
+  return animals.length ? animals[Math.abs(hash) % animals.length].id : 'cat';
+}
+
+function setKotoAnimalAvatar(node, avatarPath, displayName = '', isSelf = false) {
+  if (!node) return;
+  const animals = window.KOTO_ANIMALS || [];
+  const id = resolveKotoAnimalId(avatarPath, displayName, isSelf);
+  const animal = animals.find((item) => item.id === id) || animals[0];
+  if (!animal || !window.KOTO_ANIMAL_ATLAS) {
+    node.textContent = firstLetter(displayName || myName || 'К');
+    return;
+  }
+  node.classList.add('koto-animal-avatar');
+  node.dataset.animalId = animal.id;
+  node.textContent = '';
+  node.style.backgroundImage = 'url("' + window.KOTO_ANIMAL_ATLAS + '")';
+  node.style.backgroundSize = '400% 400%';
+  node.style.backgroundPosition = (animal.x * 100 / 3) + '% ' + (animal.y * 100 / 3) + '%';
+  node.setAttribute('aria-label', animal.label);
+  node.title = animal.label;
+}
+
+function renderProfileAnimalPicker() {
+  const picker = $('#profileAnimalPicker');
+  if (!picker) return;
+  picker.replaceChildren();
+  (window.KOTO_ANIMALS || []).forEach((animal) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'profile-animal-choice';
+    button.dataset.animalId = animal.id;
+    button.setAttribute('aria-label', animal.label);
+    button.title = animal.label;
+    const art = document.createElement('span');
+    art.className = 'profile-animal-art';
+    setKotoAnimalAvatar(art, 'animal:' + animal.id, animal.label);
+    const label = document.createElement('small');
+    label.textContent = animal.label;
+    button.append(art, label);
+    button.addEventListener('click', () => {
+      selectedProfileAnimalId = animal.id;
+      picker.querySelectorAll('.profile-animal-choice').forEach((choice) => {
+        const selected = choice.dataset.animalId === selectedProfileAnimalId;
+        choice.classList.toggle('is-selected', selected);
+        choice.setAttribute('aria-pressed', String(selected));
+      });
+    });
+    const selected = animal.id === selectedProfileAnimalId;
+    button.classList.toggle('is-selected', selected);
+    button.setAttribute('aria-pressed', String(selected));
+    picker.append(button);
+  });
+}
+
 let passwordRecoveryPending = false;
 let posthogInitialized = false;
 let posthogIdentity = null;
@@ -759,6 +827,7 @@ function updateAuthInterface() {
   }
   const usernameNode=$('#myUsername');
   if(usernameNode) usernameNode.textContent=authProfile?.username?'@'+authProfile.username:'';
+  setKotoAnimalAvatar($('#myAvatar'), authProfile?.avatar_path, displayName, true);
 
 }
 
@@ -870,6 +939,8 @@ async function openProfileEditor() {
   $('#profileDisplayName').value=authProfile?.display_name||myName||'';
   $('#profileUsername').value=authProfile?.username||'';
   $('#profileBio').value=authProfile?.bio||'';
+  selectedProfileAnimalId = resolveKotoAnimalId(authProfile?.avatar_path, authProfile?.display_name || myName, true);
+  renderProfileAnimalPicker();
   $('#profileEditError').textContent='';
   $('#editProfileModal').hidden=false;
 }
@@ -889,7 +960,7 @@ async function saveProfileChanges(event) {
   setBusy(button,true,'Сохраняем…');
   try {
     const {data,error}=await supabaseClient.from('profiles')
-      .update({display_name:displayName,username,bio,updated_at:new Date().toISOString()})
+      .update({display_name:displayName,username,bio,avatar_path:'animal:'+selectedProfileAnimalId,updated_at:new Date().toISOString()})
       .eq('id',communityUserId())
       .select('id,username,display_name,avatar_path,bio').single();
     if(error) throw error;
@@ -897,8 +968,9 @@ async function saveProfileChanges(event) {
     myName=displayName;
     nameInput.value=displayName;
     $('#myName').textContent=displayName;
-    $('#myAvatar').textContent=firstLetter(displayName);
+    setKotoAnimalAvatar($('#myAvatar'), data.avatar_path, displayName, true);
     $('#myUsername').textContent='@'+username;
+    renderParticipants();
     $('#editProfileModal').hidden=true;
     if(socket && socket.connected) socket.emit('profile:update',{name:displayName});
     showToast('Профиль обновлён.');
@@ -1547,7 +1619,7 @@ function renderParticipants() {
     const avatar = document.createElement('div');
     avatar.className = 'avatar';
     if (member.id === (socket && socket.id)) avatar.classList.add('avatar-me');
-    avatar.textContent = firstLetter(member.name);
+    setKotoAnimalAvatar(avatar, member.avatarPath || (member.id === (socket && socket.id) ? authProfile?.avatar_path : ''), member.name, member.id === (socket && socket.id));
     const name = document.createElement('div');
     name.className = 'member-name';
     name.textContent = member.name + (member.id === (socket && socket.id) ? ' (ты)' : '');
@@ -1573,7 +1645,7 @@ function renderParticipants() {
 
       const callAvatar = document.createElement('span');
       callAvatar.className = 'call-person-avatar';
-      callAvatar.textContent = firstLetter(member.name);
+      setKotoAnimalAvatar(callAvatar, member.avatarPath || (isSelf ? authProfile?.avatar_path : ''), member.name, isSelf);
 
       const callCopy = document.createElement('span');
       callCopy.className = 'call-person-copy';
@@ -1613,7 +1685,7 @@ function renderParticipants() {
       chip.className = `mobile-member-chip${member.id === (socket && socket.id) ? ' is-me' : ''}`;
       const chipAvatar = document.createElement('span');
       chipAvatar.className = 'mobile-member-avatar';
-      chipAvatar.textContent = firstLetter(member.name);
+      setKotoAnimalAvatar(chipAvatar, member.avatarPath || (member.id === (socket && socket.id) ? authProfile?.avatar_path : ''), member.name, member.id === (socket && socket.id));
       const chipName = document.createElement('span');
       chipName.className = 'mobile-member-name';
       chipName.textContent = member.id === (socket && socket.id) ? 'Ты' : member.name;
@@ -1857,7 +1929,8 @@ function createMessageNode(message) {
 
   const avatar = document.createElement('div');
   avatar.className = 'message-avatar';
-  avatar.textContent = firstLetter(message.name);
+  const senderMember = participants.get(message.from);
+  setKotoAnimalAvatar(avatar, senderMember?.avatarPath || (mine ? authProfile?.avatar_path : ''), message.name || myName, mine);
 
   const content = document.createElement('div');
   content.className = 'message-content';
@@ -2403,7 +2476,7 @@ async function searchCommunityUsers(value) {
   renderCommunityLoading(results,'Ищем пользователей…');
   const safe=query.replace(/[%_,().]/g,' ').trim();
   const {data,error}=await supabaseClient.from('profiles')
-    .select('id,username,display_name')
+    .select('id,username,display_name,avatar_path')
     .neq('id',communityUserId())
     .or(`username.ilike.%${safe}%,display_name.ilike.%${safe}%`)
     .limit(12);
@@ -2543,6 +2616,7 @@ function renderCommunityMessages(rows,profiles,attachments=[],reactions=[],readT
     list.append(communityNode('p','community-empty-note','Сообщений пока нет. Напиши первым.'));
     return;
   }
+  const profileMap=new Map((profiles||[]).map((profile)=>[profile.id,profile]));
   const names=new Map((profiles||[]).map((p)=>[p.id,p.display_name||'Пользователь']));
   const reactionMap=new Map();
   (reactions||[]).forEach((reaction)=>{
@@ -2555,7 +2629,11 @@ function renderCommunityMessages(rows,profiles,attachments=[],reactions=[],readT
     const item=communityNode('article','community-message'+(own?' is-own':''));
     item.dataset.messageId=message.id;
     const header=communityNode('div','community-message-header');
-    header.append(communityNode('strong','',own?'Ты':(names.get(message.sender_id)||'Пользователь')));
+    const senderName=names.get(message.sender_id)||'Пользователь';
+    const senderProfile=profileMap.get(message.sender_id);
+    const senderAvatar=communityNode('span','community-message-avatar');
+    setKotoAnimalAvatar(senderAvatar,senderProfile?.avatar_path,senderName,own);
+    header.append(senderAvatar,communityNode('strong','',own?'Ты':senderName));
     const date=new Date(message.created_at);
     header.append(communityNode('time','',date.toLocaleString('ru-RU',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})));
     if(own && readThrough && Date.parse(message.created_at)<=readThrough) {
