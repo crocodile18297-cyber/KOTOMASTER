@@ -7390,3 +7390,172 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 @media (prefers-reduced-motion: reduce) {
   #appScreen .koto-animal-avatar { animation: none !important; }
 }
+
+/* Woodland animal messenger theme */
+:root {
+ --km-peach-50:#fbfcf8;--km-peach-100:#f2f6ef;--km-peach-150:#e8f0e5;--km-peach-200:#d8e5d4;--km-peach-300:#b8cbb1;
+ --km-apricot:#d99a76;--km-terracotta:#bc7d61;--km-coffee:#536b58;--km-cocoa:#3e5844;--km-chocolate:#293f31;
+ --km-ink:#304537;--km-muted:#849486;--km-border:#e0e9dc;--km-olive:#93ad83;--accent:#6d9272;
+ color-scheme:light;
+}
+body:has(#appScreen:not([hidden])){color:#304537!important;background:#edf2eb!important;background-image:radial-gradient(ellipse at 8% 4%,rgba(187,211,177,.24),transparent 36%),radial-gradient(ellipse at 94% 92%,rgba(229,191,163,.15),transparent 33%)!important}
+body:has(#appScreen:not([hidden])) .ambient{opacity:.025}
+#appScreen.full-workspace{border-color:#dfe8dc;color:#304537;background:#fbfcf8;box-shadow:0 28px 80px rgba(37,61,42,.13);backdrop-filter:none}
+#appScreen .server-rail{background:#e9f0e5;border-right-color:#dfe8dc}
+#appScreen .server-rail-home,#appScreen .server-rail-button,#appScreen .server-rail-settings{border-radius:14px;color:#718b73;background:transparent;transition:background .2s ease,color .2s ease,transform .2s ease}
+#appScreen .server-rail-home{color:#fff;background:linear-gradient(145deg,#799d78,#557b5c);box-shadow:0 8px 18px rgba(69,106,76,.16)}
+#appScreen .server-rail-home svg{width:31px;height:31px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s}
+#appScreen .server-rail-button svg,#appScreen .server-rail-settings svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#appScreen .server-rail-button:hover,#appScreen .server-rail-settings:hover{color:#496d50;background:#dce9d8;transform:translateY(-1px)}
+#appScreen .server-rail-button.is-active{color:#456c4e;background:#d9e8d5;box-shadow:inset 0 0 0 1px rgba(103,143,103,.14)}
+#appScreen .server-rail-home:hover svg{transform:rotate(-7deg) scale(1.08)}
+#appScreen .sidebar{color:#344b39;background:#f5f7f2;border-right-color:#e2e9df}
+#appScreen .sidebar-brand{color:#2f4635}
+#appScreen .brand-mark{color:#668b69;border-color:#dfe9db;background:#eaf2e6;box-shadow:none}
+#appScreen .brand-accent{color:#729776}
+#appScreen .sidebar-section-label,#appScreen .sidebar-overline,#appScreen .sidebar-caption,#appScreen .members-heading{color:#91a092}
+#appScreen .nav-item{color:#657b68;border-color:transparent;background:transparent}
+#appScreen .nav-item:hover{color:#456c4e;background:#edf3e9}
+#appScreen .nav-item.active{color:#3f6948;border-color:#e0eadc;background:#e7f0e3;box-shadow:none}
+#appScreen .nav-indicator{background:#709774;box-shadow:none}
+#appScreen .nav-icon{color:#789779}
+#appScreen .nav-copy small{color:#94a094}
+#appScreen .nav-badge{color:#427451;background:#e4f2e5}
+#appScreen .room-mini-card,#appScreen .sidebar-helper-card{border-color:#e1e9dd;background:#fff;color:#4b624e}
+#appScreen .room-mini-icon{color:#648b69;background:#edf4e9}
+#appScreen .room-mini-info strong,#appScreen .sidebar-helper-card strong{color:#405844}
+#appScreen .room-mini-info small,#appScreen .sidebar-helper-card small{color:#94a094}
+#appScreen .profile-card{border-color:#e1e9dd;background:#fff}
+#appScreen .profile-info strong{color:#344b39}
+#appScreen .profile-info small{color:#849785}
+#appScreen .icon-button{color:#829383}
+#appScreen .icon-button:hover{color:#527a59;background:#edf4ea}
+#appScreen .sign-out-button{color:#a27b6e}
+#appScreen .sidebar-caption span{color:#789779}
+#appScreen .workspace{color:#304537;background:#fbfcf8}
+#appScreen .topbar{border-bottom-color:#e5ebe2;background:rgba(255,255,252,.97)}
+#appScreen .topbar-title h2,#appScreen .view-heading h3,#appScreen .call-heading h3,#appScreen .community-heading h3{color:#2e4434}
+#appScreen .topbar-title p,#appScreen .view-heading p,#appScreen .call-heading p{color:#849486}
+#appScreen .topbar-room-icon{color:#6a916d;border-color:#e1eadc;background:#edf4e9}
+#appScreen .chat-search-box,#appScreen .notifications-button,#appScreen .secure-pill{border-color:#e2e9df;color:#819083;background:#fff}
+#appScreen .chat-search-box input{color:#344b39;background:transparent}
+#appScreen .chat-search-box input::placeholder{color:#a1aca1}
+#appScreen .panel-switch-button,#appScreen .invite-button{border-color:#6b9070;color:#fff;background:#6d9272;box-shadow:0 5px 13px rgba(73,112,78,.12)}
+#appScreen .panel-switch-button:hover,#appScreen .invite-button:hover{background:#567d5d}
+#appScreen .secure-pill span{color:#76a77a}
+#appScreen .view-heading{border-bottom-color:#e7eee4;background:#fdfefa}
+#appScreen .view-overline,#appScreen .call-kicker{color:#7c997e}
+#appScreen .view-heading h3{font-size:19px;letter-spacing:-.35px}
+#appScreen .view-heading p{font-size:11px}
+#appScreen .view-heading-badge{border-color:#e1ebde;color:#648368;background:#f2f7ef}
+#appScreen .chat-scroll{color:#3a4e3d;background:#fbfcf8}
+#appScreen .chat-welcome{color:#3c5440;border-color:#e6ede3;background:#f5f8f2}
+#appScreen .chat-welcome h3{color:#39513d}
+#appScreen .chat-welcome p{color:#839385}
+#appScreen .welcome-icon{color:#6a926f;background:#e8f1e5}
+#appScreen .welcome-icon svg{width:24px;height:24px;fill:#e0e8d9;stroke:#628668;stroke-width:1.5}
+#appScreen .welcome-code{border-color:#e3ebe0;background:#fff}
+#appScreen .welcome-code span{color:#89978a}
+#appScreen .welcome-code strong{color:#537d5a}
+#appScreen .welcome-code button{color:#6c9270}
+#appScreen .messages-list{gap:17px}
+#appScreen .message-meta{color:#89988b;font-size:10px}
+#appScreen .message-meta strong{color:#425a46;font-size:11px}
+#appScreen .message-meta time{color:#9ba89c;font-size:9px}
+#appScreen .message-bubble{border-color:#e3ebe0;border-radius:16px 16px 16px 5px;color:#405542;background:#f2f6ef;font-size:13px;line-height:1.58;box-shadow:0 3px 12px rgba(47,72,50,.035)}
+#appScreen .mine .message-bubble{border-color:#d8e6d4;border-radius:16px 16px 5px 16px;color:#3f5e45;background:#e7f0e3}
+#appScreen .message-reply-quote{border-left-color:#8aaa83;color:#778c79;background:#f4f7f1}
+#appScreen .message-read-mark,#appScreen .message-edited-label{color:#709976}
+#appScreen .composer{border-color:#e2e9df;background:#fff;box-shadow:0 5px 20px rgba(48,69,49,.055)}
+#appScreen .composer input{color:#344b39;background:transparent;font-size:13px}
+#appScreen .composer input::placeholder{color:#9ba89b}
+#appScreen .composer-attach{border-color:#e2ebdf;color:#729475;background:#f2f7ef}
+#appScreen .send-button{color:#fff;background:#6d9272;box-shadow:0 5px 13px rgba(77,119,83,.18)}
+#appScreen .send-button:hover{background:#557d5e}
+#appScreen .community-panel{color:#344b39;background:#fbfcf8}
+#appScreen .community-header,#appScreen .community-tabs{border-color:#e5ebe2}
+#appScreen .community-header h3{color:#304737}
+#appScreen .community-header p{color:#869587}
+#appScreen .community-tab{color:#819082}
+#appScreen .community-tab.active{color:#527a59;border-bottom-color:#6d9272}
+#appScreen .community-list-panel,#appScreen .community-chat-view,#appScreen .community-conversation-list,#appScreen .community-card{border-color:#e5ebe2;background:#fff}
+#appScreen .community-search-input,#appScreen .community-modal-card input,#appScreen .community-modal-card textarea,#appScreen .community-modal-card select{border-color:#e1e9de;color:#354c3a;background:#f8faf6}
+#appScreen .community-person-item,#appScreen .community-conversation-item{border-color:#e5ebe2;color:#4b624e;background:#fff}
+#appScreen .community-conversation-item.is-selected{border-color:#dce9d7;background:#edf4e9}
+#appScreen .community-person-copy strong,#appScreen .community-conversation-copy strong{color:#405845}
+#appScreen .community-person-copy small,#appScreen .community-conversation-copy small{color:#91a091}
+#appScreen .community-message{border-color:#e4ebe1;color:#3e5542;background:#fff}
+#appScreen .community-message.is-own{border-color:#dce9d7;background:#edf4e9}
+#appScreen .community-message-header,#appScreen .community-message-header time{color:#8b998d}
+#appScreen .community-message-header strong{color:#506852}
+#appScreen .community-message p{color:#435844}
+#appScreen .community-small-action.is-primary{color:#fff;border-color:#6d9272;background:#6d9272}
+#appScreen>.room-details-rail{border-left-color:#e1e9de;color:#425845;background:#f2f6ef}
+#appScreen .room-details-heading strong{color:#354d39;font-size:14px}
+#appScreen .room-private-icon{border-color:#e0e9dc;color:#698c6b;background:#fff}
+#appScreen .room-details-code-card{border-color:#e1e9dd;background:#fff}
+#appScreen .room-details-code-icon{color:#648a68;background:#eaf2e7}
+#appScreen .room-details-code-card span{color:#8e9c8e;font-size:8px}
+#appScreen .room-details-code-card strong{color:#405845;font-size:13px}
+#appScreen .room-details-code-card button{border-color:#e3ebe0;color:#6f9271;background:#fff}
+#appScreen .room-details-members-heading strong{color:#3b533f;font-size:12px}
+#appScreen .room-details-members-heading small{color:#8e9c8e;font-size:9px}
+#appScreen .room-details-members-heading .member-count{border-color:#e2eade;color:#6b8a6d;background:#fff}
+#appScreen .room-details-rail .member-row{border-color:#e5ece2;color:#506652;background:#fff;transition:background .2s,border-color .2s,transform .2s}
+#appScreen .room-details-rail .member-row:hover{border-color:#cbdcc8;background:#f9fcf7;transform:translateY(-1px)}
+#appScreen .room-details-rail .member-name{color:#405945;font-size:10px}
+#appScreen .room-details-rail .member-state{color:#96a396;font-size:9px}
+#appScreen .room-details-rail .member-state.in-call{color:#4f8b61}
+#appScreen .room-details-footer{border-color:#e2e9df;color:#526c56;background:#fff}
+#appScreen .room-details-footer-icon{color:#6e9670;background:#eaf2e7}
+#appScreen .room-details-footer-icon svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+#appScreen .room-details-footer strong{color:#405a45;font-size:10px}
+#appScreen .room-details-footer small{color:#89998b;font-size:9px}
+#appScreen .call-panel{color:#3c533f;background:#fbfcf8}
+#appScreen .call-heading h3{color:#344b39;font-size:19px}
+#appScreen .call-heading p{color:#8a998c}
+#appScreen .call-room-chip,#appScreen .call-live-pill{border-color:#e0e9dc;color:#6b876e;background:#f5f8f2}
+#appScreen .call-live-pill i{background:#81ad7c}
+#appScreen .call-stage{border-color:#d8e4d5;background:radial-gradient(ellipse at 50% 0%,#607d60,#314b38 78%)}
+#appScreen .call-participants-panel{border-color:#e0e8dd;color:#405744;background:#f6f8f3}
+#appScreen .call-participant-row{border-color:#e5ece2;background:#fff;animation:koto-woodland-card-in .42s cubic-bezier(.2,.7,.2,1) both}
+#appScreen .call-participant-row:nth-child(2n){animation-delay:.06s}
+#appScreen .call-person-copy strong{color:#405845}
+#appScreen .call-person-copy small{color:#89988c}
+#appScreen .call-control-dock{border-color:#e1e9dd;background:#fff;box-shadow:0 7px 22px rgba(42,64,45,.08)}
+#appScreen .call-control{color:#708573}
+#appScreen .call-control:hover{color:#4b7753;background:#edf4ea}
+#appScreen .call-bottom{border-top-color:#e3eae0}
+#appScreen .km-fps-card{background:rgba(34,52,39,.84)}
+#appScreen .community-modal-card,#appScreen .km-settings-dialog{border-color:#e1e9de;border-radius:20px;color:#3b523f;background:#fff;box-shadow:0 25px 75px rgba(38,60,42,.18)}
+#appScreen .community-modal-card h3,#appScreen .km-settings-title-wrap h3{color:#304737}
+#appScreen .community-modal-card .field-label,#appScreen .km-settings-field label{color:#849486}
+#appScreen .community-modal-close{color:#718574;background:#f0f5ed}
+#appScreen .km-settings-header{border-bottom-color:#e7eee4}
+#appScreen .km-settings-avatar{background:#f3eee5}
+#appScreen .km-settings-tabs{border-bottom-color:#e7eee4}
+#appScreen .km-settings-tabs button{color:#829283}
+#appScreen .km-settings-tabs button.is-active{color:#4f7957;border-bottom-color:#6d9272}
+#appScreen .km-settings-field select,#appScreen .km-mic-test-card{border-color:#e2eade;background:#f8faf6}
+#appScreen .km-settings-footer{border-top-color:#e6ece3;background:#fbfcf9}
+#appScreen .profile-animal-section{border-color:#e1e9dd;background:#f7f9f5}
+#appScreen .profile-animal-heading strong{color:#405845}
+#appScreen .profile-animal-heading small{color:#89988b}
+#appScreen .profile-animal-choice{border-color:#e3ebe0;color:#647767;background:#fff}
+#appScreen .profile-animal-choice:hover{border-color:#bfd2ba;background:#f6faf3}
+#appScreen .profile-animal-choice.is-selected{border-color:#89a982;background:#edf5e9;box-shadow:0 0 0 2px rgba(109,146,114,.13)}
+#appScreen .profile-animal-choice small{color:#718473}
+#appScreen .koto-animal-avatar{border-color:rgba(65,91,68,.15)!important;box-shadow:0 2px 7px rgba(43,67,46,.12)!important}
+#appScreen .koto-animal-avatar::before,#appScreen .koto-animal-avatar::after{display:none!important;content:none!important}
+#appScreen .call-stage-paw{color:#d7b58e;opacity:.75}
+#appScreen .call-live-pill i{animation:koto-woodland-pulse 2.5s ease-in-out infinite}
+#appScreen .server-rail-home:hover,#appScreen .server-rail-button:hover,#appScreen .server-rail-settings:hover{transform:translateY(-2px)}
+#appScreen .call-settings-button svg,#appScreen .topbar-room-icon svg,#appScreen .room-details-code-icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+#appScreen .koto-cursor-grid button{min-height:76px}
+@keyframes koto-woodland-card-in{from{opacity:0;transform:translateY(7px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes koto-woodland-pulse{0%,100%{box-shadow:0 0 0 3px rgba(129,173,124,.12)}50%{box-shadow:0 0 0 6px rgba(129,173,124,.04)}}
+@keyframes koto-paw-pop{0%{opacity:0;transform:translateY(4px) scale(.75) rotate(-15deg)}40%{opacity:.75;transform:translateY(-1px) scale(1.05) rotate(5deg)}100%{opacity:0;transform:translateY(-12px) scale(.95) rotate(15deg)}}
+.koto-paw-trail{color:#b78668!important;text-shadow:0 1px 3px rgba(255,255,255,.8);animation:koto-paw-pop .72s ease-out forwards!important}
+@media(max-width:740px){#appScreen .koto-cursor-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#appScreen .koto-cursor-grid button{min-height:70px}}
+@media(prefers-reduced-motion:reduce){#appScreen .call-participant-row,#appScreen .call-live-pill i,.koto-paw-trail{animation:none!important;transition:none!important}}
+html[data-koto-animations="off"] #appScreen .call-participant-row,html[data-koto-animations="off"] #appScreen .call-live-pill i,html[data-koto-animations="off"] .koto-paw-trail{animation:none!important;transition:none!important}
