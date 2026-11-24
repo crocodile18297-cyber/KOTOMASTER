@@ -1952,9 +1952,15 @@ function renderKotoStickerText(target, value) {
     if (!sticker) continue;
     found = true;
     if (match.index > cursor) fragment.append(document.createTextNode(text.slice(cursor, match.index)));
+    const stickerWrap = document.createElement('span');
+    stickerWrap.className = 'koto-inline-sticker-wrap';
     const art = createKotoStickerArt(sticker.id, 'koto-inline-sticker');
     art.setAttribute('title', sticker.name);
-    fragment.append(art);
+    const caption = document.createElement('small');
+    caption.className = 'koto-inline-sticker-caption';
+    caption.textContent = sticker.name;
+    stickerWrap.append(art, caption);
+    fragment.append(stickerWrap);
     cursor = match.index + match[0].length;
   }
   if (!found) {
