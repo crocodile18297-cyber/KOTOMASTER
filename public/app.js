@@ -1985,7 +1985,7 @@ function buildKotoStickerPicker(form, trigger, input, pickerId) {
   const title = document.createElement('strong');
   title.textContent = 'Звериное настроение';
   const subtitle = document.createElement('small');
-  subtitle.textContent = 'Маленькие эмоции, большие лапки';
+  subtitle.textContent = 'Реалистичные портреты с русскими фразами';
   titleWrap.append(title, subtitle);
   const close = document.createElement('button');
   close.type = 'button';
