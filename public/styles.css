@@ -7581,3 +7581,11 @@ html[data-koto-cursor="bear"] input,html[data-koto-cursor="bear"] textarea,
 html[data-koto-cursor="bunny"] input,html[data-koto-cursor="bunny"] textarea { cursor:text; }
 html[data-koto-cursor="classic"] body,html[data-koto-cursor="classic"] button,html[data-koto-cursor="classic"] a,html[data-koto-cursor="classic"] [role="button"],html[data-koto-cursor="classic"] select { cursor:auto; }
 html[data-koto-cursor="classic"] button,html[data-koto-cursor="classic"] a,html[data-koto-cursor="classic"] [role="button"] { cursor:pointer; }
+
+/* Crisp inline icon sizing for message actions */
+#appScreen .koto-sticker-trigger svg { width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.55;stroke-linecap:round;stroke-linejoin:round; }
+#appScreen #communityVoiceBtn svg { width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round; }
+#appScreen #communityMessageForm button[type="submit"] svg { width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round; }
+#appScreen .call-person-avatar.koto-animal-avatar,
+#appScreen .message-avatar.koto-animal-avatar,
+#appScreen .avatar.koto-animal-avatar { background-repeat:no-repeat!important;background-size:400% 400%!important; }
