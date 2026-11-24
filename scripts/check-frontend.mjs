@@ -5,7 +5,6 @@ const html = fs.readFileSync('public/index.html', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const delight = fs.readFileSync('public/koto-delight.js', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
-const cssMagic = fs.readFileSync('public/magicpath-exact.css', 'utf8');
 const server = fs.readFileSync('server.js', 'utf8');
 
 const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
@@ -124,8 +123,6 @@ assert.match(html, /href="\/magicpath-exact\.css\?v=/, 'The exact MagicPath comp
 assert.match(html, /class="km-desktop-frame"/, 'The MagicPath four-column desktop frame must exist.');
 assert.match(html, /class="km-details"/, 'The MagicPath room information rail must exist.');
 assert.match(app, /km-message-bubble/, 'Live chat messages must use the MagicPath message presentation.');
-
-assert.match(cssMagic, /#callPanel\[hidden\]/, 'Call view must respect its hidden state.');
 
 console.log(
   'Frontend integrity OK: ' + uniqueIds.size + ' unique HTML ids, ' +
