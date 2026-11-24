@@ -1849,49 +1849,95 @@ function openMessageActionMenu(message, kind = 'room', trigger = null) {
   close.focus({ preventScroll: true });
 }
 
-const KOTO_STICKER_SPRITE = '/koto-stickers.svg?v=20261124-1';
+
+const KOTO_STICKER_PARTS = [
+  '/stickers/animal-sheet.part01.txt',
+  '/stickers/animal-sheet.part05.txt',
+  '/stickers/animal-sheet.part02.txt',
+  '/stickers/animal-sheet.part03.txt',
+  '/stickers/animal-sheet.part06.txt',
+  '/stickers/animal-sheet.part07.txt',
+  '/stickers/animal-sheet.part04.txt',
+  '/stickers/animal-sheet.part08.txt'
+];
+const KOTO_STICKER_CACHE_KEY = '20261124-real-animal-pack-1';
+let kotoStickerSheetUrl = '';
+let kotoStickerSheetPromise = null;
+
 const KOTO_STICKERS = [
-  {id:'cat-wave',name:'Привет!',animal:'Котики',group:'cats'},
-  {id:'cat-heart',name:'Обнимаю',animal:'Котики',group:'cats'},
-  {id:'cat-cool',name:'Круто!',animal:'Котики',group:'cats'},
-  {id:'cat-sleep',name:'Спокойной ночи',animal:'Котики',group:'cats'},
-  {id:'cat-cry',name:'Грущу',animal:'Котики',group:'cats'},
-  {id:'cat-laugh',name:'Ха-ха!',animal:'Котики',group:'cats'},
-  {id:'fox-love',name:'Люблю!',animal:'Лисички',group:'foxes'},
-  {id:'fox-wow',name:'Вот это да!',animal:'Лисички',group:'foxes'},
-  {id:'fox-hug',name:'Обнимашки',animal:'Лисички',group:'foxes'},
-  {id:'fox-sleep',name:'Устал',animal:'Лисички',group:'foxes'},
-  {id:'panda-happy',name:'Рад!',animal:'Панды',group:'pandas'},
-  {id:'panda-boba',name:'Перерыв',animal:'Панды',group:'pandas'},
-  {id:'panda-hug',name:'Держись!',animal:'Панды',group:'pandas'},
-  {id:'panda-star',name:'Блестяще',animal:'Панды',group:'pandas'},
-  {id:'bear-cozy',name:'Уютно',animal:'Мишки',group:'bears'},
-  {id:'bunny-flower',name:'Цветочек',animal:'Зайки',group:'bunnies'},
-  {id:'bunny-wow',name:'Удивлён',animal:'Зайки',group:'bunnies'},
-  {id:'dog-happy',name:'Хороший день',animal:'Собачки',group:'dogs'},
-  {id:'frog-cute',name:'Мило',animal:'Другие',group:'others'},
-  {id:'raccoon-hi',name:'Йо!',animal:'Другие',group:'others'},
-  {id:'capybara-snack',name:'Перекус',animal:'Другие',group:'others'},
-  {id:'penguin-wave',name:'Привет',animal:'Другие',group:'others'},
-  {id:'hedgehog-happy',name:'Ура!',animal:'Другие',group:'others'},
-  {id:'otter-snack',name:'Вкусняшка',animal:'Другие',group:'others'},
-  {id:'redpanda-love',name:'С теплом',animal:'Другие',group:'others'}
+  {id:'cat',name:'Привет!',animal:'Котик',group:'cats',index:0},
+  {id:'shiba',name:'Круто!',animal:'Сиба-ину',group:'dogs',index:1},
+  {id:'fox',name:'Спасибо!',animal:'Лиса',group:'foxes',index:2},
+  {id:'bunny',name:'Обнимаю',animal:'Зайчик',group:'bunnies',index:3},
+  {id:'red-panda',name:'Ура!',animal:'Красная панда',group:'pandas',index:4},
+  {id:'raccoon',name:'Йо!',animal:'Енот',group:'others',index:5},
+  {id:'panda',name:'Мило',animal:'Панда',group:'pandas',index:6},
+  {id:'tiger',name:'Вау!',animal:'Тигрёнок',group:'others',index:7},
+  {id:'lion',name:'Лучший!',animal:'Львёнок',group:'others',index:8},
+  {id:'hamster',name:'Перекус',animal:'Хомяк',group:'others',index:9},
+  {id:'owl',name:'Спокойной ночи',animal:'Сова',group:'others',index:10},
+  {id:'deer',name:'Пока!',animal:'Оленёнок',group:'others',index:11},
+  {id:'koala',name:'Приветик',animal:'Коала',group:'others',index:12},
+  {id:'hedgehog',name:'Держись!',animal:'Ёжик',group:'others',index:13},
+  {id:'penguin',name:'Ха-ха!',animal:'Пингвин',group:'others',index:14},
+  {id:'corgi',name:'Улыбнись!',animal:'Корги',group:'dogs',index:15}
 ];
 const KOTO_STICKER_BY_ID = new Map(KOTO_STICKERS.map((sticker) => [sticker.id, sticker]));
+const KOTO_LEGACY_STICKER_ALIASES = {
+  'cat-wave':'cat','cat-heart':'cat','cat-cool':'shiba','cat-sleep':'owl','cat-cry':'cat',
+  'cat-laugh':'penguin','fox-love':'fox','fox-wow':'fox','fox-hug':'red-panda','fox-sleep':'owl',
+  'panda-happy':'panda','panda-boba':'hamster','panda-hug':'panda','panda-star':'panda',
+  'bear-cozy':'koala','bunny-flower':'bunny','bunny-wow':'bunny','dog-happy':'corgi',
+  'frog-cute':'panda','raccoon-hi':'raccoon','capybara-snack':'hamster','penguin-wave':'penguin',
+  'hedgehog-happy':'hedgehog','otter-snack':'raccoon','redpanda-love':'red-panda'
+};
 const KOTO_STICKER_MARKER = /:koto:([a-z0-9-]+):/gi;
 
+async function loadKotoStickerSheet() {
+  if (kotoStickerSheetUrl) return kotoStickerSheetUrl;
+  if (kotoStickerSheetPromise) return kotoStickerSheetPromise;
+  kotoStickerSheetPromise = Promise.all(KOTO_STICKER_PARTS.map(async (path) => {
+    const response = await fetch(path + '?v=' + KOTO_STICKER_CACHE_KEY, {cache:'force-cache'});
+    if (!response.ok) throw new Error('Не удалось загрузить часть набора зверьков.');
+    return response.text();
+  })).then((parts) => {
+    // The second segment contains 59 characters from the next segment; remove that overlap.
+    parts[1] = parts[1].slice(0, 4000);
+    const encoded = parts.join('');
+    if (encoded.length !== 31904) throw new Error('Набор стикеров загружен не полностью.');
+    kotoStickerSheetUrl = 'data:image/avif;base64,' + encoded;
+    document.querySelectorAll('.koto-photo-sticker').forEach((node) => {
+      node.style.backgroundImage = 'url("' + kotoStickerSheetUrl + '")';
+    });
+    document.querySelectorAll('.koto-sticker-picker-footer').forEach((node) => {
+      node.textContent = 'Выбери зверька — он появится в сообщении';
+    });
+    return kotoStickerSheetUrl;
+  }).catch((error) => {
+    kotoStickerSheetPromise = null;
+    document.querySelectorAll('.koto-sticker-picker-footer').forEach((node) => {
+      node.textContent = 'Не удалось загрузить зверьков. Попробуй открыть панель ещё раз.';
+    });
+    throw error;
+  });
+  return kotoStickerSheetPromise;
+}
+
 function createKotoStickerArt(stickerId, className = '') {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 160 160');
-  svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', KOTO_STICKER_BY_ID.get(stickerId)?.name || 'Звериный стикер');
-  if (className) svg.setAttribute('class', className);
-  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-  const url = KOTO_STICKER_SPRITE + '#' + stickerId;
-  use.setAttribute('href', url);
-  use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', url);
-  svg.append(use);
-  return svg;
+  const sticker = KOTO_STICKER_BY_ID.get(stickerId);
+  const art = document.createElement('span');
+  art.className = (className ? className + ' ' : '') + 'koto-photo-sticker';
+  art.setAttribute('role', 'img');
+  art.setAttribute('aria-label', sticker?.animal || 'Звериный стикер');
+  art.title = sticker?.name || stickerId;
+  const index = sticker?.index ?? 0;
+  const column = index % 4;
+  const row = Math.floor(index / 4);
+  art.style.backgroundPosition = (column * 100 / 3) + '% ' + (row * 100 / 3) + '%';
+  if (kotoStickerSheetUrl) {
+    art.style.backgroundImage = 'url("' + kotoStickerSheetUrl + '")';
+  }
+  return art;
 }
 
 function renderKotoStickerText(target, value) {
@@ -1902,7 +1948,7 @@ function renderKotoStickerText(target, value) {
   let found = false;
   const fragment = document.createDocumentFragment();
   while ((match = KOTO_STICKER_MARKER.exec(text))) {
-    const sticker = KOTO_STICKER_BY_ID.get(match[1]);
+    const sticker = KOTO_STICKER_BY_ID.get(match[1]) || KOTO_STICKER_BY_ID.get(KOTO_LEGACY_STICKER_ALIASES[match[1]]);
     if (!sticker) continue;
     found = true;
     if (match.index > cursor) fragment.append(document.createTextNode(text.slice(cursor, match.index)));
@@ -1955,12 +2001,11 @@ function buildKotoStickerPicker(form, trigger, input, pickerId) {
 
   const categories = [
     {id:'all',label:'Все'},
-    {id:'cats',label:'Котики'},
-    {id:'foxes',label:'Лисы'},
-    {id:'pandas',label:'Панды'},
-    {id:'bears',label:'Мишки'},
-    {id:'bunnies',label:'Зайки'},
+    {id:'cats',label:'Коты'},
     {id:'dogs',label:'Собаки'},
+    {id:'foxes',label:'Лисы'},
+    {id:'bunnies',label:'Зайцы'},
+    {id:'pandas',label:'Панды'},
     {id:'others',label:'Другие'}
   ];
   let activeCategory = 'all';
@@ -5584,6 +5629,7 @@ $('#communityVoiceBtn').addEventListener('click',toggleCommunityVoiceRecording);
 
 buildKotoStickerPicker($('#messageForm'), $('#kotoStickerBtn'), $('#messageInput'), 'kotoStickerPicker');
 buildKotoStickerPicker($('#communityMessageForm'), $('#communityStickerBtn'), $('#communityMessageInput'), 'communityKotoStickerPicker');
+loadKotoStickerSheet().catch((error) => console.warn('Animal sticker pack could not load:', error));
 
 $('#newGroupBtn').addEventListener('click',async()=>{
   $('#newGroupError').textContent='';
