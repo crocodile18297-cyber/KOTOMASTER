@@ -6705,3 +6705,688 @@ body {
 }
 #appScreen .community-conversation-copy strong { color: #405343; }
 #appScreen .community-conversation-copy small { color: #879487; }
+
+
+/* KOTOMASTER 2026 visual refinement — one calm, cool-neutral design system */
+:root {
+  color-scheme: light;
+  --bg: #f4f6fb;
+  --panel: #ffffff;
+  --panel-2: #f7f8fc;
+  --panel-3: #edf0f7;
+  --line: #e6e9f1;
+  --muted: #7c879b;
+  --text: #29344a;
+  --purple: #6878e8;
+  --purple-2: #5364d4;
+  --cyan: #58a7bd;
+  --pink: #d98293;
+  --green: #359b77;
+  --km-ink: #29344a;
+}
+html, body {
+  color: #29344a;
+  background: #f4f6fb;
+}
+body {
+  background-image:
+    radial-gradient(ellipse at 0% 0%, rgba(113,129,220,.055), transparent 36%),
+    radial-gradient(ellipse at 100% 100%, rgba(85,159,178,.045), transparent 34%);
+}
+button, input, textarea, select { font-family: inherit; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid rgba(104,120,232,.65);
+  outline-offset: 2px;
+}
+
+/* Outer app frame and its four columns */
+#appScreen.full-workspace {
+  width: min(1760px, calc(100vw - 32px));
+  height: min(920px, calc(100dvh - 32px));
+  min-height: 620px;
+  margin: 16px auto;
+  border: 1px solid #e6e9f1;
+  border-radius: 22px;
+  color: #29344a;
+  background: #fff;
+  box-shadow: 0 20px 64px rgba(36,49,78,.10);
+  backdrop-filter: none;
+}
+
+/* Left icon rail */
+#appScreen .server-rail {
+  background: #f0f2f8;
+  border-right: 1px solid #e7eaf2;
+}
+#appScreen .server-rail-home {
+  color: #fff;
+  background: #6878e8;
+  box-shadow: 0 6px 15px rgba(104,120,232,.20);
+}
+#appScreen .server-rail-home span { font-size: 12px; }
+#appScreen .server-rail-button,
+#appScreen .server-rail-settings {
+  color: #77839a;
+  background: transparent;
+}
+#appScreen .server-rail-button:hover,
+#appScreen .server-rail-settings:hover {
+  color: #5364d4;
+  background: #e4e8f8;
+  transform: translateY(-1px);
+}
+#appScreen .server-rail-button.is-active {
+  color: #5364d4;
+  border-radius: 13px;
+  background: #e4e8ff;
+  box-shadow: inset 0 0 0 1px rgba(104,120,232,.12);
+}
+#appScreen .server-rail-home,
+#appScreen .server-rail-button,
+#appScreen .server-rail-settings { border-radius: 13px; }
+#appScreen .server-rail-home { border-radius: 15px; }
+
+/* Main sidebar — light, quiet and readable */
+#appScreen .sidebar {
+  padding: 22px 16px 14px;
+  color: #344057;
+  background: #fafbfe;
+  border-right: 1px solid #e8ebf2;
+}
+#appScreen .sidebar-brand {
+  padding: 0 5px 24px;
+  color: #2b3850;
+  font-size: 16px;
+  letter-spacing: -.35px;
+}
+#appScreen .brand-mark {
+  color: #5b6dd8;
+  background: #edf0ff;
+  border: 1px solid #e1e5fb;
+  border-radius: 12px;
+  box-shadow: none;
+}
+#appScreen .brand-accent { color: #6676df; }
+#appScreen .sidebar-overline,
+#appScreen .sidebar-section-label,
+#appScreen .sidebar-caption,
+#appScreen .members-heading {
+  color: #8b95a8;
+}
+#appScreen .sidebar-section-label {
+  margin: 0 0 9px 9px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .9px;
+}
+#appScreen .sidebar-server-heading strong { color: #344057; font-size: 14px; }
+#appScreen .server-online-dot { background: #38a47d; box-shadow: 0 0 0 3px #e5f4ed; }
+#appScreen .nav-item {
+  min-height: 48px;
+  gap: 11px;
+  margin: 3px 0;
+  padding: 0 10px;
+  color: #657188;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  font-size: 12px;
+}
+#appScreen .nav-item:hover {
+  color: #465a91;
+  background: #f0f2fb;
+}
+#appScreen .nav-item.active {
+  color: #4659c3;
+  border-color: #e1e6ff;
+  background: #edf0ff;
+  box-shadow: none;
+}
+#appScreen .nav-indicator {
+  width: 3px;
+  height: 22px;
+  left: -1px;
+  background: #6878e8;
+  box-shadow: none;
+}
+#appScreen .nav-icon { color: #7f8bb1; }
+#appScreen .nav-item.active .nav-icon { color: #5b6bd2; }
+#appScreen .nav-copy strong { font-size: 12px; font-weight: 750; }
+#appScreen .nav-copy small {
+  margin-top: 3px;
+  color: #929bad;
+  font-size: 10px;
+}
+#appScreen .nav-badge {
+  color: #287a61;
+  background: #e4f4ed;
+  font-size: 9px;
+}
+#appScreen .sidebar-section-spaced { margin-top: 21px; }
+#appScreen .sidebar-room-block { margin-top: 22px; }
+#appScreen .room-mini-card {
+  min-height: 58px;
+  padding: 9px;
+  border: 1px solid #e6eaf2;
+  border-radius: 12px;
+  background: #fff;
+}
+#appScreen .room-mini-icon {
+  color: #5d70d8;
+  background: #eef0ff;
+}
+#appScreen .room-mini-info strong { color: #35415a; font-size: 12px; }
+#appScreen .room-mini-info small { color: #929bad; font-size: 9px; }
+#appScreen .sidebar-helper-card {
+  margin-top: 16px;
+  padding: 11px;
+  border: 1px solid #e8ebf2;
+  border-radius: 13px;
+  color: #53617b;
+  background: #f4f6fb;
+}
+#appScreen .helper-cat { color: #6b7bdb; }
+#appScreen .sidebar-helper-card strong { color: #45536b; font-size: 11px; }
+#appScreen .sidebar-helper-card small { color: #8c97a8; font-size: 9px; }
+#appScreen .profile-card {
+  padding: 10px 7px;
+  border-top: 1px solid #e6eaf2;
+  border-bottom: 1px solid #e6eaf2;
+  background: transparent;
+}
+#appScreen .profile-info strong { color: #2f3b53; font-size: 12px; }
+#appScreen .profile-info small { color: #8a95a7; font-size: 10px; }
+#appScreen .profile-username { color: #7382d4 !important; }
+#appScreen .online-dot { background: #36a47c; box-shadow: 0 0 0 3px #e4f3ec; }
+#appScreen .icon-button { color: #7b879a; }
+#appScreen .icon-button:hover { color: #5769d5; background: #eef0ff; }
+#appScreen .sign-out-button {
+  margin-top: 6px;
+  color: #79859a;
+  background: transparent;
+}
+#appScreen .sign-out-button:hover { color: #c35f72; background: #fff0f2; }
+#appScreen .sidebar-caption { font-size: 9px; }
+#appScreen .sidebar-caption span { color: #8994a6; }
+
+/* Main workspace header */
+#appScreen .workspace {
+  min-width: 0;
+  color: #29344a;
+  background: #fff;
+}
+#appScreen .topbar {
+  min-height: 72px;
+  padding: 0 22px;
+  border-bottom: 1px solid #e8ebf2;
+  background: #fff;
+}
+#appScreen .topbar-title { gap: 11px; }
+#appScreen .topbar-title h2 {
+  color: #2d3951;
+  font: 750 16px 'Plus Jakarta Sans','Segoe UI',sans-serif;
+  letter-spacing: -.35px;
+}
+#appScreen .topbar-title p { color: #8b96a8; font-size: 10px; }
+#appScreen .topbar-room-icon {
+  color: #586bd7;
+  border: 1px solid #e4e8ff;
+  border-radius: 12px;
+  background: #edf0ff;
+}
+#appScreen .chat-search-box {
+  min-height: 40px;
+  border: 1px solid #e7eaf1;
+  border-radius: 11px;
+  color: #8490a2;
+  background: #f8f9fc;
+}
+#appScreen .chat-search-box input { color: #344057; background: transparent; font-size: 11px; }
+#appScreen .chat-search-box input::placeholder { color: #a0a9b8; }
+#appScreen .notifications-button {
+  width: 40px;
+  height: 40px;
+  border: 1px solid #e7eaf1;
+  border-radius: 11px;
+  color: #7c879b;
+  background: #fff;
+}
+#appScreen .notifications-button:hover { color: #586bd7; background: #f3f5ff; }
+#appScreen .secure-pill { color: #7c879b; font-size: 10px; }
+#appScreen .secure-pill span { color: #35a47c; }
+#appScreen .panel-switch-button,
+#appScreen .invite-button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid #6172dc;
+  border-radius: 11px;
+  color: #fff;
+  background: #6576e2;
+  box-shadow: 0 3px 9px rgba(94,111,216,.12);
+  font-size: 11px;
+  font-weight: 750;
+}
+#appScreen .panel-switch-button:hover,
+#appScreen .invite-button:hover {
+  color: #fff;
+  background: #5365d3;
+}
+#appScreen .panel-switch-button { border-color: #e2e6fb; color: #5a6bd0; background: #f0f2ff; box-shadow: none; }
+#appScreen .panel-switch-button:hover { color: #4d5fc7; background: #e5e9ff; }
+
+/* Mobile navigation */
+#appScreen .mobile-app-nav {
+  border-top: 1px solid #e7eaf1;
+  background: rgba(255,255,255,.97);
+}
+#appScreen .mobile-nav-button { color: #8994a7; }
+#appScreen .mobile-nav-button.active { color: #596bd4; }
+#appScreen .mobile-member-strip {
+  border-bottom: 1px solid #e8ebf2;
+  background: #fafbfe;
+}
+#appScreen .mobile-member-chip { color: #4b5870; background: #fff; border-color: #e6eaf2; }
+
+/* Chat view */
+#appScreen .workspace-views { background: #fff; }
+#appScreen .chat-panel { background: #fff; }
+#appScreen .view-heading {
+  min-height: 88px;
+  padding: 17px 28px;
+  border-bottom: 1px solid #edf0f5;
+  background: #fff;
+}
+#appScreen .view-overline { color: #7280c8; font-size: 10px; letter-spacing: 1px; }
+#appScreen .view-heading h3 {
+  margin: 5px 0 4px;
+  color: #27344c;
+  font: 750 19px 'Plus Jakarta Sans','Segoe UI',sans-serif;
+  letter-spacing: -.55px;
+}
+#appScreen .view-heading p { color: #8994a6; font-size: 11px; }
+#appScreen .view-heading-badge {
+  padding: 7px 10px;
+  border: 1px solid #e6f0eb;
+  border-radius: 999px;
+  color: #54826c;
+  background: #f4faf6;
+  font-size: 10px;
+}
+#appScreen .view-status-dot { background: #3da77c; box-shadow: 0 0 0 3px #e7f5ed; }
+#appScreen .chat-scroll {
+  padding: 24px 28px 18px;
+  color: #36435a;
+  background: #fff;
+}
+#appScreen .chat-welcome {
+  max-width: 630px;
+  padding: 23px 20px;
+  border: 1px solid #e9edf5;
+  border-radius: 18px;
+  color: #34415a;
+  background: #f8f9fd;
+}
+#appScreen .welcome-icon {
+  color: #6677df;
+  background: #ecefff;
+}
+#appScreen .chat-welcome h3 { color: #34415a; font-size: 16px; }
+#appScreen .chat-welcome p { color: #8994a6; font-size: 11px; }
+#appScreen .welcome-code {
+  border: 1px solid #e5e9f2;
+  border-radius: 11px;
+  background: #fff;
+}
+#appScreen .welcome-code span { color: #8c97a9; }
+#appScreen .welcome-code strong { color: #5365d3; }
+#appScreen .welcome-code button { color: #6475d9; }
+#appScreen .messages-list { width: min(980px, 100%); gap: 17px; }
+#appScreen .message-row { gap: 11px; }
+#appScreen .message-content { max-width: min(78%, 680px); }
+#appScreen .message-meta { color: #8792a5; font-size: 10px; }
+#appScreen .message-meta strong { color: #45536c; font-size: 11px; font-weight: 700; }
+#appScreen .message-meta time { color: #9ba5b4; font-size: 9px; }
+#appScreen .message-bubble {
+  padding: 11px 15px;
+  border: 1px solid #e8ebf2;
+  border-radius: 15px 15px 15px 5px;
+  color: #35425a;
+  background: #f6f7fb;
+  box-shadow: 0 2px 7px rgba(39,52,76,.025);
+  font-size: 13px;
+  line-height: 1.55;
+}
+#appScreen .mine .message-bubble {
+  border-color: #dfe5ff;
+  border-radius: 15px 15px 5px 15px;
+  color: #34436f;
+  background: #eef1ff;
+}
+#appScreen .message-reply-quote {
+  border-left-color: #8492e8;
+  color: #738099;
+  background: #f5f6fc;
+}
+#appScreen .message-edited-label,
+#appScreen .message-read-mark { color: #7784d4; }
+#appScreen .pinned-message-banner { border-color: #e3e8fb; background: #f5f6ff; color: #5565c5; }
+#appScreen .typing-indicator { color: #8792a4; }
+
+/* Composer: one clear action and generous text area */
+#appScreen .composer {
+  min-height: 78px;
+  gap: 9px;
+  padding: 11px 22px;
+  border: 1px solid #e7eaf2;
+  border-radius: 17px;
+  background: #fff;
+  box-shadow: 0 5px 20px rgba(40,53,79,.045);
+}
+#appScreen .composer input {
+  min-height: 48px;
+  color: #34415a;
+  background: transparent;
+  font-size: 13px;
+}
+#appScreen .composer input::placeholder { color: #9aa4b4; }
+#appScreen .composer-hint { color: #a0a9b7; font-size: 9px; }
+#appScreen .composer-attach {
+  border: 1px solid #e5e9f2;
+  border-radius: 10px;
+  color: #6576d9;
+  background: #f2f4ff;
+}
+#appScreen .koto-sticker-trigger {
+  border: 1px solid #e5e9f2;
+  border-radius: 11px;
+  color: #6072d6;
+  background: #f6f7ff;
+}
+#appScreen .send-button {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  color: #fff;
+  background: #6576e2;
+  box-shadow: 0 4px 12px rgba(94,111,216,.16);
+}
+#appScreen .send-button:hover { background: #5365d3; }
+
+/* Right information rail */
+#appScreen > .room-details-rail {
+  padding: 19px 14px;
+  border-left: 1px solid #e7eaf2;
+  color: #35425a;
+  background: #f7f8fc;
+}
+#appScreen .room-details-heading strong {
+  color: #2f3c54;
+  font-size: 14px;
+}
+#appScreen .room-private-icon {
+  border: 1px solid #e5e9f1;
+  border-radius: 10px;
+  color: #6e7ddc;
+  background: #fff;
+}
+#appScreen .room-details-code-card {
+  border: 1px solid #e5e9f1;
+  border-radius: 13px;
+  background: #fff;
+}
+#appScreen .room-details-code-icon { color: #596cd5; background: #edf0ff; }
+#appScreen .room-details-code-card span { color: #8a95a8; font-size: 9px; }
+#appScreen .room-details-code-card strong { color: #3a4861; font-size: 13px; }
+#appScreen .room-details-code-card button {
+  border: 1px solid #e5e9f1;
+  border-radius: 8px;
+  color: #6d7cda;
+  background: #fff;
+}
+#appScreen .room-details-members-heading strong { color: #34415a; font-size: 13px; }
+#appScreen .room-details-members-heading small { color: #8b96a7; font-size: 10px; }
+#appScreen .room-details-members-heading .member-count {
+  border: 1px solid #e5e9f2;
+  border-radius: 8px;
+  color: #6272cf;
+  background: #fff;
+  font-size: 10px;
+}
+#appScreen .room-details-rail .member-row {
+  gap: 9px;
+  padding: 9px 8px;
+  border: 1px solid #e8ebf2;
+  border-radius: 12px;
+  color: #48566e;
+  background: #fff;
+}
+#appScreen .room-details-rail .member-row:hover {
+  border-color: #dce2ff;
+  background: #f8f9ff;
+}
+#appScreen .room-details-rail .member-name {
+  color: #42516a;
+  font-size: 10px;
+}
+#appScreen .room-details-rail .member-state { color: #98a2b2; font-size: 9px; }
+#appScreen .room-details-rail .member-state.in-call { color: #319b74; }
+#appScreen .room-details-rail .member-local-mute {
+  border-color: #e5e9f1;
+  border-radius: 8px;
+  color: #68758a;
+  background: #f8f9fc;
+  font-size: 9px;
+}
+#appScreen .room-details-footer {
+  border: 1px solid #e5e9f1;
+  border-radius: 12px;
+  color: #52617a;
+  background: #fff;
+}
+#appScreen .room-details-footer-icon { color: #6174db; background: #eef0ff; }
+#appScreen .room-details-footer strong { color: #42516a; font-size: 10px; }
+#appScreen .room-details-footer small { color: #8994a6; font-size: 9px; }
+
+/* Friends and direct messages */
+#appScreen .community-panel { color: #34415a; background: #fff; }
+#appScreen .community-header,
+#appScreen .community-tabs { border-color: #e8ebf2; }
+#appScreen .community-header h3 { color: #293750; font-size: 19px; }
+#appScreen .community-header p { color: #8792a5; font-size: 11px; }
+#appScreen .community-tab { color: #79859a; }
+#appScreen .community-tab.active { color: #586bd2; border-bottom-color: #6878e8; }
+#appScreen .community-layout { background: #fff; }
+#appScreen .community-list-panel,
+#appScreen .community-chat-view,
+#appScreen .community-conversation-list,
+#appScreen .community-card {
+  border-color: #e7eaf2;
+  background: #fff;
+}
+#appScreen .community-list-heading strong { color: #3a4962; }
+#appScreen .community-search-input,
+#appScreen .community-modal-card input,
+#appScreen .community-modal-card textarea,
+#appScreen .community-modal-card select {
+  border: 1px solid #e3e7f0;
+  border-radius: 10px;
+  color: #334159;
+  background: #f8f9fc;
+}
+#appScreen .community-person-item,
+#appScreen .community-conversation-item {
+  border: 1px solid #e8ebf2;
+  border-radius: 12px;
+  color: #43516a;
+  background: #fff;
+}
+#appScreen .community-conversation-item.is-selected {
+  border-color: #dfe4ff;
+  background: #f2f4ff;
+}
+#appScreen .community-person-copy strong,
+#appScreen .community-conversation-copy strong { color: #3b4961; font-size: 12px; }
+#appScreen .community-person-copy small,
+#appScreen .community-conversation-copy small { color: #8994a6; font-size: 10px; }
+#appScreen .community-small-action.is-primary {
+  color: #fff;
+  border-color: #6576e2;
+  background: #6576e2;
+}
+#appScreen .community-message {
+  border-color: #e8ebf2;
+  border-radius: 13px;
+  color: #3e4c63;
+  background: #fff;
+}
+#appScreen .community-message.is-own { border-color: #e1e6ff; background: #f1f3ff; }
+#appScreen .community-message-header,
+#appScreen .community-message-header time { color: #8c97a8; }
+#appScreen .community-message-header strong { color: #46546d; }
+#appScreen .community-message p { color: #3c4a61; }
+#appScreen .community-empty-note { color: #8a95a6; }
+
+/* Video call remains dark only inside the video stage */
+#appScreen .call-panel { color: #34415a; background: #fff; }
+#appScreen .call-heading h3 { color: #2d3a52; font-size: 19px; }
+#appScreen .call-heading p { color: #8994a6; }
+#appScreen .call-kicker { color: #7483d3; }
+#appScreen .call-room-chip,
+#appScreen .call-live-pill {
+  border-color: #e5e9f2;
+  color: #67758e;
+  background: #f8f9fc;
+}
+#appScreen .call-live-pill i { background: #39a27a; }
+#appScreen .call-participants-panel {
+  border-color: #e6eaf2;
+  border-radius: 15px;
+  color: #394760;
+  background: #f8f9fc;
+}
+#appScreen .call-participant-row { border-color: #e6eaf2; background: #fff; }
+#appScreen .call-participants-heading strong { color: #394760; }
+#appScreen .call-participants-heading small { color: #8994a6; }
+#appScreen .call-participants-heading > span { color: #5668cf; background: #edf0ff; }
+#appScreen .call-person-copy strong { color: #3d4b64; }
+#appScreen .call-person-copy small { color: #8a96a8; }
+#appScreen .call-media-flag { border-color: #e6eaf1; color: #8792a4; background: #f8f9fc; }
+#appScreen .call-media-flag.is-active { border-color: #dcefe6; color: #388b6d; background: #eff8f3; }
+#appScreen .call-bottom { border-top-color: #e7eaf2; }
+#appScreen .call-control-dock { border-color: #e5e9f1; background: #fff; box-shadow: 0 6px 22px rgba(38,52,81,.07); }
+#appScreen .call-control { color: #66748a; }
+#appScreen .call-control:hover { color: #5668cf; background: #f0f2ff; }
+#appScreen .more-control { border-left-color: #e5e9f1; }
+#appScreen .km-fps-card { background: rgba(27,39,63,.82); }
+#appScreen .call-stage { border-color: #dfe4ee; background: radial-gradient(ellipse at 50% 0%, #354667, #1d2940 78%); }
+
+/* Settings dialogs */
+#appScreen .community-modal-card,
+#appScreen .km-settings-dialog {
+  border: 1px solid #e5e9f1;
+  border-radius: 19px;
+  color: #35425a;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(32,45,72,.18);
+}
+#appScreen .community-modal-card h3,
+#appScreen .km-settings-title-wrap h3 { color: #2d3a52; }
+#appScreen .community-modal-card .field-label,
+#appScreen .km-settings-field label { color: #7e8aa0; }
+#appScreen .community-modal-close { color: #718096; background: #f2f4f8; }
+#appScreen .km-settings-tabs { border-bottom-color: #e8ebf2; }
+#appScreen .km-settings-tabs button { color: #79859a; }
+#appScreen .km-settings-tabs button.is-active { color: #586bd5; border-bottom-color: #6878e8; }
+#appScreen .km-setting-switch { color: #405069; border-color: #e7eaf2; background: #fafbfe; }
+
+/* Animal portraits — use the image, not the decorative CSS mascot */
+#appScreen .koto-animal-avatar {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  overflow: hidden;
+  padding: 0 !important;
+  color: transparent !important;
+  background-color: #edf0f7 !important;
+  background-repeat: no-repeat !important;
+  background-size: 400% 400% !important;
+  border: 1px solid rgba(52,66,96,.12) !important;
+  border-radius: 50% !important;
+  box-shadow: 0 2px 7px rgba(36,49,78,.10) !important;
+  animation: none !important;
+}
+#appScreen .koto-animal-avatar::before,
+#appScreen .koto-animal-avatar::after {
+  display: none !important;
+  content: none !important;
+}
+#appScreen .avatar.koto-animal-avatar { width: 34px; height: 34px; flex-basis: 34px; }
+#appScreen .message-avatar.koto-animal-avatar { width: 38px; height: 38px; flex-basis: 38px; }
+#appScreen .call-person-avatar.koto-animal-avatar { width: 38px; height: 38px; }
+#appScreen .mobile-member-avatar.koto-animal-avatar { width: 32px; height: 32px; }
+#appScreen .profile-card .avatar.koto-animal-avatar { width: 44px; height: 44px; flex-basis: 44px; }
+#appScreen .community-message-avatar.koto-animal-avatar,
+#appScreen .community-person-avatar.koto-animal-avatar,
+#appScreen .community-conversation-avatar.koto-animal-avatar {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+}
+#appScreen .profile-animal-section { border-color: #e5e9f1; background: #f8f9fc; }
+#appScreen .profile-animal-heading strong { color: #3b4962; }
+#appScreen .profile-animal-heading small { color: #8792a4; }
+#appScreen .profile-animal-choice {
+  border-color: #e4e8f0;
+  border-radius: 12px;
+  color: #65728a;
+  background: #fff;
+}
+#appScreen .profile-animal-choice:hover { border-color: #bdc7f4; background: #f6f7ff; }
+#appScreen .profile-animal-choice.is-selected {
+  border-color: #8190ea;
+  background: #eff1ff;
+  box-shadow: 0 0 0 2px rgba(104,120,232,.13);
+}
+#appScreen .profile-animal-choice small { color: #68758b; }
+#appScreen .profile-animal-art { width: 56px; height: 56px; }
+#appScreen .community-message-avatar { width: 32px; height: 32px; }
+
+/* Keep the screen calm at different widths */
+@media (max-width: 1120px) {
+  #appScreen.full-workspace {
+    grid-template-columns: 62px 220px minmax(0,1fr) 220px;
+    width: calc(100vw - 20px);
+  }
+  #appScreen .sidebar { padding-inline: 12px; }
+  #appScreen .topbar { padding-inline: 15px; }
+  #appScreen .chat-scroll { padding-inline: 18px; }
+}
+@media (max-width: 860px) {
+  #appScreen.full-workspace { grid-template-columns: 58px 205px minmax(0,1fr); }
+  #appScreen > .room-details-rail { display: none; }
+}
+@media (max-width: 740px) {
+  #appScreen.full-workspace {
+    width: 100%;
+    height: 100dvh;
+    min-height: 550px;
+    margin: 0;
+    grid-template-columns: minmax(0,1fr);
+    grid-template-rows: minmax(0,1fr);
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  #appScreen .server-rail { display: none; }
+  #appScreen .sidebar { background: #f5f6fb; }
+  #appScreen .topbar { min-height: 62px; padding-inline: 12px; }
+  #appScreen .view-heading { padding: 13px 15px; }
+  #appScreen .view-heading h3 { font-size: 17px; }
+  #appScreen .chat-scroll { padding: 16px 13px 12px; }
+  #appScreen .message-content { max-width: min(84%, 600px); }
+  #appScreen .composer { min-height: 64px; padding: 7px 10px; border-radius: 14px; }
+  #appScreen .composer input { min-height: 44px; font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #appScreen .koto-animal-avatar { animation: none !important; }
+}

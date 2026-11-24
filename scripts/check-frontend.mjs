@@ -98,11 +98,12 @@ assert.match(html, /id="micDenoiseStatus"/, 'Microphone settings must display th
 assert.match(server, /vendor\/simple-rnnoise-wasm/, 'Server must serve the locally installed RNNoise assets.');
 
 
-assert.ok(html.includes('/koto-delight.js?v=20261124-koto-delight'), 'KOTO delight interactions must load as a versioned script.');
+assert.ok(html.includes('/koto-delight.js?v=20261124-visual-polish'), 'KOTO delight interactions must load as a versioned script.');
 assert.match(html, /data-koto-sticker-trigger/, 'Both chat composers must expose a sticker picker trigger.');
 assert.match(html, /id="kotoPawTrailToggle"/, 'Appearance settings must expose the paw cursor trail preference.');
 assert.match(delight, /kotoStickerPicker/, 'Sticker picker UI must be implemented.');
 assert.match(delight, /watchMascotAvatars/, 'Message and participant avatars must receive mascot styling.');
+assert.match(delight, /classList\.contains\('koto-animal-avatar'\)/, 'Real animal portrait avatars must not be covered by the mascot overlay.');
 assert.match(delight, /prefers-reduced-motion/, 'Mascot effects must respect reduced-motion accessibility.');
 assert.ok(delight.includes('localStorage.setItem(PREFS_KEY'), 'Paw cursor preferences must persist locally.');
 for (const requiredId of ['communityMessageInput', 'communityMessageForm', 'kotoPawTrailToggle']) {

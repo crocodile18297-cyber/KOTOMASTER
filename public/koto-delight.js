@@ -254,6 +254,13 @@
   function decorateMascotAvatars(root) {
     if (!root) return;
     root.querySelectorAll('.message-avatar, .avatar, .call-person-avatar, .mobile-member-avatar').forEach((avatar) => {
+      // Real animal portraits must remain visible; never cover them with the CSS mascot.
+      if (avatar.classList.contains('koto-animal-avatar')) {
+        avatar.classList.remove('koto-mascot-avatar');
+        delete avatar.dataset.kotoMascotAvatar;
+        delete avatar.dataset.kotoTone;
+        return;
+      }
       if (avatar.dataset.kotoMascotAvatar === '1') return;
       const row = avatar.closest('.message-row, .member-row, .call-participant-row, .mobile-member-chip');
       const nameNode = row?.querySelector('.message-meta strong, .member-name, .call-person-copy strong, .mobile-member-name');
