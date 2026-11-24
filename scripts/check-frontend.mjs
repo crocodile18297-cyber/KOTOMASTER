@@ -119,6 +119,11 @@ for (const requiredId of ['communityMessageInput', 'communityMessageForm', 'koto
   assert.ok(uniqueIds.has(requiredId), 'KOTO delight target is missing: #' + requiredId);
 }
 
+assert.match(html, /href="\/magicpath-exact\.css\?v=/, 'The exact MagicPath component stylesheet must be loaded.');
+assert.match(html, /class="km-desktop-frame"/, 'The MagicPath four-column desktop frame must exist.');
+assert.match(html, /class="km-details"/, 'The MagicPath room information rail must exist.');
+assert.match(app, /km-message-bubble/, 'Live chat messages must use the MagicPath message presentation.');
+
 console.log(
   'Frontend integrity OK: ' + uniqueIds.size + ' unique HTML ids, ' +
   new Set(selectorIds).size + ' JavaScript id selectors, ' +
