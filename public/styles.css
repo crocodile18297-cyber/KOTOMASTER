@@ -6175,3 +6175,25 @@ html[data-koto-animations="off"] #appScreen .community-composer button[type="sub
   .koto-inline-sticker-caption { font-size:8px;padding:3px 6px; }
   #appScreen .message-bubble.has-koto-sticker { min-height:90px; }
 }
+
+/* Keep Russian sticker captions readable on compact picker cards. */
+.koto-sticker-choice>span:not(.koto-picker-sticker) {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+  min-height:20px;
+  padding:0 1px;
+  overflow:visible;
+  text-align:center;
+  white-space:normal;
+  text-overflow:clip;
+  line-height:1.15;
+  font-size:8px;
+}
+.koto-inline-sticker-caption {
+  max-width:110px;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  text-align:center;
+}
