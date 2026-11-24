@@ -25,6 +25,7 @@ jobs:
       - name: Validate JavaScript syntax
         run: |
           node --check public/app.js
+          node --check public/koto-delight.js
           node --check server.js
       - name: Check UI elements and Socket.IO wiring
         run: node scripts/check-frontend.mjs
