@@ -1514,14 +1514,17 @@ async function restoreSavedRoom() {
       ? 'Комната восстановлена. Нажми «Вернуться в видеозвонок», чтобы снова включить микрофон и камеру.'
       : 'Последняя комната восстановлена.');
   } catch (error) {
-    if (manualRoomEntryRequested) return;
     console.warn('Saved room could not be restored:', error);
-    if (String(error.message || '').includes('Комната не найдена')) {
-      localStorage.removeItem(ROOM_SESSION_KEY);
-      showJoinError('Прежняя комната уже закрыта. Создай новую или введи актуальный код.');
-    } else {
-      showJoinError('Не удалось автоматически открыть прежнюю комнату. Проверь интернет и попробуй войти ещё раз.');
+    if (!manualRoomEntryRequested) {
+      if (String(error.message || '').includes('Комната не найдена')) {
+        localStorage.removeItem(ROOM_SESSION_KEY);
+        showJoinError('Прежняя комната уже закрыта. Создай новую или введи актуальный код.');
+      } else {
+        showJoinError('Не удалось автоматически открыть прежнюю комнату. Проверь интернет и попробуй войти ещё раз.');
+      }
     }
+    // Even when a manual entry is waiting, release a socket whose room join
+    // timed out after the server accepted it but before the client got the ACK.
     if (socket && !roomId) {
       socket.disconnect();
       socket = null;
@@ -5350,6 +5353,20 @@ async function copyText(value) {
   }
 }
 
+function prepareForManualRoomEntry() {
+  // If the local room state was already cleared, the server may still be
+  // completing an automatic restore on this socket. Disconnecting guarantees
+  // that the server's disconnect handler releases any stale membership.
+  if (roomId) {
+    leaveRoom();
+    return;
+  }
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+}
+
 function leaveRoom() {
   try { localStorage.removeItem(ROOM_SESSION_KEY); } catch (_error) {}
   if (previewAudioStream) {
@@ -5405,7 +5422,7 @@ joinForm.addEventListener('submit', async (event) => {
   setBusy(button, true, 'Создаём комнату…');
   try {
     if (savedRoomRestorePromise) await savedRoomRestorePromise;
-    if (roomId) leaveRoom();
+    prepareForManualRoomEntry();
     myName = name;
     await connectSocket();
     await createRoom(name);
@@ -5438,17 +5455,15 @@ joinRoomForm.addEventListener('submit', async (event) => {
   setBusy(button, true, 'Входим…');
   try {
     if (savedRoomRestorePromise) await savedRoomRestorePromise;
-    if (roomId) {
-      if (roomId === code) {
-        showJoinError('');
-        joinScreen.hidden = true;
-        appScreen.hidden = false;
-        switchPanel('chat');
-        showToast('Ты уже находишься в этой комнате.');
-        return;
-      }
-      leaveRoom();
+    if (roomId === code) {
+      showJoinError('');
+      joinScreen.hidden = true;
+      appScreen.hidden = false;
+      switchPanel('chat');
+      showToast('Ты уже находишься в этой комнате.');
+      return;
     }
+    prepareForManualRoomEntry();
     // leaveRoom clears the code field; retain the exact code the user submitted.
     roomInput.value = code;
     nameInput.value = name;
