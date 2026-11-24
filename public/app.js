@@ -2017,8 +2017,30 @@ function buildKotoStickerPicker(form, trigger, input, pickerId) {
       grid.append(button);
     });
   };
+  const positionPicker = () => {
+    if (picker.hidden) return;
+    const rect = trigger.getBoundingClientRect();
+    const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+    const viewportHeight = window.visualViewport?.height || window.innerHeight;
+    const width = Math.min(420, Math.max(260, viewportWidth - 24));
+    const preferredHeight = Math.min(430, Math.max(220, viewportHeight - 24));
+    const above = Math.max(0, rect.top - 12);
+    const below = Math.max(0, viewportHeight - rect.bottom - 12);
+    const placeAbove = above >= Math.min(330, preferredHeight) || above >= below;
+    const available = placeAbove ? above : below;
+    const height = Math.min(preferredHeight, Math.max(210, available));
+    const left = Math.max(12, Math.min(rect.left, viewportWidth - width - 12));
+    const top = placeAbove
+      ? Math.max(12, rect.top - height - 10)
+      : Math.min(viewportHeight - height - 12, rect.bottom + 10);
+    picker.style.width = width + 'px';
+    picker.style.height = height + 'px';
+    picker.style.left = left + 'px';
+    picker.style.top = Math.max(12, top) + 'px';
+  };
   const closePicker = () => {
     picker.hidden = true;
+    picker.classList.remove('is-open');
     trigger.setAttribute('aria-expanded', 'false');
   };
   close.addEventListener('click', closePicker);
@@ -2033,24 +2055,29 @@ function buildKotoStickerPicker(form, trigger, input, pickerId) {
     if (open) {
       renderTabs();
       renderGrid();
+      positionPicker();
       requestAnimationFrame(() => picker.classList.add('is-open'));
     } else {
       picker.classList.remove('is-open');
     }
   });
   document.addEventListener('pointerdown', (event) => {
-    if (picker.hidden || form.contains(event.target)) return;
+    if (picker.hidden || picker.contains(event.target) || trigger.contains(event.target)) return;
     closePicker();
   });
+  window.addEventListener('resize', positionPicker);
+  window.addEventListener('scroll', positionPicker, true);
+  window.visualViewport?.addEventListener('resize', positionPicker);
+  window.visualViewport?.addEventListener('scroll', positionPicker);
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !picker.hidden) {
       closePicker();
       trigger.focus();
     }
   });
-  // Populate the popup before attaching it: without these children the button only opens an empty shell.
+  // Mount the complete popup at document level so chat scrolling/overflow cannot clip it.
   picker.append(head, tabs, grid, footer);
-  form.append(picker);
+  document.body.append(picker);
   renderTabs();
   renderGrid();
 }
