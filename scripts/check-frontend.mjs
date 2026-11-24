@@ -88,6 +88,13 @@ assert.match(app, /create_direct_conversation/, 'Private chats must use the guar
 assert.match(app, /create_group_conversation/, 'Group creation must use the guarded RPC.');
 assert.match(app, /chat-files/, 'Private file uploads must use the configured storage bucket.');
 assert.match(app, /MediaRecorder/, 'Voice messages must use browser media recording.');
+assert.match(app, /beginRoomEventBuffer/, 'Room join must buffer presence events until the room snapshot is applied.');
+assert.match(app, /flushRoomEventBuffer/, 'Buffered room events must be applied after a successful room join.');
+assert.match(app, /queueRoomEvent/, 'Live room events must not be dropped during room entry.');
+assert.match(app, /new RNNoiseNode\(context\)/, 'Voice calls must use the local RNNoise audio worklet when available.');
+assert.match(app, /enhanceMicrophoneStream/, 'Captured microphone audio must pass through the noise-reduction pipeline.');
+assert.match(html, /id="micDenoiseStatus"/, 'Microphone settings must display the active noise-reduction engine.');
+assert.match(server, /vendor\/simple-rnnoise-wasm/, 'Server must serve the locally installed RNNoise assets.');
 
 console.log(
   'Frontend integrity OK: ' + uniqueIds.size + ' unique HTML ids, ' +

@@ -62,6 +62,8 @@ let isMicOn = false;
 let isCameraOn = false;
 let isSharing = false;
 let isRoomSyncing = false;
+let roomJoinInProgress = false;
+let pendingRoomEvents = [];
 let wasMicInterrupted = false;
 let wasCameraInterrupted = false;
 let videoQualityBoostEnabled = (() => { try { return localStorage.getItem('kotomaster-video-quality-boost') === '1'; } catch (_error) { return false; } })();
@@ -134,15 +136,234 @@ function syncCallUiControls(){
  setCallSwitchState('showConnectionToggle',callUiPrefs.showConnectionStatus);
  setCallSwitchState('showCatAccentsToggle',callUiPrefs.showCatAccents);
  const connection=$('#kmCallConnectionStatus');if(connection)connection.hidden=!callUiPrefs.showConnectionStatus;
+ setMicDenoiseStatus(callUiPrefs.noiseSuppression
+  ? (rnnoiseSessions.size ? 'ИИ-шумоподавление RNNoise активно' : 'ИИ-фильтр включится при запуске звонка')
+  : 'Шумоподавление выключено', rnnoiseSessions.size > 0);
  const panel=$('#callPanel');if(panel)panel.classList.toggle('km-no-cat-accents',!callUiPrefs.showCatAccents);
  document.documentElement.classList.toggle('km-no-cat-accents',!callUiPrefs.showCatAccents);
  syncScreenShareFpsUi();
  const select=$('#videoResolutionSelect'),summary=$('#callMenuQualitySummary');
  if(summary)summary.textContent=!select||select.value==='auto'?'Авто':select.value+'p';
 }
+const RNNOISE_ASSET_ROOT = '/vendor/simple-rnnoise-wasm';
+let rnnoiseModulePromise = null;
+const rnnoiseSessions = new Map();
+
+function setMicDenoiseStatus(message, active = false) {
+  const node = $('#micDenoiseStatus');
+  if (node) node.textContent = message;
+  const card = $('.km-mic-test-card');
+  if (card) card.classList.toggle('is-denoising', Boolean(active));
+}
+
+function getRawMicrophoneTrack(track) {
+  return track && track._kotoRawTrack ? track._kotoRawTrack : track;
+}
+
+function getAudioInputDeviceId(track) {
+  const source = getRawMicrophoneTrack(track);
+  const settings = source && source.getSettings ? source.getSettings() : {};
+  return settings.deviceId || '';
+}
+
+function disposeNoiseSession(track, stopInput = false) {
+  const session = track && (track._kotoNoiseSession || rnnoiseSessions.get(track.id));
+  if (!session || session.disposed) return;
+  session.disposed = true;
+  rnnoiseSessions.delete(session.outputTrack.id);
+  try { session.node.update(false); } catch (_error) {}
+  try { session.source.disconnect(); } catch (_error) {}
+  try { session.node.disconnect(); } catch (_error) {}
+  try { session.destination.disconnect(); } catch (_error) {}
+  if (stopInput && session.inputTrack && session.inputTrack.readyState === 'live') {
+    try { session.inputTrack.stop(); } catch (_error) {}
+  }
+  if (session.outputTrack && session.outputTrack.readyState === 'live') {
+    try { session.outputTrack.stop(); } catch (_error) {}
+  }
+  if (session.context && session.context.state !== 'closed') {
+    session.context.close().catch(() => {});
+  }
+}
+
+async function createNoiseSuppressedTrack(inputTrack) {
+  if (!callUiPrefs.noiseSuppression || !inputTrack || inputTrack.readyState !== 'live') return null;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass || !window.AudioWorkletNode || !WebAssembly) {
+    setMicDenoiseStatus('Нейрофильтр недоступен — используется шумоподавление браузера');
+    return null;
+  }
+
+  let context = null;
+  let source = null;
+  let node = null;
+  let destination = null;
+  try {
+    context = new AudioContextClass({ sampleRate: 48000, latencyHint: 'interactive' });
+    if (!context.audioWorklet || context.sampleRate !== 48000) {
+      throw new Error('Устройство не поддерживает AudioWorklet с частотой 48 кГц');
+    }
+
+    if (!rnnoiseModulePromise) {
+      rnnoiseModulePromise = import(RNNOISE_ASSET_ROOT + '/rnnoise.mjs').catch((error) => {
+        rnnoiseModulePromise = null;
+        throw error;
+      });
+    }
+    const { RNNoiseNode } = await rnnoiseModulePromise;
+    const workletUrl = new URL(RNNOISE_ASSET_ROOT + '/rnnoise.worklet.js', window.location.origin);
+    const wasmUrl = RNNOISE_ASSET_ROOT + '/rnnoise.wasm';
+    const wasmPromise = fetch(wasmUrl, { cache: 'force-cache' }).then((response) => {
+      if (!response.ok) throw new Error('Не удалось загрузить модель шумоподавления');
+      return response.arrayBuffer();
+    }).then((bytes) => WebAssembly.compile(bytes));
+
+    await RNNoiseNode.register(context, [workletUrl, wasmPromise]);
+    await context.resume();
+
+    source = context.createMediaStreamSource(new MediaStream([inputTrack]));
+    node = new RNNoiseNode(context);
+    destination = context.createMediaStreamDestination();
+    source.connect(node);
+    node.connect(destination);
+    node.update();
+
+    const outputTrack = destination.stream.getAudioTracks()[0];
+    if (!outputTrack) throw new Error('Нейрофильтр не создал выходной аудиопоток');
+    outputTrack.enabled = inputTrack.enabled;
+    outputTrack._kotoRawTrack = inputTrack;
+
+    const session = {
+      context,
+      source,
+      node,
+      destination,
+      inputTrack,
+      outputTrack,
+      disposed: false
+    };
+    outputTrack._kotoNoiseSession = session;
+    rnnoiseSessions.set(outputTrack.id, session);
+    inputTrack.addEventListener('ended', () => {
+      if (session.disposed) return;
+      if (isInCall && localStream && localStream.getAudioTracks().includes(outputTrack)) {
+        wasMicInterrupted = isMicOn;
+        isMicOn = false;
+        updateCallButtons();
+        publishMediaState();
+      }
+      disposeNoiseSession(outputTrack, false);
+    }, { once: true });
+
+    setMicDenoiseStatus('ИИ-шумоподавление RNNoise активно', true);
+    return outputTrack;
+  } catch (error) {
+    console.warn('RNNoise initialization failed; using browser noise suppression:', error);
+    try { if (node) node.disconnect(); } catch (_error) {}
+    try { if (source) source.disconnect(); } catch (_error) {}
+    try { if (destination) destination.disconnect(); } catch (_error) {}
+    if (context && context.state !== 'closed') context.close().catch(() => {});
+    setMicDenoiseStatus('Резервный режим: шумоподавление браузера');
+    return null;
+  }
+}
+
+async function enhanceMicrophoneStream(inputStream) {
+  if (!callUiPrefs.noiseSuppression) {
+    setMicDenoiseStatus('Шумоподавление выключено');
+    return inputStream;
+  }
+  const rawTrack = inputStream && inputStream.getAudioTracks()[0];
+  if (!rawTrack) return inputStream;
+  const processedTrack = await createNoiseSuppressedTrack(rawTrack);
+  return processedTrack ? new MediaStream([processedTrack]) : inputStream;
+}
+
+function releaseMicrophoneTrack(track) {
+  if (!track) return;
+  if (track._kotoNoiseSession || rnnoiseSessions.has(track.id)) {
+    disposeNoiseSession(track, true);
+    return;
+  }
+  track.onended = null;
+  if (track.readyState === 'live') track.stop();
+}
+
+function releaseMicrophoneStream(stream) {
+  if (!stream) return;
+  stream.getTracks().forEach((track) => {
+    if (track.kind === 'audio') releaseMicrophoneTrack(track);
+    else {
+      track.onended = null;
+      if (track.readyState === 'live') track.stop();
+    }
+  });
+}
+
+async function replaceAudioTrackOnPeers(nextTrack) {
+  const changed = [];
+  try {
+    for (const pc of peerConnections.values()) {
+      if (!pc || pc.signalingState === 'closed') continue;
+      const sender = findAudioSender(pc);
+      if (!sender) continue;
+      const previousTrack = sender.track;
+      await sender.replaceTrack(nextTrack);
+      changed.push({ sender, previousTrack });
+      await tuneAudioSender(sender);
+    }
+  } catch (error) {
+    for (const item of changed.reverse()) {
+      try { await item.sender.replaceTrack(item.previousTrack || null); } catch (_rollbackError) {}
+    }
+    throw error;
+  }
+}
+
+async function rebuildMicrophoneProcessing() {
+  const streams = [localStream, previewAudioStream].filter(Boolean);
+  for (const stream of streams) {
+    const oldTrack = stream.getAudioTracks().find((track) => track.readyState === 'live');
+    if (!oldTrack) continue;
+    const rawTrack = getRawMicrophoneTrack(oldTrack);
+    const isProcessed = Boolean(oldTrack._kotoNoiseSession || rnnoiseSessions.has(oldTrack.id));
+
+    if (callUiPrefs.noiseSuppression && !isProcessed) {
+      const nextTrack = await createNoiseSuppressedTrack(rawTrack);
+      if (!nextTrack) continue;
+      nextTrack.enabled = oldTrack.enabled;
+      if (stream === localStream) await replaceAudioTrackOnPeers(nextTrack);
+      stream.removeTrack(oldTrack);
+      stream.addTrack(nextTrack);
+      attachLocalAudioTrackLifecycle(nextTrack);
+      if (stream === localStream) {
+        startMicInputMeter(nextTrack);
+        updateTileState(socket && socket.id, { audio: isMicOn, video: isCameraOn });
+        publishMediaState();
+      }
+    } else if (!callUiPrefs.noiseSuppression && isProcessed) {
+      rawTrack.enabled = oldTrack.enabled;
+      if (stream === localStream) await replaceAudioTrackOnPeers(rawTrack);
+      stream.removeTrack(oldTrack);
+      stream.addTrack(rawTrack);
+      disposeNoiseSession(oldTrack, false);
+      attachLocalAudioTrackLifecycle(rawTrack);
+      if (stream === localStream) {
+        startMicInputMeter(rawTrack);
+        updateTileState(socket && socket.id, { audio: isMicOn, video: isCameraOn });
+        publishMediaState();
+      }
+    }
+  }
+  setMicDenoiseStatus(callUiPrefs.noiseSuppression
+    ? (rnnoiseSessions.size ? 'ИИ-шумоподавление RNNoise активно' : 'ИИ-фильтр включится при следующем подключении')
+    : 'Шумоподавление выключено', rnnoiseSessions.size > 0);
+}
+
 async function applyMicrophoneProcessingSettings(){
  const tracks=[...(localStream?localStream.getAudioTracks():[]),...(previewAudioStream?previewAudioStream.getAudioTracks():[])]
-  .filter((track,index,all)=>all.indexOf(track)===index&&track.readyState==='live');
+  .map(getRawMicrophoneTrack)
+  .filter((track,index,all)=>track&&track.readyState==='live'&&all.indexOf(track)===index);
  const results=await Promise.allSettled(tracks.map(track=>track.applyConstraints({
   echoCancellation:callUiPrefs.echoCancellation,noiseSuppression:callUiPrefs.noiseSuppression,autoGainControl:true
  })));
@@ -170,7 +391,8 @@ async function setCallUiPref(key){
  const allowed=['startMuted','showConnectionStatus','showCatAccents','echoCancellation','noiseSuppression','adaptiveQuality'];
  if(!allowed.includes(key))return;
  callUiPrefs[key]=!callUiPrefs[key];saveCallUiPrefs();syncCallUiControls();
- if(key==='echoCancellation'||key==='noiseSuppression')await applyMicrophoneProcessingSettings();
+ if(key==='noiseSuppression'){await rebuildMicrophoneProcessing();await applyMicrophoneProcessingSettings();}
+ else if(key==='echoCancellation')await applyMicrophoneProcessingSettings();
  else if(key==='adaptiveQuality'){
   screenSharePressureSamples=0;screenShareHealthySamples=0;
   if(!callUiPrefs.adaptiveQuality){
@@ -791,6 +1013,85 @@ function emitWithAck(event, payload) {
   });
 }
 
+function beginRoomEventBuffer() {
+  roomJoinInProgress = true;
+  pendingRoomEvents = [];
+}
+
+function cancelRoomEventBuffer() {
+  roomJoinInProgress = false;
+  pendingRoomEvents = [];
+}
+
+function queueRoomEvent(type, payload) {
+  if (!roomJoinInProgress) return false;
+  pendingRoomEvents.push({ type, payload });
+  return true;
+}
+
+function applyRoomEvent(type, payload) {
+  if (type === 'peer-renamed') {
+    if (!payload || !payload.id) return;
+    const previous = participants.get(payload.id) || {};
+    participants.set(payload.id, { ...previous, ...payload });
+    renderParticipants();
+    updateCallDescription();
+    return;
+  }
+
+  if (type === 'peer-joined') {
+    if (!payload || !payload.id) return;
+    const previous = participants.get(payload.id) || {};
+    participants.set(payload.id, { ...previous, ...payload });
+    if (payload.inCall) makeVideoTile(payload.id, payload.name || 'Участник');
+    renderParticipants();
+    showToast(`${payload.name || 'Участник'} присоединился к комнате`);
+    updateCallDescription();
+    updateCallStage();
+    return;
+  }
+
+  if (type === 'peer-left') {
+    const { id, reason } = payload || {};
+    if (!id) return;
+    const member = participants.get(id);
+    closePeer(id);
+    removeVideoTile(id);
+    participants.delete(id);
+    updateCallStage();
+    renderParticipants();
+    updateCallDescription();
+    if (member && reason !== 'reconnected') showToast(`${member.name} вышел из комнаты`);
+    return;
+  }
+
+  if (type === 'media-peer-state') {
+    if (!payload || !payload.id) return;
+    const member = { ...(participants.get(payload.id) || {}), ...payload };
+    participants.set(member.id, member);
+    if (member.inCall) {
+      makeVideoTile(member.id, member.name || 'Участник');
+    } else {
+      closePeer(member.id);
+      removeVideoTile(member.id);
+    }
+    updateTileState(member.id, member);
+    renderParticipants();
+    updateCallDescription();
+    updateCallStage();
+    if (member.inCall && isInCall) {
+      createPeerConnection(member.id).catch((error) => showToast(error.message));
+    }
+  }
+}
+
+function flushRoomEventBuffer() {
+  const events = pendingRoomEvents;
+  pendingRoomEvents = [];
+  roomJoinInProgress = false;
+  events.forEach(({ type, payload }) => applyRoomEvent(type, payload));
+}
+
 function bindSocketEvents() {
   socket.on('room:session-replaced', () => {
     if (isInCall) stopCall();
@@ -874,6 +1175,7 @@ function bindSocketEvents() {
   });
 
   socket.on('room:peer-renamed', (member) => {
+    if (queueRoomEvent('peer-renamed', member)) return;
     if (!member || !member.id) return;
     const previous=participants.get(member.id)||{};
     participants.set(member.id,{...previous,...member});
@@ -882,6 +1184,7 @@ function bindSocketEvents() {
   });
 
   socket.on('room:peer-joined', (member) => {
+    if (queueRoomEvent('peer-joined', member)) return;
     participants.set(member.id, member);
     renderParticipants();
     showToast(`${member.name} присоединился к комнате`);
@@ -889,6 +1192,7 @@ function bindSocketEvents() {
   });
 
   socket.on('room:peer-left', ({ id, reason }) => {
+    if (queueRoomEvent('peer-left', { id, reason })) return;
     const member = participants.get(id);
     closePeer(id);
     removeVideoTile(id);
@@ -900,7 +1204,9 @@ function bindSocketEvents() {
   });
 
   socket.on('media:peer-state', (member) => {
+    if (queueRoomEvent('media-peer-state', member)) return;
     participants.set(member.id, member);
+    if (member.inCall) makeVideoTile(member.id, member.name || 'Участник');
     updateTileState(member.id, member);
     renderParticipants();
     updateCallDescription();
@@ -989,14 +1295,17 @@ function bindSocketEvents() {
     pendingIce.clear();
 
     const reconnectRoom = roomId;
+    beginRoomEventBuffer();
     try {
       const response = await emitWithAck('room:join', { name: myName, roomId: reconnectRoom, clientId: tabClientId });
       if (roomId !== reconnectRoom) {
         if (response.ok) socket.emit('room:leave');
+        cancelRoomEventBuffer();
         return;
       }
       if (response.ok) {
         enterWorkspace(response, true);
+        flushRoomEventBuffer();
         if (isInCall && localStream) {
           const localTile = videoGrid.querySelector('.video-tile.local, .video-tile.sharing');
           if (localTile) {
@@ -1025,9 +1334,11 @@ function bindSocketEvents() {
         }
         showToast('Связь восстановлена. Ты снова в комнате.');
       } else {
+        cancelRoomEventBuffer();
         resetAfterRoomRecoveryFailure(response.error || 'Комната больше недоступна.');
       }
     } catch (error) {
+      cancelRoomEventBuffer();
       console.warn('Room reconnection failed:', error);
       showToast('Не удалось вернуться в комнату. Повторяем подключение…');
     }
@@ -1037,7 +1348,7 @@ function bindSocketEvents() {
 function resetAfterRoomRecoveryFailure(message) {
   if (isInCall) stopCall();
   if (previewAudioStream) {
-    previewAudioStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
+    releaseMicrophoneStream(previewAudioStream);
     previewAudioStream = null;
   }
   roomId = '';
@@ -1057,6 +1368,7 @@ async function syncRoomAfterResume() {
   if (isRoomSyncing || document.hidden || !roomId || !socket || !socket.connected || !participants.has(socket.id)) return;
   isRoomSyncing = true;
   const syncingRoom = roomId;
+  beginRoomEventBuffer();
   try {
     const response = await emitWithAck('room:sync', {});
     if (roomId !== syncingRoom) return;
@@ -1065,6 +1377,7 @@ async function syncRoomAfterResume() {
       return;
     }
     enterWorkspace(response, true);
+    flushRoomEventBuffer();
     if (isInCall && localStream) {
       publishMediaState();
       for (const member of participants.values()) {
@@ -1083,6 +1396,7 @@ async function syncRoomAfterResume() {
     console.warn('Room sync after mobile resume failed:', error);
     showToast('Проверяем соединение с комнатой. Попробуй переключиться между вкладками.');
   } finally {
+    if (roomJoinInProgress) cancelRoomEventBuffer();
     isRoomSyncing = false;
   }
 }
@@ -1137,15 +1451,29 @@ async function restoreSavedRoom() {
 }
 
 async function createRoom(name) {
-  const response = await emitWithAck('room:create', { name, clientId: tabClientId });
-  if (!response.ok) throw new Error(response.error || 'Не удалось создать комнату.');
-  enterWorkspace(response);
+  beginRoomEventBuffer();
+  try {
+    const response = await emitWithAck('room:create', { name, clientId: tabClientId });
+    if (!response.ok) throw new Error(response.error || 'Не удалось создать комнату.');
+    enterWorkspace(response);
+    flushRoomEventBuffer();
+  } catch (error) {
+    cancelRoomEventBuffer();
+    throw error;
+  }
 }
 
 async function joinRoom(name, code) {
-  const response = await emitWithAck('room:join', { name, roomId: code, clientId: tabClientId });
-  if (!response.ok) throw new Error(response.error || 'Не удалось войти в комнату.');
-  enterWorkspace(response);
+  beginRoomEventBuffer();
+  try {
+    const response = await emitWithAck('room:join', { name, roomId: code, clientId: tabClientId });
+    if (!response.ok) throw new Error(response.error || 'Не удалось войти в комнату.');
+    enterWorkspace(response);
+    flushRoomEventBuffer();
+  } catch (error) {
+    cancelRoomEventBuffer();
+    throw error;
+  }
 }
 
 function enterWorkspace(data, preservePanel = false) {
@@ -1165,6 +1493,11 @@ function enterWorkspace(data, preservePanel = false) {
   participants.set(data.self.id, data.self);
   pinnedMessage = data.pinnedMessage || null;
   (data.participants || []).forEach((member) => participants.set(member.id, member));
+  (data.participants || []).forEach((member) => {
+    if (member.id !== data.self.id && member.inCall) {
+      makeVideoTile(member.id, member.name || 'Участник');
+    }
+  });
 
   $('#sidebarRoomCode').textContent = roomId;
   $('#welcomeRoomCode').textContent = roomId;
@@ -2936,19 +3269,27 @@ function getSpeechAudioConstraints(deviceId = '') {
 }
 
 async function captureAudioInput(deviceId = '') {
+  let inputStream = null;
   try {
-    return await navigator.mediaDevices.getUserMedia({ audio: getSpeechAudioConstraints(deviceId), video: false });
+    inputStream = await navigator.mediaDevices.getUserMedia({
+      audio: getSpeechAudioConstraints(deviceId),
+      video: false
+    });
   } catch (error) {
     if (deviceId && ['NotFoundError', 'OverconstrainedError'].includes(error && error.name)) {
       console.warn('Selected microphone is no longer available; falling back to the system microphone.', error);
-      return navigator.mediaDevices.getUserMedia({ audio: getSpeechAudioConstraints(), video: false });
-    }
-    if (error && error.name === 'OverconstrainedError') {
+      inputStream = await navigator.mediaDevices.getUserMedia({
+        audio: getSpeechAudioConstraints(),
+        video: false
+      });
+    } else if (error && error.name === 'OverconstrainedError') {
       console.warn('Advanced microphone constraints are unsupported; retrying with basic audio capture.', error);
-      return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      inputStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } else {
+      throw error;
     }
-    throw error;
   }
+  return enhanceMicrophoneStream(inputStream);
 }
 
 async function refreshAudioInputDevices(preferredDeviceId = '') {
@@ -2965,7 +3306,7 @@ async function refreshAudioInputDevices(preferredDeviceId = '') {
     const activeStream = localStream || previewAudioStream;
     const activeTrack = activeStream && activeStream.getAudioTracks()[0];
     const activeDeviceId = preferredDeviceId || selectedAudioDeviceId ||
-      (activeTrack && activeTrack.getSettings ? activeTrack.getSettings().deviceId : '') || select.value || '';
+      (activeTrack && getAudioInputDeviceId(activeTrack)) || select.value || '';
     select.replaceChildren();
     const automatic = document.createElement('option');
     automatic.value = '';
@@ -3089,8 +3430,8 @@ async function recoverInterruptedMedia() {
       previous.forEach((item) => localStream.removeTrack(item));
       localStream.addTrack(track);
       await addLocalTrackToPeers(track, 'audio');
-      previous.forEach((item) => { item.onended = null; item.stop(); });
-      selectedAudioDeviceId = track.getSettings ? track.getSettings().deviceId || selectedAudioDeviceId : selectedAudioDeviceId;
+      previous.forEach((item) => releaseMicrophoneTrack(item));
+      selectedAudioDeviceId = getAudioInputDeviceId(track) || selectedAudioDeviceId;
       isMicOn = true;
       wasMicInterrupted = false;
       startMicInputMeter(track);
@@ -3123,7 +3464,7 @@ async function recoverInterruptedMedia() {
       previous.forEach((item) => localStream.removeTrack(item));
       localStream.addTrack(track);
       await addLocalTrackToPeers(track, 'video');
-      previous.forEach((item) => { item.onended = null; item.stop(); });
+      previous.forEach((item) => releaseMicrophoneTrack(item));
       isCameraOn = true;
       wasCameraInterrupted = false;
       const tile = makeVideoTile(socket.id, myName, true);
@@ -3178,21 +3519,20 @@ async function selectAudioInput() {
       previousTracks.forEach((track) => localStream.removeTrack(track));
       localStream.addTrack(nextTrack);
       captured = null;
-      previousTracks.forEach((track) => { track.onended = null; track.stop(); });
+      previousTracks.forEach((track) => releaseMicrophoneTrack(track));
       isMicOn = nextTrack.enabled;
       updateTileState(socket.id, { audio: isMicOn, video: isCameraOn });
       updateCallButtons();
       publishMediaState();
     } else {
       stopMicInputMeter();
-      if (previewAudioStream) previewAudioStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
+      if (previewAudioStream) releaseMicrophoneStream(previewAudioStream);
       previewAudioStream = captured;
       captured = null;
     }
     const activeStream = isLiveCall ? localStream : previewAudioStream;
     const activeTrack = activeStream && activeStream.getAudioTracks()[0];
-    const settings = activeTrack && activeTrack.getSettings ? activeTrack.getSettings() : {};
-    selectedAudioDeviceId = settings.deviceId || requestedDeviceId || '';
+    selectedAudioDeviceId = getAudioInputDeviceId(activeTrack) || requestedDeviceId || '';
     startMicInputMeter(activeTrack);
     await refreshAudioInputDevices(selectedAudioDeviceId);
     const selectedOption = select.selectedOptions[0];
@@ -3218,7 +3558,7 @@ async function selectAudioInput() {
         else await entry.sender.replaceTrack(entry.previousTrack || null);
       } catch (rollbackError) { console.warn('Microphone rollback failed:', rollbackError); }
     }
-    if (captured) captured.getTracks().forEach((track) => track.stop());
+    if (captured) releaseMicrophoneStream(captured);
     await refreshAudioInputDevices();
     let message = 'Не удалось включить выбранный микрофон. Попробуй системный микрофон.';
     if (error && (error.name === 'NotAllowedError' || error.name === 'SecurityError')) message = 'Браузеру запрещён доступ к микрофону. Разреши его для KOTOMASTER в настройках сайта.';
@@ -3275,7 +3615,7 @@ async function startCall() {
     localStream.getAudioTracks().forEach(track => { track.enabled = !callUiPrefs.startMuted; });
     const activeAudioTrack = localStream.getAudioTracks()[0];
     if (activeAudioTrack && activeAudioTrack.getSettings) {
-      selectedAudioDeviceId = activeAudioTrack.getSettings().deviceId || selectedAudioDeviceId;
+      selectedAudioDeviceId = getAudioInputDeviceId(activeAudioTrack) || selectedAudioDeviceId;
     }
     localStream.getAudioTracks().forEach(attachLocalAudioTrackLifecycle);
 
@@ -3319,7 +3659,7 @@ async function startCall() {
     captureWebRtcDiagnostic('call_start', error);
     console.error('Call startup error:', error);
     if (isInCall) stopCall();
-    else if (audioStream && !usedAudioPreview) audioStream.getTracks().forEach((track) => track.stop());
+    else if (audioStream && !usedAudioPreview) releaseMicrophoneStream(audioStream);
     let message = 'Не удалось запустить видеозвонок.';
     if (error && error.name === 'NotAllowedError') message = 'Разреши доступ к микрофону в настройках браузера.';
     else if (error && error.name === 'NotFoundError') message = 'На устройстве не найден микрофон.';
@@ -4093,7 +4433,7 @@ async function toggleMic() {
       if (tracks[0]) {
         await addLocalTrackToPeers(tracks[0], 'audio');
         startMicInputMeter(tracks[0]);
-        await refreshAudioInputDevices(tracks[0].getSettings ? tracks[0].getSettings().deviceId : '');
+        await refreshAudioInputDevices(getAudioInputDeviceId(tracks[0]));
       }
     } catch (error) {
       captureWebRtcDiagnostic('microphone_toggle', error);
@@ -4574,7 +4914,7 @@ function stopCall() {
     activeCallStartedAt = 0;
   }
   if (localStream) {
-    localStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
+    releaseMicrophoneStream(localStream);
     localStream = null;
   }
   isInCall = false;
@@ -4907,7 +5247,7 @@ async function copyText(value) {
 function leaveRoom() {
   try { localStorage.removeItem(ROOM_SESSION_KEY); } catch (_error) {}
   if (previewAudioStream) {
-    previewAudioStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
+    releaseMicrophoneStream(previewAudioStream);
     previewAudioStream = null;
   }
   stopMicInputMeter();

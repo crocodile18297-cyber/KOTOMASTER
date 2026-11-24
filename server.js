@@ -27,6 +27,10 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), display-capture=(self)');
   next();
 });
+app.use('/vendor/simple-rnnoise-wasm', express.static(
+  path.join(__dirname, 'node_modules', 'simple-rnnoise-wasm', 'dist'),
+  { immutable: true, maxAge: '7d' }
+));
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 
 
@@ -498,7 +502,6 @@ async function joinRoom(socket, payload, ack, createNew = false) {
   socket.data.conversationId = conversationId;
   socket.join(roomId);
 
-  socket.to(roomId).emit('room:peer-joined', toPublicMember(member));
   let persistentMessages = [];
   let persistentPin = null;
   try {
@@ -514,6 +517,7 @@ async function joinRoom(socket, payload, ack, createNew = false) {
     return callback({ ok: false, error: `Не удалось загрузить историю чата: ${error.message}` });
   }
 
+  socket.to(roomId).emit('room:peer-joined', toPublicMember(member));
   captureSocketPostHogEvent(socket, createNew ? 'room_created' : 'room_joined', {
     chat_type: 'room',
     participant_count: room.members.size
