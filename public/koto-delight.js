@@ -2,11 +2,15 @@
   'use strict';
 
   const PREFS_KEY = 'kotomaster-delight-v1';
-  const DEFAULTS = { cursor: 'paw', pawTrail: false };
+  const CURSOR_MODES = ['cat', 'fox', 'bear', 'bunny', 'classic'];
+  const DEFAULTS = { cursor: 'cat', pawTrail: false };
   const $ = (id) => document.getElementById(id);
   const safeReadPrefs = () => {
     try {
-      return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') };
+      const saved = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
+      const storedCursor = saved.cursor === 'paw' ? 'cat' : saved.cursor;
+      const cursor = CURSOR_MODES.includes(storedCursor) ? storedCursor : DEFAULTS.cursor;
+      return { ...DEFAULTS, ...saved, cursor };
     } catch (_error) {
       return { ...DEFAULTS };
     }
@@ -45,7 +49,7 @@
   }
 
   function applyPreferences() {
-    document.documentElement.dataset.kotoCursor = prefs.cursor === 'classic' ? 'classic' : 'paw';
+    document.documentElement.dataset.kotoCursor = CURSOR_MODES.includes(prefs.cursor) ? prefs.cursor : 'cat';
     document.querySelectorAll('[data-koto-cursor-choice]').forEach((button) => {
       const selected = button.dataset.kotoCursorChoice === prefs.cursor;
       button.classList.toggle('is-selected', selected);
@@ -290,7 +294,8 @@
   function bindSettings() {
     document.querySelectorAll('[data-koto-cursor-choice]').forEach((button) => {
       button.addEventListener('click', () => {
-        prefs.cursor = button.dataset.kotoCursorChoice === 'classic' ? 'classic' : 'paw';
+        const nextCursor = button.dataset.kotoCursorChoice;
+        prefs.cursor = CURSOR_MODES.includes(nextCursor) ? nextCursor : 'cat';
         persistPrefs();
         applyPreferences();
       });
