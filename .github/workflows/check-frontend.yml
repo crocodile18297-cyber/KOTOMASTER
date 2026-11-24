@@ -2,11 +2,12 @@ name: Check JavaScript syntax
 
 on:
   push:
-    branches: [main, feature/full-messenger-platform, feature/magicpath-call-experience, fix/exact-magicpath-fps-settings, fix/fullscreen-fit-entire-screen, fix/room-presence-and-ai-noise-reduction, restore/pre-animal-magicpath-ui]
+    branches: [main, feature/full-messenger-platform, feature/magicpath-call-experience, fix/exact-magicpath-fps-settings, fix/fullscreen-fit-entire-screen, fix/room-presence-and-ai-noise-reduction, restore/pre-animal-magicpath-ui, feat/cartoon-animal-stickers]
     paths:
       - "public/*.js"
       - "public/*.html"
       - "public/*.css"
+      - "public/*.svg"
       - "server.js"
       - "scripts/*.mjs"
       - ".github/workflows/check-frontend.yml"

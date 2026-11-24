@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#fff8f4">
   <meta name="description" content="KOTOMASTER — мессенджер с видеозвонками и демонстрацией экрана.">
   <title>KOTOMASTER — на связи по-кошачьи</title>
-  <link rel="stylesheet" href="/styles.css?v=20261124-room-audio-ai">
+  <link rel="stylesheet" href="/styles.css?v=20261124-animal-stickers-1">
   <script>
     !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],Object.defineProperty(u,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e}}),Object.defineProperty(u.people,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(){return u.toString(1)+".people (stub)"}}),o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagResult isFeatureEnabled get_distinct_id get_session_id reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset getGroups get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
   </script>
   <script src="/socket.io/socket.io.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2" defer></script>
-  <script src="/app.js?v=20261124-room-audio-ai" defer></script>
+  <script src="/app.js?v=20261124-animal-stickers-1" defer></script>
 </head>
 <body>
   <div class="ambient ambient-one"></div>
@@ -204,7 +204,7 @@
             <div id="messagesList" class="messages-list"></div><div id="typingIndicator" class="typing-indicator" hidden></div>
           </div>
           <div id="replyPreview" class="reply-preview" hidden></div>
-          <form id="messageForm" class="composer"><div class="composer-attach" aria-hidden="true">✧</div><input id="messageInput" maxlength="1200" placeholder="Напиши сообщение команде..." autocomplete="off"><span class="composer-hint">Enter ↵</span><button class="send-button" type="submit" aria-label="Отправить сообщение"><svg viewBox="0 0 24 24"><path d="m4 4 16 8-16 8 3-8-3-8Z"/><path d="M7 12h13"/></svg></button></form>
+          <form id="messageForm" class="composer"><div class="composer-attach" aria-hidden="true">✧</div><button id="kotoStickerBtn" class="koto-sticker-trigger" type="button" aria-label="Открыть звериные стикеры" title="Звериные стикеры"><svg viewBox="0 0 40 40" aria-hidden="true"><ellipse cx="9" cy="10" rx="4" ry="5.5"/><ellipse cx="19" cy="6" rx="4" ry="5.5"/><ellipse cx="29" cy="10" rx="4" ry="5.5"/><ellipse cx="34" cy="18" rx="3.4" ry="4.5"/><path d="M11 27c0-6.4 4-10 9-10s9 3.6 9 10c0 5.5-4.3 8-9 8s-9-2.5-9-8Z"/></svg><i aria-hidden="true">✦</i></button><input id="messageInput" maxlength="1200" placeholder="Напиши сообщение команде..." autocomplete="off"><span class="composer-hint">Enter ↵</span><button class="send-button" type="submit" aria-label="Отправить сообщение"><svg viewBox="0 0 24 24"><path d="m4 4 16 8-16 8 3-8-3-8Z"/><path d="M7 12h13"/></svg></button></form>
         </section>
 
         <section id="callPanel" class="call-panel" hidden>
@@ -324,7 +324,7 @@
               <div id="communityMessages" class="community-messages"></div>
               <div id="communityReplyPreview" class="community-reply-preview" hidden></div>
               <form id="communityMessageForm" class="community-composer">
-                <button id="communityAttachBtn" type="button" title="Прикрепить файл" aria-label="Прикрепить файл">＋</button>
+                <button id="communityAttachBtn" type="button" title="Прикрепить файл" aria-label="Прикрепить файл">＋</button><button id="communityStickerBtn" class="koto-sticker-trigger koto-sticker-trigger-small" type="button" aria-label="Открыть звериные стикеры" title="Звериные стикеры"><svg viewBox="0 0 40 40" aria-hidden="true"><ellipse cx="9" cy="10" rx="4" ry="5.5"/><ellipse cx="19" cy="6" rx="4" ry="5.5"/><ellipse cx="29" cy="10" rx="4" ry="5.5"/><ellipse cx="34" cy="18" rx="3.4" ry="4.5"/><path d="M11 27c0-6.4 4-10 9-10s9 3.6 9 10c0 5.5-4.3 8-9 8s-9-2.5-9-8Z"/></svg><i aria-hidden="true">✦</i></button>
                 <input id="communityFileInput" type="file" accept="image/*,video/mp4,video/webm,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" multiple hidden>
                 <button id="communityVoiceBtn" type="button" title="Записать голосовое сообщение" aria-label="Записать голосовое сообщение">🎙</button>
                 <input id="communityMessageInput" maxlength="12000" placeholder="Напиши сообщение..." autocomplete="off" required>
