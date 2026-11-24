@@ -6083,8 +6083,8 @@ html[data-koto-animations="off"] #appScreen .community-composer button[type="sub
   width:100%;
   height:100%;
   aspect-ratio:1;
-  background-repeat:no-repeat;
-  background-size:400% 400%;
+  object-fit:cover;
+  object-position:center;
   background-color:#f4eee8;
   border-radius:11px;
   filter:drop-shadow(0 3px 4px rgba(80,58,44,.13));
@@ -6096,7 +6096,6 @@ html[data-koto-animations="off"] #appScreen .community-composer button[type="sub
   overflow:hidden;
   border:1px solid rgba(230,211,197,.75);
   border-radius:12px;
-  background-size:400% 400%;
   transition:transform .18s ease,filter .18s ease;
 }
 .koto-sticker-choice:hover .koto-picker-sticker {
