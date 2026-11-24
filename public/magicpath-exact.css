@@ -535,3 +535,15 @@
 @media(max-width:820px){#appScreen.km-shell.app-screen{padding:0}#appScreen .km-desktop-frame{height:100dvh;min-height:650px}#appScreen .km-call-stage-layout{grid-template-columns:1fr}#appScreen .call-participants-panel{max-height:160px}#appScreen .km-details{display:none}}
 @media(max-width:560px){#appScreen .km-settings-panel{max-height:96vh;border-radius:17px}#appScreen .km-settings-head,#appScreen .km-settings-content{padding:14px}#appScreen .km-cursor-grid{grid-template-columns:1fr}#appScreen #profileAnimalPicker{grid-template-columns:repeat(2,1fr)}#appScreen .km-call-workspace{padding:12px}#appScreen .call-control-dock{gap:5px;padding:7px}#appScreen .call-control{min-width:70px;padding:8px;font-size:8px}}
 @media(prefers-reduced-motion:reduce){#appScreen .km-message{animation:none!important;transition:none!important}}
+
+/* Preserve native panel visibility semantics after adding flex-based MagicPath layouts. */
+#appScreen #chatPanel[hidden],
+#appScreen #callPanel[hidden],
+#appScreen #communityPanel[hidden],
+#appScreen #callEmptyState[hidden],
+#appScreen #callMenu[hidden],
+#appScreen #screenShareFpsMenu[hidden],
+#appScreen #settingsGeneralPanel[hidden],
+#appScreen #settingsAudioPanel[hidden] {
+  display:none!important;
+}
