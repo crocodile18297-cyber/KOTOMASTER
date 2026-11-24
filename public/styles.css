@@ -6224,3 +6224,457 @@ html[data-koto-animations="off"] .koto-sticker-trigger,
 html[data-koto-animations="off"] .koto-mascot-avatar,
 html[data-koto-animations="off"] .koto-mascot-avatar:hover,
 html[data-koto-animations="off"] .koto-paw-trail { animation: none !important; transition: none !important; }
+
+
+
+/* KOTOMASTER Animal Messenger — warm, calm visual system */
+:root {
+  color-scheme: light;
+  --bg: #f4f5ee;
+  --panel: #ffffff;
+  --panel-2: #f5f6ef;
+  --panel-3: #e9eee5;
+  --line: #e4e8df;
+  --muted: #788579;
+  --text: #2a392f;
+  --purple: #789b78;
+  --purple-2: #5f8666;
+  --cyan: #e69c76;
+  --pink: #d98d82;
+  --green: #72a57a;
+}
+body {
+  color: #2a392f;
+  background: #f4f5ee;
+  background-image:
+    radial-gradient(ellipse at 10% 4%, rgba(196, 215, 185, .22), transparent 34%),
+    radial-gradient(ellipse at 92% 100%, rgba(241, 208, 184, .20), transparent 34%);
+}
+.ambient { opacity: .035; filter: blur(110px); }
+.ambient-one { background: #9bbd91; }
+.ambient-two { background: #e8b39a; }
+
+/* Sign-in screens use the same soft palette as the app. */
+.join-screen {
+  border-color: #e5e9df;
+  background: rgba(255,255,251,.93);
+  box-shadow: 0 28px 80px rgba(55,72,53,.12);
+}
+.welcome-side {
+  color: #304336;
+  background:
+    radial-gradient(circle at 78% 20%, rgba(255,255,255,.7), transparent 34%),
+    linear-gradient(145deg, #e2ecdc 0%, #d9e7d4 54%, #f2e8dc 100%);
+}
+.welcome-copy h1 { color: #344c3b; }
+.welcome-copy h1 span { color: #719977; }
+.welcome-copy p, .feature-card small { color: #687a69; }
+.feature-card {
+  color: #344638;
+  border-color: rgba(99,132,100,.14);
+  background: rgba(255,255,255,.63);
+  box-shadow: 0 10px 26px rgba(74,101,72,.06);
+}
+.feature-card .feature-icon { color: #658c6b; background: #edf4e9; }
+.welcome-footer { color: #72816f; }
+.join-side { background: #fbfaf6; }
+.join-card { color: #2d3b31; }
+.join-card h2, .auth-heading strong { color: #2d3b31; }
+.card-subtitle, .auth-heading span { color: #7b887c; }
+.input-wrap, .join-card input, .join-card select {
+  color: #2d3b31;
+  border-color: #e1e7dc;
+  background: #f7f8f2;
+}
+.primary-button {
+  color: #fff;
+  background: linear-gradient(135deg, #739d78, #5d8765);
+  box-shadow: 0 10px 24px rgba(94,135,101,.19);
+}
+.primary-button:hover { filter: brightness(1.04); }
+
+/* Main messenger frame */
+#appScreen.app-screen {
+  color: #2d3b31;
+  border: 1px solid #e5e9df;
+  border-radius: 25px;
+  background: #fbfcf8;
+  box-shadow: 0 26px 78px rgba(53,72,54,.13);
+  backdrop-filter: none;
+}
+#appScreen .server-rail {
+  border-right: 1px solid #e4e9e0;
+  background: #eaf0e6;
+}
+#appScreen .server-rail-home {
+  color: #fff;
+  background: linear-gradient(145deg,#739b78,#527c5d);
+  box-shadow: 0 8px 18px rgba(86,128,91,.2);
+}
+#appScreen .server-rail-button,
+#appScreen .server-rail-settings {
+  color: #6c806e;
+}
+#appScreen .server-rail-button:hover,
+#appScreen .server-rail-settings:hover {
+  color: #456b4e;
+  background: #dce8d8;
+}
+#appScreen .server-rail-button.is-active {
+  color: #426c4d;
+  background: #d6e5d2;
+  box-shadow: inset 0 0 0 1px rgba(106,146,108,.13);
+}
+#appScreen .sidebar {
+  border-right: 1px solid #e5e9e1;
+  background: #f1f4ed;
+}
+#appScreen .sidebar-brand { color: #314537; }
+#appScreen .brand-mark {
+  color: #5e8966;
+  border-color: #d6e5d2;
+  background: linear-gradient(145deg,#e4efe0,#f4e9df);
+  box-shadow: 0 6px 18px rgba(83,121,86,.10);
+}
+#appScreen .brand-accent { color: #739d78; }
+#appScreen .sidebar-overline,
+#appScreen .sidebar-section-label,
+#appScreen .sidebar-caption,
+#appScreen .members-heading { color: #879487; }
+#appScreen .sidebar-server-heading strong,
+#appScreen .profile-info strong { color: #344538; }
+#appScreen .nav-item {
+  color: #657766;
+  border-color: transparent;
+}
+#appScreen .nav-item:hover {
+  color: #476b4e;
+  background: #e7eee3;
+}
+#appScreen .nav-item.active {
+  color: #3f6948;
+  border-color: #dbe8d7;
+  background: #e2ecde;
+}
+#appScreen .nav-icon { color: inherit; }
+#appScreen .nav-copy small,
+#appScreen .member-state,
+#appScreen .profile-info small { color: #879487; }
+#appScreen .nav-badge { color: #fff; background: #719a76; }
+#appScreen .room-mini-card,
+#appScreen .sidebar-helper-card,
+#appScreen .profile-card {
+  color: #425444;
+  border-color: #e0e8dc;
+  background: #f8faf5;
+}
+#appScreen .room-mini-icon {
+  color: #62896a;
+  background: #e8f0e4;
+}
+#appScreen .helper-cat { color: #769b77; }
+#appScreen .profile-card { border-top-color: #e2e9df; border-bottom-color: #e2e9df; }
+#appScreen .icon-button { color: #778879; }
+#appScreen .icon-button:hover { color: #416a49; background: #e4eee0; }
+#appScreen .sign-out-button { color: #8b756f; }
+#appScreen .sidebar-caption span { color: #879487; }
+
+#appScreen .workspace {
+  color: #2d3b31;
+  background: #fbfcf8;
+}
+#appScreen .topbar {
+  border-bottom-color: #e5e9e1;
+  background: rgba(255,255,252,.92);
+}
+#appScreen .topbar-title h2,
+#appScreen .view-heading h3,
+#appScreen .call-heading h3,
+#appScreen .community-heading h3 { color: #304235; }
+#appScreen .topbar-title p,
+#appScreen .view-heading p,
+#appScreen .call-heading p { color: #849184; }
+#appScreen .topbar-room-icon {
+  color: #668b6b;
+  border-color: #dfe9d9;
+  background: #eaf2e6;
+}
+#appScreen .chat-search-box,
+#appScreen .notifications-button,
+#appScreen .secure-pill {
+  color: #6e806f;
+  border-color: #e2e8de;
+  background: #f8faf5;
+}
+#appScreen .chat-search-box input {
+  color: #344538;
+  background: transparent;
+}
+#appScreen .chat-search-box input::placeholder { color: #99a397; }
+#appScreen .secure-pill { color: #69826b; }
+#appScreen .panel-switch-button,
+#appScreen .invite-button {
+  color: #fff;
+  border-color: #688e6d;
+  background: #6f9875;
+}
+#appScreen .panel-switch-button:hover,
+#appScreen .invite-button:hover { background: #5d8664; }
+#appScreen .mobile-app-nav { border-top-color: #e0e8dd; background: #fbfcf8; }
+#appScreen .mobile-nav-button { color: #7b897b; }
+#appScreen .mobile-nav-button.active { color: #4d7955; }
+#appScreen .mobile-member-strip { background: #f7f9f3; border-bottom-color: #e7ebe3; }
+
+#appScreen .workspace-views { background: transparent; }
+#appScreen .view-overline,
+#appScreen .call-kicker { color: #78917a; }
+#appScreen .view-heading-badge {
+  color: #668168;
+  border-color: #e0e9dc;
+  background: #f3f7ef;
+}
+#appScreen .view-status-dot,
+#appScreen .online-dot { background: #78a77c; box-shadow: 0 0 10px rgba(120,167,124,.35); }
+#appScreen .chat-scroll {
+  color: #334437;
+  background: #fbfcf8;
+}
+#appScreen .chat-welcome {
+  color: #344538;
+  border: 1px solid #e8ece3;
+  border-radius: 22px;
+  background: linear-gradient(145deg,#f7f9f2,#f3f6ee);
+}
+#appScreen .chat-welcome h3 { color: #354a39; }
+#appScreen .chat-welcome p { color: #7a887a; }
+#appScreen .welcome-icon { color: #6d9772; background: #e7f0e2; }
+#appScreen .welcome-code {
+  border-color: #e1e9dc;
+  background: #fff;
+}
+#appScreen .welcome-code span { color: #879487; }
+#appScreen .welcome-code strong { color: #476d50; }
+#appScreen .message-row { color: #354638; }
+#appScreen .message-meta strong { color: #405343; }
+#appScreen .message-meta time { color: #96a094; }
+#appScreen .message-bubble {
+  color: #39493c;
+  border: 1px solid #e7ebe4;
+  background: #f2f5ee;
+}
+#appScreen .message-row.mine .message-bubble {
+  color: #304737;
+  border-color: #dce8d9;
+  background: #e8f1e4;
+}
+#appScreen .message-reply-quote {
+  color: #728172;
+  border-left-color: #8eae8e;
+  background: #f3f6ef;
+}
+#appScreen .composer {
+  border: 1px solid #e0e8dc;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(58,80,59,.07);
+}
+#appScreen .composer input {
+  color: #304235;
+  background: transparent;
+}
+#appScreen .composer input::placeholder { color: #9aa597; }
+#appScreen .composer-hint { color: #a0aa9d; }
+#appScreen .composer-attach { color: #779778; }
+#appScreen .koto-sticker-trigger {
+  color: #668e6d;
+  border-color: #e0eadc;
+  background: #f3f7ef;
+}
+#appScreen .send-button { color: #fff; background: #729a76; }
+
+#appScreen .member-row,
+#appScreen .call-participant-row,
+#appScreen .community-person-item {
+  border-color: #e4eae0;
+  background: #f8faf5;
+}
+#appScreen .member-name,
+#appScreen .call-person-copy strong,
+#appScreen .community-person-copy strong { color: #405343; }
+#appScreen .call-person-copy small,
+#appScreen .community-person-copy small { color: #849184; }
+#appScreen .call-participants-panel {
+  color: #394a3d;
+  border-color: #e4eae0;
+  background: #f7f9f3;
+}
+#appScreen .call-participants-heading strong { color: #3d5140; }
+#appScreen .call-participants-heading small { color: #849184; }
+#appScreen .call-participants-heading > span { color: #527a58; background: #e6efe2; }
+#appScreen .call-participants-empty { color: #718171; }
+#appScreen .call-panel-footer { border-top-color: #e3e9df; color: #526a55; }
+#appScreen .call-bottom { border-top-color: #e4e9e0; }
+#appScreen .call-status { color: #738273; }
+#appScreen .call-control-dock {
+  border-color: #e2e9df;
+  background: rgba(255,255,252,.95);
+  box-shadow: 0 10px 30px rgba(55,73,57,.09);
+}
+#appScreen .call-control { color: #607362; }
+#appScreen .call-control:hover { color: #416b4b; background: #e9f1e5; }
+#appScreen .more-control { border-left-color: #e2e8de; }
+#appScreen .call-room-chip {
+  color: #67806a;
+  border-color: #e3eadf;
+  background: #f4f7f0;
+}
+#appScreen .call-live-pill {
+  color: #6d8c70;
+  border-color: #e0eadc;
+  background: #f4f8f1;
+}
+#appScreen .call-live-pill i { background: #7ba77b; }
+#appScreen .km-call-connection { color: #728474; }
+#appScreen .km-fps-card {
+  color: #405343;
+  border-color: rgba(255,255,255,.18);
+  background: rgba(31,48,37,.82);
+}
+#appScreen .km-fps-label { color: #d7e3d4; }
+#appScreen .km-fps-value { color: #fff; }
+#appScreen .call-stage {
+  border-color: #dfe7dc;
+  background: radial-gradient(ellipse at 50% 0%, #445e49, #253a2e 70%);
+}
+#appScreen .call-stage-topline { color: #dce8d8; }
+
+#appScreen .community-panel,
+#appScreen .community-conversation-list,
+#appScreen .community-chat-view { color: #36473a; }
+#appScreen .community-panel,
+#appScreen .community-card,
+#appScreen .community-sidebar-card,
+#appScreen .community-conversation-list,
+#appScreen .community-chat-view {
+  border-color: #e5eae1;
+  background: #fbfcf8;
+}
+#appScreen .community-search-input,
+#appScreen .community-modal-card input,
+#appScreen .community-modal-card textarea,
+#appScreen .community-modal-card select {
+  color: #344638;
+  border-color: #dfe7db;
+  background: #f7f9f3;
+}
+#appScreen .community-modal-card {
+  color: #344638;
+  border-color: #e3e9df;
+  background: #fffefa;
+  box-shadow: 0 25px 80px rgba(47,64,48,.18);
+}
+#appScreen .community-modal-card h3 { color: #354b39; }
+#appScreen .community-modal-card .field-label { color: #809080; }
+#appScreen .community-modal-close { color: #738373; background: #f0f4ec; }
+#appScreen .community-message { color: #3e4f42; border-color: #e8ece5; background: #fff; }
+#appScreen .community-message.is-own { background: #edf4e9; }
+#appScreen .community-message-header { color: #728372; }
+#appScreen .community-message-header strong { color: #435746; }
+#appScreen .community-message p { color: #425246; }
+#appScreen .community-empty-note { color: #829082; }
+#appScreen .community-small-action.is-primary { color: #fff; background: #729977; }
+
+/* Animal portraits are real selectable image icons, shared across all surfaces. */
+.koto-animal-avatar {
+  display: block;
+  flex: 0 0 auto;
+  overflow: hidden;
+  padding: 0 !important;
+  color: transparent !important;
+  background-color: #f0e9df;
+  background-repeat: no-repeat;
+  border-radius: 50% !important;
+  box-shadow: inset 0 0 0 1px rgba(58,79,58,.12);
+  animation: kotoAnimalArrive .32s ease-out both;
+}
+@keyframes kotoAnimalArrive {
+  from { opacity: .55; transform: scale(.88); }
+  to { opacity: 1; transform: scale(1); }
+}
+#appScreen .avatar.koto-animal-avatar { width: 32px; height: 32px; flex-basis: 32px; }
+#appScreen .message-avatar.koto-animal-avatar { width: 36px; height: 36px; }
+#appScreen .call-person-avatar.koto-animal-avatar { width: 36px; height: 36px; }
+#appScreen .mobile-member-avatar.koto-animal-avatar { width: 30px; height: 30px; }
+#appScreen .profile-card .avatar.koto-animal-avatar { width: 42px; height: 42px; flex-basis: 42px; }
+
+.profile-animal-section {
+  margin: 6px 0 18px;
+  padding: 14px;
+  border: 1px solid #e4eae0;
+  border-radius: 16px;
+  background: #f7f9f3;
+}
+.profile-animal-heading { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.profile-animal-heading strong { color: #3b503f; font-size: 13px; }
+.profile-animal-heading small { color: #7f8c7d; font-size: 11px; line-height: 1.45; }
+.profile-animal-picker {
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  gap: 8px;
+  max-height: 310px;
+  overflow: auto;
+  padding: 2px;
+}
+.profile-animal-choice {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 5px;
+  border: 1px solid #e4eae0;
+  border-radius: 12px;
+  color: #647664;
+  background: #fff;
+  cursor: pointer;
+  transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+.profile-animal-choice:hover { transform: translateY(-2px); border-color: #a8c3a5; background: #f4f8f0; }
+.profile-animal-choice.is-selected {
+  border-color: #78a17a;
+  background: #eaf2e6;
+  box-shadow: 0 0 0 2px rgba(117,160,119,.15);
+}
+.profile-animal-art {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+}
+.profile-animal-choice small {
+  max-width: 100%;
+  overflow: hidden;
+  color: #687968;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.community-message-avatar {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 50%;
+}
+.community-message-header { display: flex; align-items: center; gap: 8px; }
+.community-message-header time { margin-left: auto; }
+
+@media (max-width: 740px) {
+  #appScreen.app-screen { border: 0; border-radius: 0; box-shadow: none; background: #fbfcf8; }
+  #appScreen .sidebar { background: #f1f4ed; border-top-color: #e0e8dd; }
+  #appScreen .nav-item.active { background: #e2ecde; }
+  .profile-animal-picker { grid-template-columns: repeat(4,minmax(0,1fr)); }
+  .profile-animal-art { width: 46px; height: 46px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .koto-animal-avatar { animation: none !important; }
+  .profile-animal-choice { transition: none !important; }
+}
