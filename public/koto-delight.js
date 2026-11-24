@@ -206,7 +206,7 @@
   }
 
   function addPawTrail(x, y) {
-    if (!prefs.pawTrail || prefs.cursor === 'classic' || window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!prefs.pawTrail || prefs.cursor === 'classic' || document.documentElement.dataset.kotoAnimations === 'off' || window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const now = performance.now();
     if (now - lastTrailAt < 120 || trailCount >= 5) return;
     lastTrailAt = now;
