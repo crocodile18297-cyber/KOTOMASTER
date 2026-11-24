@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 const html = fs.readFileSync('public/index.html', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const delight = fs.readFileSync('public/koto-delight.js', 'utf8');
+const css = fs.readFileSync('public/styles.css', 'utf8');
 const server = fs.readFileSync('server.js', 'utf8');
 
 const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
