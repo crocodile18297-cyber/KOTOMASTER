@@ -95,6 +95,9 @@ let pinnedMessage = null;
 let notificationsEnabled = (() => { try { return localStorage.getItem('kotomaster-notifications') === '1'; } catch (_error) { return false; } })();
 let messageSearchQuery = '';
 let activeCallStartedAt = 0;
+let savedRoomRestorePromise = null;
+let manualRoomEntryRequested = false;
+let roomEntryInProgress = false;
 
 
 const KOTO_PREFS_KEY='kotomaster-preferences-v1';
@@ -1484,7 +1487,8 @@ function handlePageResume() {
 }
 
 async function restoreSavedRoom() {
-  if (!authSession?.user) return;
+  // A manual room action takes priority over automatic restoration after login.
+  if (!authSession?.user || manualRoomEntryRequested || roomId) return;
   let saved = null;
   try {
     saved = JSON.parse(localStorage.getItem(ROOM_SESSION_KEY) || 'null');
@@ -1502,6 +1506,8 @@ async function restoreSavedRoom() {
   showJoinError('Восстанавливаем последнюю комнату…');
   try {
     await connectSocket();
+    // The user may have started a manual create/join while the socket was connecting.
+    if (manualRoomEntryRequested || roomId) return;
     await joinRoom(nameInput.value, roomInput.value);
     showJoinError('');
     showToast(resumeCallAfterRestore
@@ -1509,12 +1515,16 @@ async function restoreSavedRoom() {
       : 'Последняя комната восстановлена.');
   } catch (error) {
     console.warn('Saved room could not be restored:', error);
-    if (String(error.message || '').includes('Комната не найдена')) {
-      localStorage.removeItem(ROOM_SESSION_KEY);
-      showJoinError('Прежняя комната уже закрыта. Создай новую или введи актуальный код.');
-    } else {
-      showJoinError('Не удалось автоматически открыть прежнюю комнату. Проверь интернет и попробуй войти ещё раз.');
+    if (!manualRoomEntryRequested) {
+      if (String(error.message || '').includes('Комната не найдена')) {
+        localStorage.removeItem(ROOM_SESSION_KEY);
+        showJoinError('Прежняя комната уже закрыта. Создай новую или введи актуальный код.');
+      } else {
+        showJoinError('Не удалось автоматически открыть прежнюю комнату. Проверь интернет и попробуй войти ещё раз.');
+      }
     }
+    // Even when a manual entry is waiting, release a socket whose room join
+    // timed out after the server accepted it but before the client got the ACK.
     if (socket && !roomId) {
       socket.disconnect();
       socket = null;
@@ -5343,6 +5353,20 @@ async function copyText(value) {
   }
 }
 
+function prepareForManualRoomEntry() {
+  // If the local room state was already cleared, the server may still be
+  // completing an automatic restore on this socket. Disconnecting guarantees
+  // that the server's disconnect handler releases any stale membership.
+  if (roomId) {
+    leaveRoom();
+    return;
+  }
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+}
+
 function leaveRoom() {
   try { localStorage.removeItem(ROOM_SESSION_KEY); } catch (_error) {}
   if (previewAudioStream) {
@@ -5385,12 +5409,20 @@ $('#editProfileForm').addEventListener('submit',saveProfileChanges);
 
 joinForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (roomEntryInProgress) return;
+  roomEntryInProgress = true;
+  manualRoomEntryRequested = true;
   const button = $('#createRoomBtn');
   const name = nameInput.value.trim();
-  if (!name) return showJoinError('Напиши имя, чтобы создать комнату.');
+  if (!name) {
+    roomEntryInProgress = false;
+    return showJoinError('Напиши имя, чтобы создать комнату.');
+  }
   showJoinError('');
   setBusy(button, true, 'Создаём комнату…');
   try {
+    if (savedRoomRestorePromise) await savedRoomRestorePromise;
+    prepareForManualRoomEntry();
     myName = name;
     await connectSocket();
     await createRoom(name);
@@ -5399,19 +5431,42 @@ joinForm.addEventListener('submit', async (event) => {
     if (socket && !roomId) { socket.disconnect(); socket = null; }
   } finally {
     setBusy(button, false);
+    roomEntryInProgress = false;
   }
 });
 
 joinRoomForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (roomEntryInProgress) return;
+  roomEntryInProgress = true;
+  manualRoomEntryRequested = true;
   const button = $('#joinRoomBtn');
   const name = nameInput.value.trim();
   const code = roomInput.value.trim().toUpperCase();
-  if (!name) return showJoinError('Сначала напиши своё имя.');
-  if (code.length !== 6) return showJoinError('Код комнаты должен состоять из 6 символов.');
+  if (!name) {
+    roomEntryInProgress = false;
+    return showJoinError('Сначала напиши своё имя.');
+  }
+  if (code.length !== 6) {
+    roomEntryInProgress = false;
+    return showJoinError('Код комнаты должен состоять из 6 символов.');
+  }
   showJoinError('');
   setBusy(button, true, 'Входим…');
   try {
+    if (savedRoomRestorePromise) await savedRoomRestorePromise;
+    if (roomId === code) {
+      showJoinError('');
+      joinScreen.hidden = true;
+      appScreen.hidden = false;
+      switchPanel('chat');
+      showToast('Ты уже находишься в этой комнате.');
+      return;
+    }
+    prepareForManualRoomEntry();
+    // leaveRoom clears the code field; retain the exact code the user submitted.
+    roomInput.value = code;
+    nameInput.value = name;
     myName = name;
     await connectSocket();
     await joinRoom(name, code);
@@ -5420,9 +5475,9 @@ joinRoomForm.addEventListener('submit', async (event) => {
     if (socket && !roomId) { socket.disconnect(); socket = null; }
   } finally {
     setBusy(button, false);
+    roomEntryInProgress = false;
   }
 });
-
 roomInput.addEventListener('input', () => { roomInput.value = roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6); });
 
 document.querySelectorAll('.nav-item, .server-rail-button, .server-rail-home, .mobile-nav-button').forEach((item) => item.addEventListener('click', () => switchPanel(item.dataset.panel)));
@@ -5678,7 +5733,12 @@ authInitializationPromise.then(async (initialized) => {
   if (initialized && authSession?.user) {
     await loadMyProfile();
     await loadRemoteCallHistory().catch((error)=>console.warn('Could not load remote call history:',error));
-    restoreSavedRoom();
+    savedRoomRestorePromise = restoreSavedRoom();
+    try {
+      await savedRoomRestorePromise;
+    } finally {
+      savedRoomRestorePromise = null;
+    }
   }
 }).catch((error) => {
   console.warn('Post-auth initialization skipped:', error?.name || 'Error');
