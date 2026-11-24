@@ -7644,3 +7644,40 @@ html[data-koto-cursor="classic"] button,html[data-koto-cursor="classic"] a,html[
   stroke-linejoin: round;
 }
 #appScreen .call-footer-paw { display:grid;place-items:center;color:#719675; }
+
+/* Ensure the chosen paw cursor wins over legacy component cursor declarations. */
+html[data-koto-cursor="cat"] body,
+html[data-koto-cursor="cat"] body * { cursor:var(--koto-cursor-cat),auto!important; }
+html[data-koto-cursor="fox"] body,
+html[data-koto-cursor="fox"] body * { cursor:var(--koto-cursor-fox),auto!important; }
+html[data-koto-cursor="bear"] body,
+html[data-koto-cursor="bear"] body * { cursor:var(--koto-cursor-bear),auto!important; }
+html[data-koto-cursor="bunny"] body,
+html[data-koto-cursor="bunny"] body * { cursor:var(--koto-cursor-bunny),auto!important; }
+html[data-koto-cursor="classic"] body,
+html[data-koto-cursor="classic"] body * { cursor:auto!important; }
+html[data-koto-cursor="cat"] body button,
+html[data-koto-cursor="cat"] body a,
+html[data-koto-cursor="cat"] body [role="button"],
+html[data-koto-cursor="fox"] body button,
+html[data-koto-cursor="fox"] body a,
+html[data-koto-cursor="fox"] body [role="button"],
+html[data-koto-cursor="bear"] body button,
+html[data-koto-cursor="bear"] body a,
+html[data-koto-cursor="bear"] body [role="button"],
+html[data-koto-cursor="bunny"] body button,
+html[data-koto-cursor="bunny"] body a,
+html[data-koto-cursor="bunny"] body [role="button"] { cursor:inherit!important; }
+html[data-koto-cursor="classic"] body button,
+html[data-koto-cursor="classic"] body a,
+html[data-koto-cursor="classic"] body [role="button"] { cursor:pointer!important; }
+html[data-koto-cursor="cat"] body input,
+html[data-koto-cursor="cat"] body textarea,
+html[data-koto-cursor="fox"] body input,
+html[data-koto-cursor="fox"] body textarea,
+html[data-koto-cursor="bear"] body input,
+html[data-koto-cursor="bear"] body textarea,
+html[data-koto-cursor="bunny"] body input,
+html[data-koto-cursor="bunny"] body textarea,
+html[data-koto-cursor="classic"] body input,
+html[data-koto-cursor="classic"] body textarea { cursor:text!important; }
