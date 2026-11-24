@@ -102,7 +102,7 @@ assert.match(server, /vendor\/simple-rnnoise-wasm/, 'Server must serve the local
 
 assert.match(app, /buildKotoStickerPicker/, 'Animal sticker pickers must be initialized for both message composers.');
 assert.match(app, /renderKotoStickerText/, 'Animal sticker markers must render as safe inline SVG images.');
-assert.match(app, /:koto:cat-wave:/, 'Sticker messages must use a shared, serializable marker format.');
+assert.match(app, /const marker = ':koto:' \\+ sticker\\.id \\+ ':'/, 'Sticker messages must use a shared, serializable marker format.');
 const stickerSymbols = new Set([...stickerSprite.matchAll(/<symbol id="([a-z0-9-]+)"/g)].map((match) => match[1]));
 assert.ok(stickerSymbols.size >= 20, 'The original animal sticker sprite set must contain at least 20 illustrations.');
 for (const id of ['cat-wave','cat-heart','cat-cool','fox-love','panda-happy','bear-cozy','bunny-flower','dog-happy','frog-cute','redpanda-love']) {
