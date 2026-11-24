@@ -1345,7 +1345,7 @@ function bindSocketEvents() {
 function resetAfterRoomRecoveryFailure(message) {
   if (isInCall) stopCall();
   if (previewAudioStream) {
-    previewAudioStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
+    releaseMicrophoneStream(previewAudioStream);
     previewAudioStream = null;
   }
   roomId = '';
@@ -3656,7 +3656,7 @@ async function startCall() {
     captureWebRtcDiagnostic('call_start', error);
     console.error('Call startup error:', error);
     if (isInCall) stopCall();
-    else if (audioStream && !usedAudioPreview) audioStream.getTracks().forEach((track) => track.stop());
+    else if (audioStream && !usedAudioPreview) releaseMicrophoneStream(audioStream);
     let message = 'Не удалось запустить видеозвонок.';
     if (error && error.name === 'NotAllowedError') message = 'Разреши доступ к микрофону в настройках браузера.';
     else if (error && error.name === 'NotFoundError') message = 'На устройстве не найден микрофон.';
@@ -5244,7 +5244,7 @@ async function copyText(value) {
 function leaveRoom() {
   try { localStorage.removeItem(ROOM_SESSION_KEY); } catch (_error) {}
   if (previewAudioStream) {
-    previewAudioStream.getTracks().forEach((track) => { track.onended = null; track.stop(); });
+    releaseMicrophoneStream(previewAudioStream);
     previewAudioStream = null;
   }
   stopMicInputMeter();
