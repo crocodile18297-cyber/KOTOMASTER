@@ -6076,3 +6076,102 @@ html[data-koto-animations="off"] #appScreen .composer .send-button:hover,
 html[data-koto-animations="off"] #appScreen .community-composer button[type="submit"]:hover {
   animation:none!important;transition:none!important;
 }
+
+/* High-detail animal portrait stickers */
+.koto-photo-sticker {
+  display:block;
+  width:100%;
+  height:100%;
+  aspect-ratio:1;
+  background-repeat:no-repeat;
+  background-size:400% 400%;
+  background-color:#f4eee8;
+  border-radius:11px;
+  filter:drop-shadow(0 3px 4px rgba(80,58,44,.13));
+}
+.koto-picker-sticker {
+  width:70px;
+  height:70px;
+  flex:0 0 70px;
+  overflow:hidden;
+  border:1px solid rgba(230,211,197,.75);
+  border-radius:12px;
+  background-size:400% 400%;
+  transition:transform .18s ease,filter .18s ease;
+}
+.koto-sticker-choice:hover .koto-picker-sticker {
+  transform:scale(1.08) rotate(1deg);
+  filter:drop-shadow(0 5px 6px rgba(80,58,44,.18));
+}
+.koto-sticker-choice>span:not(.koto-picker-sticker) {
+  max-width:100%;
+  color:#785f51;
+  font-size:9px;
+  font-weight:800;
+  letter-spacing:.05px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.koto-inline-sticker-wrap {
+  display:inline-flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  min-width:88px;
+  vertical-align:middle;
+  margin:2px 4px;
+  animation:kotoStickerMessageIn .34s cubic-bezier(.2,.8,.2,1) both;
+}
+.koto-inline-sticker {
+  width:82px;
+  height:82px;
+  background-size:400% 400%;
+  border-radius:13px;
+}
+.koto-inline-sticker-caption {
+  display:inline-block;
+  max-width:100%;
+  padding:3px 8px;
+  border:1px solid #ead8cb;
+  border-radius:999px;
+  color:#86644f;
+  background:linear-gradient(135deg,#fffaf2,#f7e6d9);
+  font-size:9px;
+  font-weight:850;
+  line-height:1.2;
+  text-align:center;
+  white-space:nowrap;
+}
+#appScreen .message-bubble.has-koto-sticker {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:5px;
+  min-width:94px;
+  min-height:108px;
+  padding:6px 8px;
+  border-color:transparent;
+  background:transparent;
+  box-shadow:none;
+}
+#appScreen .message-row.mine .message-bubble.has-koto-sticker {
+  background:transparent;
+  border-color:transparent;
+}
+#appScreen .community-message p.has-koto-sticker {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:5px;
+  min-height:106px;
+  padding:4px 0;
+}
+@media(max-width:600px) {
+  .koto-picker-sticker { width:60px;height:60px;flex-basis:60px; }
+  .koto-inline-sticker-wrap { min-width:74px; }
+  .koto-inline-sticker { width:68px;height:68px; }
+  .koto-inline-sticker-caption { font-size:8px;padding:3px 6px; }
+  #appScreen .message-bubble.has-koto-sticker { min-height:90px; }
+}
