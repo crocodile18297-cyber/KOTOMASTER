@@ -7559,3 +7559,25 @@ body:has(#appScreen:not([hidden])) .ambient{opacity:.025}
 @media(max-width:740px){#appScreen .koto-cursor-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#appScreen .koto-cursor-grid button{min-height:70px}}
 @media(prefers-reduced-motion:reduce){#appScreen .call-participant-row,#appScreen .call-live-pill i,.koto-paw-trail{animation:none!important;transition:none!important}}
 html[data-koto-animations="off"] #appScreen .call-participant-row,html[data-koto-animations="off"] #appScreen .call-live-pill i,html[data-koto-animations="off"] .koto-paw-trail{animation:none!important;transition:none!important}
+
+/* Distinct crisp paw cursors: cat, fox, bear and bunny. */
+:root {
+ --koto-cursor-cat:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 36 36'%3E%3Cg fill='%23c98561' stroke='%23fff' stroke-width='1.4'%3E%3Cellipse cx='8' cy='10' rx='3.1' ry='4.2'/%3E%3Cellipse cx='16' cy='6.8' rx='3.1' ry='4.2'/%3E%3Cellipse cx='24' cy='9' rx='3.1' ry='4.2'/%3E%3Cellipse cx='29' cy='15' rx='2.7' ry='3.6'/%3E%3Cpath d='M11 23c0-4.6 3.2-7.2 7.6-7.2s7.4 2.6 7.4 7.2c0 4-3.6 6.6-7.4 6.6S11 27 11 23Z'/%3E%3C/g%3E%3C/svg%3E") 7 3;
+ --koto-cursor-fox:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 36 36'%3E%3Cg fill='%23d8874e' stroke='%23fff' stroke-width='1.4'%3E%3Cellipse cx='8' cy='10' rx='3.1' ry='4.2'/%3E%3Cellipse cx='16' cy='6.8' rx='3.1' ry='4.2'/%3E%3Cellipse cx='24' cy='9' rx='3.1' ry='4.2'/%3E%3Cellipse cx='29' cy='15' rx='2.7' ry='3.6'/%3E%3Cpath d='M11 23c0-4.6 3.2-7.2 7.6-7.2s7.4 2.6 7.4 7.2c0 4-3.6 6.6-7.4 6.6S11 27 11 23Z'/%3E%3C/g%3E%3C/svg%3E") 7 3;
+ --koto-cursor-bear:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 36 36'%3E%3Cg fill='%23536c60' stroke='%23fff' stroke-width='1.4'%3E%3Cellipse cx='8' cy='10' rx='3.1' ry='4.2'/%3E%3Cellipse cx='16' cy='6.8' rx='3.1' ry='4.2'/%3E%3Cellipse cx='24' cy='9' rx='3.1' ry='4.2'/%3E%3Cellipse cx='29' cy='15' rx='2.7' ry='3.6'/%3E%3Cpath d='M11 23c0-4.6 3.2-7.2 7.6-7.2s7.4 2.6 7.4 7.2c0 4-3.6 6.6-7.4 6.6S11 27 11 23Z'/%3E%3C/g%3E%3C/svg%3E") 7 3;
+ --koto-cursor-bunny:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 36 36'%3E%3Cg fill='%23d49ba3' stroke='%23fff' stroke-width='1.4'%3E%3Cellipse cx='8' cy='10' rx='3.1' ry='4.2'/%3E%3Cellipse cx='16' cy='6.8' rx='3.1' ry='4.2'/%3E%3Cellipse cx='24' cy='9' rx='3.1' ry='4.2'/%3E%3Cellipse cx='29' cy='15' rx='2.7' ry='3.6'/%3E%3Cpath d='M11 23c0-4.6 3.2-7.2 7.6-7.2s7.4 2.6 7.4 7.2c0 4-3.6 6.6-7.4 6.6S11 27 11 23Z'/%3E%3C/g%3E%3C/svg%3E") 7 3;
+}
+html[data-koto-cursor="cat"] body,html[data-koto-cursor="cat"] button,html[data-koto-cursor="cat"] a,html[data-koto-cursor="cat"] [role="button"],html[data-koto-cursor="cat"] select { cursor:var(--koto-cursor-cat),pointer; }
+html[data-koto-cursor="fox"] body,html[data-koto-cursor="fox"] button,html[data-koto-cursor="fox"] a,html[data-koto-cursor="fox"] [role="button"],html[data-koto-cursor="fox"] select { cursor:var(--koto-cursor-fox),pointer; }
+html[data-koto-cursor="bear"] body,html[data-koto-cursor="bear"] button,html[data-koto-cursor="bear"] a,html[data-koto-cursor="bear"] [role="button"],html[data-koto-cursor="bear"] select { cursor:var(--koto-cursor-bear),pointer; }
+html[data-koto-cursor="bunny"] body,html[data-koto-cursor="bunny"] button,html[data-koto-cursor="bunny"] a,html[data-koto-cursor="bunny"] [role="button"],html[data-koto-cursor="bunny"] select { cursor:var(--koto-cursor-bunny),pointer; }
+html[data-koto-cursor="cat"] button,html[data-koto-cursor="fox"] button,html[data-koto-cursor="bear"] button,html[data-koto-cursor="bunny"] button { cursor:var(--koto-cursor-cat),pointer; }
+html[data-koto-cursor="fox"] button { cursor:var(--koto-cursor-fox),pointer; }
+html[data-koto-cursor="bear"] button { cursor:var(--koto-cursor-bear),pointer; }
+html[data-koto-cursor="bunny"] button { cursor:var(--koto-cursor-bunny),pointer; }
+html[data-koto-cursor="cat"] input,html[data-koto-cursor="cat"] textarea,
+html[data-koto-cursor="fox"] input,html[data-koto-cursor="fox"] textarea,
+html[data-koto-cursor="bear"] input,html[data-koto-cursor="bear"] textarea,
+html[data-koto-cursor="bunny"] input,html[data-koto-cursor="bunny"] textarea { cursor:text; }
+html[data-koto-cursor="classic"] body,html[data-koto-cursor="classic"] button,html[data-koto-cursor="classic"] a,html[data-koto-cursor="classic"] [role="button"],html[data-koto-cursor="classic"] select { cursor:auto; }
+html[data-koto-cursor="classic"] button,html[data-koto-cursor="classic"] a,html[data-koto-cursor="classic"] [role="button"] { cursor:pointer; }
