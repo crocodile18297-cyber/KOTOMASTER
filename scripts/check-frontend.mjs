@@ -109,12 +109,12 @@ assert.match(server, /vendor\/simple-rnnoise-wasm/, 'Server must serve the local
 assert.match(app, /buildKotoStickerPicker/, 'Animal sticker pickers must be initialized for both message composers.');
 assert.match(app, /renderKotoStickerText/, 'Animal sticker markers must render as safe inline photo stickers.');
 assert.ok(app.includes("const marker = ':koto:' + sticker.id + ':'"), 'Sticker messages must use a shared, serializable marker format.');
-assert.match(app, /data:image\\/avif;base64,/, 'Realistic sticker sheet must load as an AVIF sprite.');
+assert.match(app, /data:image\/avif;base64,/, 'Realistic sticker sheet must load as an AVIF sprite.');
 assert.match(app, /KOTO_LEGACY_STICKER_ALIASES/, 'Messages sent with the previous sticker IDs must remain readable.');
 assert.equal(stickerData.length, 31904, 'The realistic animal sticker sprite data must be complete.');
 assert.equal(stickerBytes.length, 23926, 'The realistic animal sticker sprite binary must be complete.');
 assert.equal(stickerBytes.toString('ascii', 4, 12), 'ftypavif', 'The sticker sprite must be a valid AVIF image.');
-assert.match(css, /\\.koto-photo-sticker\\s*\\{[^}]*background-size:400% 400%/s, 'Photo stickers must crop the 4x4 portrait sheet correctly.');
+assert.match(css, /\.koto-photo-sticker\s*\{[^}]*background-size:400% 400%/s, 'Photo stickers must crop the 4x4 portrait sheet correctly.');
 assert.match(app, /Обнимаю/);
 assert.match(app, /Спокойной ночи/);
 
